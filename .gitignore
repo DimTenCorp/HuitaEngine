@@ -361,8 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/HuitaEngine.vcxproj
-/.gitignore
-/HuitaEngine.vcxproj
-/HuitaEngine.vcxproj.filters
+
 /.gitignore
