@@ -66,65 +66,12 @@ const char* ShaderManager::fragmentSource = R"(
     uniform float pointLightIntensity;
     uniform float pointLightRadius;
     
-    float calcShadow(vec4 fragPosLightSpace) {
-        vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-        projCoords = projCoords * 0.5 + 0.5;
-        
-        if(projCoords.z > 1.0) return 0.0;
-        
-        float closestDepth = texture(shadowMap, projCoords.xy).r;
-        float currentDepth = projCoords.z;
-        
-        vec3 norm = normalize(vNormal);
-        vec3 lightDir = normalize(-sunDir);
-        float bias = max(0.0005 * (1.0 - dot(norm, lightDir)), 0.0001);
-        
-        float shadow = 0.0;
-        vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-        
-        for(int x = -1; x <= 1; ++x) {
-            for(int y = -1; y <= 1; ++y) {
-                float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x,y) * texelSize).r;
-                shadow += (currentDepth - bias) > pcfDepth ? 1.0 : 0.0;
-            }
-        }
-        
-        return shadow / 9.0;
-    }
-    
     void main() {
+        // Просто выводим текстуру без освещения для отладки
         vec4 texColor = texture(uTexture, vTexCoord);
         if(texColor.a < 0.5) discard;
         
-        vec3 norm = normalize(vNormal);
-        vec3 result = texColor.rgb * 0.15; // Ambient
-        
-        // Sun light
-        vec3 sunLightDir = normalize(-sunDir);
-        float diffSun = max(dot(norm, sunLightDir), 0.0);
-        float shadow = shadowsEnabled ? calcShadow(vPosLightSpace) : 0.0;
-        result += texColor.rgb * sunColor * diffSun * sunIntensity * (1.0 - shadow);
-        
-        // Point light
-        vec3 toPointLight = pointLightPos - vPos;
-        float distToPoint = length(toPointLight);
-        if(distToPoint < pointLightRadius) {
-            vec3 pointLightDir = normalize(toPointLight);
-            float diffPoint = max(dot(norm, pointLightDir), 0.0);
-            float attenuation = 1.0 - (distToPoint / pointLightRadius);
-            attenuation *= attenuation;
-            result += texColor.rgb * pointLightColor * diffPoint * pointLightIntensity * attenuation;
-        }
-        
-        // Fog
-        float dist = length(viewPos - vPos);
-        float fog = clamp(exp(-dist * 0.03), 0.0, 1.0);
-        result = mix(vec3(0.05, 0.05, 0.1), result, fog);
-        
-        // Gamma
-        result = pow(result, vec3(1.0/2.2));
-        
-        FragColor = vec4(result, texColor.a);
+        FragColor = vec4(texColor.rgb, 1.0);
     }
 )";
 
