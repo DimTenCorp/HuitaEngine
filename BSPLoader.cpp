@@ -67,6 +67,93 @@ std::vector<glm::vec3> BSPLoader::getLightPositions() const {
     return lights;
 }
 
+std::vector<BSPLightInfo> BSPLoader::getLightInfos() const {
+    std::vector<BSPLightInfo> lights;
+
+    std::cout << "[BSP] Scanning " << entities.size() << " entities for light info...\n";
+
+    for (const auto& entity : entities) {
+        // Расширенный список классов света
+        if (entity.classname == "light" ||
+            entity.classname == "light_spot" ||
+            entity.classname == "light_environment" ||
+            entity.classname == "light_point" ||
+            entity.classname.find("light") != std::string::npos) {
+
+            BSPLightInfo info;
+            info.position = entity.origin;
+            
+            // Парсим цвет из свойства "_light" или "color" (формат "R G B" 0-255)
+            auto lightIt = entity.properties.find("_light");
+            if (lightIt == entity.properties.end()) {
+                lightIt = entity.properties.find("color");
+            }
+            
+            if (lightIt != entity.properties.end()) {
+                int r = 255, g = 255, b = 255;
+                sscanf(lightIt->second.c_str(), "%d %d %d", &r, &g, &b);
+                info.color = glm::vec3(
+                    r / 255.0f,
+                    g / 255.0f,
+                    b / 255.0f
+                );
+            }
+            
+            // Парсим интенсивность (может быть в "_light" после цвета или отдельно)
+            auto intensityIt = entity.properties.find("intensity");
+            if (intensityIt != entity.properties.end()) {
+                info.intensity = std::stof(intensityIt->second);
+            } else if (lightIt != entity.properties.end()) {
+                // Пробуем найти четвёртое число в строке "_light" как интенсивность
+                int dummy1, dummy2, dummy3, intensityInt;
+                if (sscanf(lightIt->second.c_str(), "%d %d %d %d", &dummy1, &dummy2, &dummy3, &intensityInt) == 4) {
+                    info.intensity = intensityInt / 100.0f;
+                }
+            }
+            
+            // Парсим радиус из свойства "radius" или "_radius"
+            auto radiusIt = entity.properties.find("radius");
+            if (radiusIt == entity.properties.end()) {
+                radiusIt = entity.properties.find("_radius");
+            }
+            if (radiusIt != entity.properties.end()) {
+                info.radius = std::stof(radiusIt->second);
+            } else {
+                // Дефолтный радиус на основе интенсивности
+                info.radius = 10.0f * info.intensity;
+            }
+            
+            // Парсим стиль мерцания
+            auto styleIt = entity.properties.find("style");
+            if (styleIt != entity.properties.end()) {
+                info.style = std::stoi(styleIt->second);
+            }
+            
+            // Парсим targetname и target для связанных ламп
+            auto targetnameIt = entity.properties.find("targetname");
+            if (targetnameIt != entity.properties.end()) {
+                info.targetname = targetnameIt->second;
+            }
+            
+            auto targetIt = entity.properties.find("target");
+            if (targetIt != entity.properties.end()) {
+                info.target = targetIt->second;
+            }
+            
+            lights.push_back(info);
+            std::cout << "[BSP] Found light: " << entity.classname
+                << " pos=(" << info.position.x << ", " << info.position.y << ", " << info.position.z << ")"
+                << " color=(" << info.color.r << ", " << info.color.g << ", " << info.color.b << ")"
+                << " intensity=" << info.intensity
+                << " radius=" << info.radius
+                << " style=" << info.style << "\n";
+        }
+    }
+
+    std::cout << "[BSP] Total lights with info found: " << lights.size() << "\n";
+    return lights;
+}
+
 bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_VERTICES];
     if (lump.length == 0) return false;

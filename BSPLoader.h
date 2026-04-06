@@ -42,6 +42,16 @@ struct BSPVertex {
     glm::vec3 normal;
 };
 
+struct BSPLightInfo {
+    glm::vec3 position{ 0 };
+    glm::vec3 color{ 1.0f, 1.0f, 1.0f };
+    float intensity = 1.0f;
+    float radius = 10.0f;
+    int style = 0;  // стиль мерцания (0 = постоянный)
+    std::string targetname;
+    std::string target;
+};
+
 struct BSPEntity {
     std::string classname;
     std::string model;
@@ -116,6 +126,7 @@ public:
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
     std::vector<glm::vec3> getLightPositions() const;
+    std::vector<BSPLightInfo> getLightInfos() const;
 
     friend class LightSystem;
 };
