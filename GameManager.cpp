@@ -137,6 +137,37 @@ void GameManager::render() {
     glm::mat4 view;
     player.getViewMatrix(glm::value_ptr(view));
 
+    // Setup point light (can be moved around)
+    PointLight pointLight;
+    pointLight.position = glm::vec3(0.0f, 5.0f, 0.0f);
+    pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
+    pointLight.intensity = 1.5f;
+    pointLight.radius = 25.0f;
+    ShaderManager::setPointLight(pointLight);
+
+    // Setup sun light for shadows
+    glm::vec3 sunDir = glm::normalize(glm::vec3(0.5f, -0.8f, 0.3f));
+    ShaderManager::setLightDir(sunDir);
+    ShaderManager::enableShadows(true);
+
+    // Calculate light space matrix for shadows
+    float nearPlane = -10.0f;
+    float farPlane = 50.0f;
+    float orthoSize = 30.0f;
+    glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, nearPlane, farPlane);
+    glm::mat4 lightView = glm::lookAt(-sunDir * 20.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+    
+    ShaderManager::setSunLightSpaceMatrix(lightSpaceMatrix);
+
+    // Shadow pass
+    BSPRenderer::renderShadowPass(bspLoader, lightSpaceMatrix);
+
+    // Restore viewport
+    glViewport(0, 0, Config::SCR_WIDTH, Config::SCR_HEIGHT);
+
+    // Main render pass
+    ShaderManager::bindShadowMap(BSPRenderer::getShadowMapTexture());
     BSPRenderer::render(bspLoader, projection, view, player.getEyePosition());
 
     if (showPlayerHitbox) {
