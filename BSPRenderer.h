@@ -5,6 +5,9 @@
 #include <vector>
 #include <string>
 
+// Класс для управления загрузкой и рендерингом BSP карт
+class BSPLoader;  // Forward declaration
+
 // Вершина BSP для рендеринга
 struct BSPVertex {
     glm::vec3 position;
@@ -18,9 +21,6 @@ struct FaceDrawCall {
     unsigned int indexOffset;
     unsigned int indexCount;
 };
-
-// Класс для управления загрузкой и рендерингом BSP карт
-class BSPLoader;  // Forward declaration
 
 class BSPRenderer {
 private:
