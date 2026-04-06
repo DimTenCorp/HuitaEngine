@@ -165,7 +165,7 @@ void BSPRenderer::render(BSPLoader& loader,
             ShaderManager::setColor(glm::vec3(1.0f));
 
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount),
-                (void*)(dc.indexOffset * sizeof(unsigned int)));
+                GL_UNSIGNED_INT, (void*)(dc.indexOffset * sizeof(unsigned int)));
         }
     }
     else {

@@ -44,6 +44,7 @@ private:
     static unsigned int shadowProgram;
     static int mvpLoc, modelLoc, viewLoc, projectionLoc;
     static int lightDirLoc, viewPosLoc, colorLoc;
+    static int sunColorLoc, sunIntensityLoc;
     
     // Point light uniforms
     static int pointLightPosLoc, pointLightColorLoc, pointLightIntensityLoc, pointLightRadiusLoc;
