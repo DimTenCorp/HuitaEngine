@@ -72,9 +72,9 @@ int main() {
     Player player;
     std::vector<std::unique_ptr<PointLight>> lights;
     std::unique_ptr<MeshCollider> collider;
-
-    if (bspLoader.load("maps/de_pasan.bsp", wadLoader)) {
-        renderer.loadWorld(bspLoader);
+    //krutaya karta
+    if (bspLoader.load("maps/de_pasan.bsp", wadLoader)) { 
+        renderer.loadWorld(bspLoader); 
 
         collider = std::make_unique<MeshCollider>();
         collider->buildFromBSP(bspLoader.getMeshVertices(), bspLoader.getMeshIndices());
