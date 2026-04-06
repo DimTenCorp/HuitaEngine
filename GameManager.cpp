@@ -142,70 +142,12 @@ void GameManager::render() {
     glm::mat4 view;
     player.getViewMatrix(glm::value_ptr(view));
 
-    // Find first light entity from BSP and use its position
-    auto lightEntities = bspLoader.getEntitiesByClass("light");
-    PointLight pointLight;
-    if (!lightEntities.empty()) {
-        pointLight.position = lightEntities[0].origin;
-        // Try to parse light properties
-        auto colorIt = lightEntities[0].properties.find("_color");
-        if (colorIt != lightEntities[0].properties.end()) {
-            float r, g, b;
-            if (sscanf(colorIt->second.c_str(), "%f %f %f", &r, &g, &b) == 3) {
-                pointLight.color = glm::vec3(r, g, b);
-            } else {
-                pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
-            }
-        } else {
-            pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
-        }
-        
-        auto intensityIt = lightEntities[0].properties.find("light");
-        if (intensityIt != lightEntities[0].properties.end()) {
-            pointLight.intensity = std::stof(intensityIt->second) / 300.0f;
-        } else {
-            pointLight.intensity = 1.5f;
-        }
-        
-        pointLight.radius = 25.0f;
-        std::cout << "[GameManager] Using light entity at (" 
-                  << pointLight.position.x << ", " << pointLight.position.y << ", " << pointLight.position.z << ")\n";
-    } else {
-        // Fallback to default position if no light entity found
-        pointLight.position = glm::vec3(0.0f, 5.0f, 0.0f);
-        pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
-        pointLight.intensity = 1.5f;
-        pointLight.radius = 25.0f;
-        std::cout << "[GameManager] No light entity found, using fallback position\n";
-    }
-    ShaderManager::setPointLight(pointLight);
-
-    // Setup sun light for shadows
-    glm::vec3 sunDir = glm::normalize(glm::vec3(0.5f, -0.8f, 0.3f));
-    ShaderManager::setLightDir(sunDir);
-    ShaderManager::enableShadows(true);
-
-    // Calculate light space matrix for shadows
-    float nearPlane = -10.0f;
-    float farPlane = 50.0f;
-    float orthoSize = 30.0f;
-    glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, nearPlane, farPlane);
-    glm::mat4 lightView = glm::lookAt(-sunDir * 20.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
-    
-    ShaderManager::setSunLightSpaceMatrix(lightSpaceMatrix);
-
-    // Shadow pass
-    BSPRenderer::renderShadowPass(bspLoader, lightSpaceMatrix);
-
-    // Restore viewport and default framebuffer for main render pass
+    // Main render pass - no lighting
     glViewport(0, 0, Config::SCR_WIDTH, Config::SCR_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Main render pass
-    ShaderManager::bindShadowMap(BSPRenderer::getShadowMapTexture());
     BSPRenderer::render(bspLoader, projection, view, player.getEyePosition());
 
     if (showPlayerHitbox) {
