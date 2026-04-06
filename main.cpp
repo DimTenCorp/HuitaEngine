@@ -6,19 +6,24 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
-// #include "Mesh.h" // Удалено, если не используется
+
+// Новые модульные классы
+#include "InputHandler.h"
+#include "Camera.h"
 #include "Shader.h"
+#include "BSPRenderer.h"
+
+// Существующие классы
 #include "Player.h"
 #include "HUD.h"
 #include "BSPLoader.h"
 #include "TriangleCollider.h"
+#include "WADLoader.h"
 
 // ImGui
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-
-#include "WADLoader.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -28,82 +33,64 @@
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
+// Глобальные объекты
+InputHandler input;
 Player player;
-float lastX = SCR_WIDTH / 2.0f;
-float lastY = SCR_HEIGHT / 2.0f;
-bool firstMouse = true;
-float deltaTime = 0.0f;
-float lastFrame = 0.0f;
-float yaw = -90.0f;
-float pitch = 0.0f;
-bool f1Pressed = false, f2Pressed = false, f3Pressed = false, f4Pressed = true, noclipPressed = false;
-bool showPlayerHitbox = true;
-
+HUD hud;
 BSPLoader bspLoader;
 MeshCollider meshCollider;
-unsigned int bspVAO = 0, bspVBO = 0, bspEBO = 0;
-size_t bspIndexCount = 0;
+BSPRenderer bspRenderer;
 
-void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
-    if (firstMouse) { lastX = (float)xpos; lastY = (float)ypos; firstMouse = false; }
-    float xoffset = (float)(xpos - lastX);
-    float yoffset = (float)(lastY - ypos);
-    lastX = (float)xpos; lastY = (float)ypos;
-    yaw += xoffset * 0.1f;
-    pitch += yoffset * 0.1f;
-    if (pitch > 89.0f) pitch = 89.0f;
-    if (pitch < -89.0f) pitch = -89.0f;
-}
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+bool showPlayerHitbox = true;
 
-void processHUDInput(GLFWwindow* window, HUD& hud) {
-    if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS && !f1Pressed) { hud.toggleCrosshair(); f1Pressed = true; }
-    if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_RELEASE) f1Pressed = false;
-    if (glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS && !f2Pressed) { hud.toggleFPS(); f2Pressed = true; }
-    if (glfwGetKey(window, GLFW_KEY_F2) == GLFW_RELEASE) f2Pressed = false;
-    if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS && !f3Pressed) { hud.togglePosition(); f3Pressed = true; }
-    if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_RELEASE) f3Pressed = false;
-    if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && !noclipPressed) {
-        player.toggleNoclip(); std::cout << "Noclip: " << (player.isNoclip() ? "ON" : "OFF") << "\n"; noclipPressed = true;
+// Переменные для углов камеры (синхронизация с Player)
+float yaw = -90.0f;
+float pitch = 0.0f;
+
+void processHUDInput(HUD& hud) {
+    // Используем InputHandler для обработки ввода HUD
+    if (input.consumeF1Press()) {
+        hud.toggleCrosshair();
     }
-    if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE) noclipPressed = false;
-    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS && !f4Pressed) { showPlayerHitbox = !showPlayerHitbox; f4Pressed = true; }
-    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_RELEASE) f4Pressed = false;
+    if (input.consumeF2Press()) {
+        hud.toggleFPS();
+    }
+    if (input.consumeF3Press()) {
+        hud.togglePosition();
+    }
+    if (input.consumeVPress()) {
+        player.toggleNoclip();
+        std::cout << "Noclip: " << (player.isNoclip() ? "ON" : "OFF") << "\n";
+    }
+    if (input.consumeF4Press()) {
+        showPlayerHitbox = !showPlayerHitbox;
+    }
 }
 
 bool initBSPRenderer() {
     if (!bspLoader.isLoaded()) return false;
+    
     const auto& vertices = bspLoader.getMeshVertices();
     const auto& indices = bspLoader.getMeshIndices();
     if (vertices.empty() || indices.empty()) return false;
 
+    // Строим коллайдер
     meshCollider.buildFromBSP(vertices, bspLoader.getMeshIndices());
     std::cout << "Mesh collider built with " << meshCollider.getTriangleCount() << " triangles\n";
 
-    glGenVertexArrays(1, &bspVAO);
-    glGenBuffers(1, &bspVBO);
-    glGenBuffers(1, &bspEBO);
-    glBindVertexArray(bspVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, bspVBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(BSPVertex), vertices.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bspEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, position));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, normal));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, texCoord));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
-
-    bspIndexCount = indices.size();
+    // Инициализируем BSP Renderer
+    auto sortedDrawCalls = bspLoader.getDrawCalls();
+    std::sort(sortedDrawCalls.begin(), sortedDrawCalls.end(),
+        [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
+    
+    bspRenderer.initBuffers(vertices, indices, sortedDrawCalls);
     return true;
 }
 
 void cleanupBSP() {
-    if (bspVAO) glDeleteVertexArrays(1, &bspVAO);
-    if (bspVBO) glDeleteBuffers(1, &bspVBO);
-    if (bspEBO) glDeleteBuffers(1, &bspEBO);
+    bspRenderer.cleanup();
     bspLoader.cleanupTextures();
 }
 
@@ -112,13 +99,23 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "HuitaEngine BSP", NULL, NULL);
-    if (!window) { std::cerr << "Failed to create window\n"; glfwTerminate(); return -1; }
+    if (!window) { 
+        std::cerr << "Failed to create window\n"; 
+        glfwTerminate(); 
+        return -1; 
+    }
+    
     glfwMakeContextCurrent(window);
-    glfwSetCursorPosCallback(window, mouse_callback);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to init GLAD\n"; return -1; }
+    
+    // Инициализируем InputHandler
+    input.init(window);
+    
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { 
+        std::cerr << "Failed to init GLAD\n"; 
+        return -1; 
+    }
 
     // List available WAD files (Windows)
 #ifdef _WIN32
@@ -148,9 +145,7 @@ int main() {
     glCullFace(GL_BACK);
     glFrontFace(GL_CW);
 
-    HUD hud;
-
-    WADLoader wadLoader;  // Создаём WADLoader до BSP
+    WADLoader wadLoader;
 
     if (wadLoader.loadQuakePalette("palette.lmp")) {
         std::cout << "Quake palette loaded successfully!" << std::endl;
@@ -162,19 +157,13 @@ int main() {
     if (bspLoader.load("maps/crossfire.bsp", wadLoader)) {
         initBSPRenderer();
 
-        // Находим спавн точку игрока
         glm::vec3 spawnPos;
         glm::vec3 spawnAngles;
 
         if (bspLoader.findPlayerStart(spawnPos, spawnAngles)) {
             player.setPosition(spawnPos);
-
-            // Устанавливаем углы камеры (yaw, pitch)
-            // В Quake углы: pitch, yaw, roll
-            yaw = spawnAngles.y;  // Yaw - горизонтальный поворот
-            pitch = spawnAngles.x; // Pitch - вертикальный наклон
-
-            // Обновляем игрока с новыми углами
+            yaw = spawnAngles.y;
+            pitch = spawnAngles.x;
             player.setYaw(yaw);
             player.setPitch(pitch);
 
@@ -183,7 +172,6 @@ int main() {
                 << " with yaw: " << yaw << ", pitch: " << pitch << std::endl;
         }
         else {
-            // Fallback: центр карты + немного вверх
             auto bounds = bspLoader.getWorldBounds();
             float centerY = bounds.min.y + (bounds.max.y - bounds.min.y) * 0.5f;
             player.setPosition(glm::vec3(0.0f, centerY + 10.0f, 0.0f));
@@ -194,7 +182,7 @@ int main() {
         player.setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
     }
 
-    // Shader program with texture support
+    // Создаём шейдер через новый класс Shader
     const char* vertexShaderSource = R"(
         #version 330 core
         layout (location = 0) in vec3 aPos;
@@ -239,22 +227,13 @@ int main() {
         }
     )";
 
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+    Shader shaderProgram = Shader::createFromSource(vertexShaderSource, fragmentShaderSource);
+    if (!shaderProgram.isValid()) {
+        std::cerr << "Failed to create shader program\n";
+        return -1;
+    }
 
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // Debug cube for hitbox
+    // Debug cube для hitbox игрока
     float cubeVertices[] = {
         -0.5f,-0.5f, 0.5f,  0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f,
         -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,  0.5f, 0.5f,-0.5f, -0.5f, 0.5f,-0.5f
@@ -262,6 +241,7 @@ int main() {
     unsigned int cubeIndices[] = {
         0,1,2,2,3,0, 4,5,6,6,7,4, 4,0,3,3,7,4, 1,5,6,6,2,1, 3,2,6,6,7,3, 4,5,1,1,0,4
     };
+    
     unsigned int cubeVAO, cubeVBO, cubeEBO;
     glGenVertexArrays(1, &cubeVAO);
     glGenBuffers(1, &cubeVBO);
@@ -276,18 +256,9 @@ int main() {
     glBindVertexArray(0);
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 1000.0f);
-    glUseProgram(shaderProgram);
-    int mvpLoc = glGetUniformLocation(shaderProgram, "mvp");
-    int modelLoc = glGetUniformLocation(shaderProgram, "model");
-    int lightDirLoc = glGetUniformLocation(shaderProgram, "lightDir");
-    int viewPosLoc = glGetUniformLocation(shaderProgram, "viewPos");
-    glUniform3f(lightDirLoc, 0.3f, -0.7f, 0.5f);
-
-    std::vector<FaceDrawCall> sortedDrawCalls = bspLoader.getDrawCalls();
-    std::sort(sortedDrawCalls.begin(), sortedDrawCalls.end(),
-        [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
-
-    GLuint defaultTex = bspLoader.getDefaultTextureID();
+    
+    shaderProgram.use();
+    shaderProgram.setVec3("lightDir", glm::vec3(0.3f, -0.7f, 0.5f));
 
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = (float)glfwGetTime();
@@ -295,67 +266,50 @@ int main() {
         lastFrame = currentFrame;
         if (deltaTime > 0.05f) deltaTime = 0.05f;
 
+        // Обновляем input и обрабатываем мышь для камеры
+        input.update();
+        glm::vec2 mouseOffset = input.getMouseOffset();
+        yaw += mouseOffset.x * 0.1f;
+        pitch += mouseOffset.y * 0.1f;
+        if (pitch > 89.0f) pitch = 89.0f;
+        if (pitch < -89.0f) pitch = -89.0f;
+
         player.update(deltaTime, yaw, pitch, &meshCollider);
         hud.update(deltaTime, player.getPosition());
-        processHUDInput(window, hud);
+        processHUDInput(hud);
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
         glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(shaderProgram);
-
+        
+        shaderProgram.use();
+        
         glm::mat4 view;
         player.getViewMatrix(glm::value_ptr(view));
-        glUniform3fv(viewPosLoc, 1, glm::value_ptr(player.getEyePosition()));
+        shaderProgram.setVec3("viewPos", player.getEyePosition());
 
-        // Render BSP
-        if (bspVAO != 0) {
-            glBindVertexArray(bspVAO);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bspEBO);
+        // Рендер BSP через BSPRenderer
+        bspRenderer.render(shaderProgram.getID(), projection, view);
 
-            GLuint lastTex = 0;
-            if (!sortedDrawCalls.empty()) {
-                for (const auto& dc : sortedDrawCalls) {
-                    if (dc.texID != lastTex) {
-                        glBindTexture(GL_TEXTURE_2D, dc.texID);
-                        lastTex = dc.texID;
-                    }
-                    glm::mat4 model = glm::mat4(1.0f);
-                    glm::mat4 mvp = projection * view * model;
-                    glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-                    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-                    glUniform3f(glGetUniformLocation(shaderProgram, "color"), 1.0f, 1.0f, 1.0f);
-                    glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
-                        (void*)(dc.indexOffset * sizeof(unsigned int)));
-                }
-            }
-            else {
-                glBindTexture(GL_TEXTURE_2D, defaultTex);
-                glm::mat4 model = glm::mat4(1.0f);
-                glm::mat4 mvp = projection * view * model;
-                glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-                glUniform3f(glGetUniformLocation(shaderProgram, "color"), 0.8f, 0.8f, 0.8f);
-                glDrawElements(GL_TRIANGLES, (GLsizei)bspIndexCount, GL_UNSIGNED_INT, 0);
-            }
-            glBindVertexArray(0);
-        }
-
-        // Render player hitbox
+        // Рендер hitbox игрока
         if (showPlayerHitbox) {
             glDisable(GL_CULL_FACE);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            
             glm::mat4 model = glm::translate(glm::mat4(1.0f), player.getPosition());
             model = glm::scale(model, glm::vec3(0.6f, 1.8f, 0.6f));
             glm::mat4 mvp = projection * view * model;
-            glUniformMatrix4fv(mvpLoc, 1, GL_FALSE, glm::value_ptr(mvp));
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            glUniform3f(glGetUniformLocation(shaderProgram, "color"), 1.0f, 1.0f, 0.0f);
+            
+            shaderProgram.setMat4("model", model);
+            shaderProgram.setMat4("mvp", mvp);
+            shaderProgram.setVec3("color", glm::vec3(1.0f, 1.0f, 0.0f));
+            
             glBindVertexArray(cubeVAO);
             glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
+            
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glEnable(GL_CULL_FACE);
         }
@@ -369,7 +323,7 @@ int main() {
     glDeleteVertexArrays(1, &cubeVAO);
     glDeleteBuffers(1, &cubeVBO);
     glDeleteBuffers(1, &cubeEBO);
-    glDeleteProgram(shaderProgram);
+    
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
