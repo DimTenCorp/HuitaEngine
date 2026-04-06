@@ -12,6 +12,7 @@ int ShaderManager::pointLightIntensityLoc = -1, ShaderManager::pointLightRadiusL
 int ShaderManager::sunLightSpaceMatrixLoc = -1, ShaderManager::shadowsEnabledLoc = -1;
 int ShaderManager::shadowMapLoc = -1;
 int ShaderManager::shadowMVPLoc = -1;
+int ShaderManager::sunColorLoc = -1, ShaderManager::sunIntensityLoc = -1;
 
 const char* ShaderManager::vertexSource = R"(
     #version 330 core
