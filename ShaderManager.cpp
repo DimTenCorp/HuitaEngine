@@ -208,6 +208,8 @@ bool ShaderManager::initialize() {
     sunLightSpaceMatrixLoc = glGetUniformLocation(program, "sunLightSpaceMatrix");
     shadowsEnabledLoc = glGetUniformLocation(program, "shadowsEnabled");
     shadowMapLoc = glGetUniformLocation(program, "shadowMap");
+    sunColorLoc = glGetUniformLocation(program, "sunColor");
+    sunIntensityLoc = glGetUniformLocation(program, "sunIntensity");
     
     // Shadow shader locations
     shadowMVPLoc = glGetUniformLocation(shadowProgram, "shadowMVP");
@@ -215,13 +217,13 @@ bool ShaderManager::initialize() {
     // Default values
     use();
     glUniform3f(lightDirLoc, 0.3f, -0.7f, 0.5f);
-    glUniform3f(sunColor, 1.0f, 1.0f, 0.9f);
-    glUniform1f(sunIntensity, 0.8f);
+    glUniform3f(sunColorLoc, 1.0f, 1.0f, 0.9f);
+    glUniform1f(sunIntensityLoc, 0.8f);
     glUniform1i(shadowsEnabledLoc, 0);
-    glUniform3f(pointLightPos, 0.0f, 5.0f, 0.0f);
-    glUniform3f(pointLightColor, 1.0f, 0.8f, 0.6f);
-    glUniform1f(pointLightIntensity, 1.0f);
-    glUniform1f(pointLightRadius, 20.0f);
+    glUniform3f(pointLightPosLoc, 0.0f, 5.0f, 0.0f);
+    glUniform3f(pointLightColorLoc, 1.0f, 0.8f, 0.6f);
+    glUniform1f(pointLightIntensityLoc, 1.0f);
+    glUniform1f(pointLightRadiusLoc, 20.0f);
     
     glUniformMatrix4fv(sunLightSpaceMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
     
