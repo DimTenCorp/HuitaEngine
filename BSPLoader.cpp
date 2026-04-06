@@ -40,7 +40,7 @@ static std::string trim(const std::string& str) {
 // ============================================================================
 
 // Global rendering state (similar to Quake's r_bsp.c globals)
-static qboolean insubmodel = FALSE;
+static bool insubmodel = false;
 static glm::vec3 modelorg;           // viewpoint relative to currently rendering entity
 static glm::vec3 r_entorigin;        // currently rendering entity in world coordinates
 static float entity_rotation[3][3];  // rotation matrix for current entity
@@ -54,7 +54,7 @@ static int numbverts = 0, numbedges = 0;
 
 static BSPVertexData* pfrontenter = nullptr;
 static BSPVertexData* pfrontexit = nullptr;
-static qboolean makeclippededge = FALSE;
+static bool makeclippededge = false;
 
 // Frustum clipping planes
 struct FrustumPlane {
@@ -145,7 +145,7 @@ static void R_RecursiveClipBPoly(
     float dist, frac, lastdist;
     BSPVertexData* pvert, * plastvert, * ptvert;
 
-    makeclippededge = FALSE;
+    makeclippededge = false;
 
     const BSPNode& node = nodes[nodeIndex];
     const BSPPlane& splitplane = planes[node.planeNum];
@@ -203,10 +203,10 @@ static void R_RecursiveClipBPoly(
 
             if (side == 0) {
                 pfrontenter = ptvert;
-                makeclippededge = TRUE;
+                makeclippededge = true;
             } else {
                 pfrontexit = ptvert;
-                makeclippededge = TRUE;
+                makeclippededge = true;
             }
         } else {
             // Edge entirely on one side
