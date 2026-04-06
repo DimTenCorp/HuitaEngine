@@ -114,7 +114,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>glad.lib;glfw3dll.lib;glm.lib;imgui.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>D:\vcpkg\installed\x64-windows\lib</AdditionalLibraryDirectories>
-      <Version>test</Version>
+      <Version>
+      </Version>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -132,7 +133,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>glad.lib;glfw3dll.lib;glm.lib;imgui.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>D:\vcpkg\installed\x64-windows\lib</AdditionalLibraryDirectories>
-      <Version>test</Version>
+      <Version>
+      </Version>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
