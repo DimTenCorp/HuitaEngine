@@ -7,6 +7,7 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
+#include <glm/gtc/matrix_transform.hpp>
 #include "WADLoader.h"
 
 static const float BSP_SCALE = 0.025f;
@@ -32,6 +33,231 @@ static std::string trim(const std::string& str) {
     if (start == std::string::npos) return "";
     size_t end = str.find_last_not_of(" \t\n\r\0");
     return str.substr(start, end - start + 1);
+}
+
+// ============================================================================
+// BSP RENDERING FUNCTIONS ADAPTED FROM QUAKE r_bsp.c
+// ============================================================================
+
+// Global rendering state (similar to Quake's r_bsp.c globals)
+static qboolean insubmodel = FALSE;
+static glm::vec3 modelorg;           // viewpoint relative to currently rendering entity
+static glm::vec3 r_entorigin;        // currently rendering entity in world coordinates
+static float entity_rotation[3][3];  // rotation matrix for current entity
+static int r_currentkey = 0;         // sequence number for ordering surfaces
+static int r_visframecount = 0;      // visibility frame counter
+
+// Clipping edge buffers for bmodel rendering
+static BSPVertexData bverts[MAX_BMODEL_VERTS];
+static BSPEdgeData bedges[MAX_BMODEL_EDGES];
+static int numbverts = 0, numbedges = 0;
+
+static BSPVertexData* pfrontenter = nullptr;
+static BSPVertexData* pfrontexit = nullptr;
+static qboolean makeclippededge = FALSE;
+
+// Frustum clipping planes
+struct FrustumPlane {
+    glm::vec3 normal;
+    float dist;
+};
+static FrustumPlane view_clipplanes[4];
+static int r_clipflags = 15;  // all 4 planes active
+
+// Back-to-front polygon buffer for transparent sorting
+struct BtoFPoly {
+    int clipflags;
+    int surfIndex;
+};
+static BtoFPoly pbtofpolys[256];
+static int numbtofpolys = 0;
+
+/*
+================
+R_EntityRotate
+Rotate a vector by the entity's rotation matrix
+================
+*/
+static void R_EntityRotate(glm::vec3& vec) {
+    glm::vec3 tvec = vec;
+    vec.x = glm::dot(glm::vec3(entity_rotation[0][0], entity_rotation[0][1], entity_rotation[0][2]), tvec);
+    vec.y = glm::dot(glm::vec3(entity_rotation[1][0], entity_rotation[1][1], entity_rotation[1][2]), tvec);
+    vec.z = glm::dot(glm::vec3(entity_rotation[2][0], entity_rotation[2][1], entity_rotation[2][2]), tvec);
+}
+
+/*
+================
+R_RotateBmodel
+Set up rotation matrix for current entity and rotate viewing vectors
+================
+*/
+static void R_RotateBmodel(const glm::vec3& angles) {
+    float angle;
+    float sr, sp, sy, cr, cp, cy;
+
+    // Convert angles to radians and compute rotation matrix
+    angle = glm::radians(angles.x);
+    sr = sin(angle);
+    cr = cos(angle);
+    
+    angle = glm::radians(angles.y);
+    sp = sin(angle);
+    cp = cos(angle);
+    
+    angle = glm::radians(angles.z);
+    sy = sin(angle);
+    cy = cos(angle);
+
+    // Build rotation matrix (ZYX order)
+    entity_rotation[0][0] = cp * cr;
+    entity_rotation[0][1] = cr * sp;
+    entity_rotation[0][2] = -sr;
+
+    entity_rotation[1][0] = cp * sr * sy - cy * sp;
+    entity_rotation[1][1] = sp * sr * sy + cp * cy;
+    entity_rotation[1][2] = sy * cr;
+
+    entity_rotation[2][0] = sp * sy + cp * cy * sr;
+    entity_rotation[2][1] = sr * cy * sp - sy * cp;
+    entity_rotation[2][2] = cr * cy;
+}
+
+/*
+================
+R_RecursiveClipBPoly
+Recursively clip polygon edges against BSP tree planes
+================
+*/
+static void R_RecursiveClipBPoly(
+    BSPEdgeData* pedges, 
+    const std::vector<BSPNode>& nodes,
+    int nodeIndex,
+    const std::vector<BSPFace>& faces,
+    const std::vector<BSPPlane>& planes,
+    const std::vector<glm::vec3>& vertices,
+    const std::vector<BSPEdge>& edges,
+    const std::vector<int>& surfEdges,
+    int faceIndex
+) {
+    BSPEdgeData* psideedges[2] = { nullptr, nullptr };
+    BSPEdgeData* pnextedge, * ptedge;
+    int side, lastside;
+    float dist, frac, lastdist;
+    BSPVertexData* pvert, * plastvert, * ptvert;
+
+    makeclippededge = FALSE;
+
+    const BSPNode& node = nodes[nodeIndex];
+    const BSPPlane& splitplane = planes[node.planeNum];
+
+    // Transform BSP plane into model space
+    glm::vec3 transformedNormal;
+    transformedNormal.x = glm::dot(glm::vec3(entity_rotation[0][0], entity_rotation[0][1], entity_rotation[0][2]), splitplane.normal);
+    transformedNormal.y = glm::dot(glm::vec3(entity_rotation[1][0], entity_rotation[1][1], entity_rotation[1][2]), splitplane.normal);
+    transformedNormal.z = glm::dot(glm::vec3(entity_rotation[2][0], entity_rotation[2][1], entity_rotation[2][2]), splitplane.normal);
+    
+    float transformedDist = splitplane.dist - glm::dot(r_entorigin, splitplane.normal);
+
+    // Clip edges to BSP plane
+    for (; pedges; pedges = pnextedge) {
+        pnextedge = pedges->pnext;
+
+        plastvert = pedges->v[0];
+        lastdist = glm::dot(plastvert->position, transformedNormal) - transformedDist;
+        lastside = (lastdist > 0) ? 0 : 1;
+
+        pvert = pedges->v[1];
+        dist = glm::dot(pvert->position, transformedNormal) - transformedDist;
+        side = (dist > 0) ? 0 : 1;
+
+        if (side != lastside) {
+            // Edge is clipped - generate intersection vertex
+            if (numbverts >= MAX_BMODEL_VERTS) {
+                std::cerr << "Out of verts for bmodel\n";
+                return;
+            }
+
+            frac = lastdist / (lastdist - dist);
+            ptvert = &bverts[numbverts++];
+            ptvert->position = plastvert->position + frac * (pvert->position - plastvert->position);
+
+            if (numbedges >= (MAX_BMODEL_EDGES - 1)) {
+                std::cerr << "Out of edges for bmodel\n";
+                return;
+            }
+
+            // Create two edges, one on each side of the plane
+            ptedge = &bedges[numbedges];
+            ptedge->pnext = psideedges[lastside];
+            psideedges[lastside] = ptedge;
+            ptedge->v[0] = plastvert;
+            ptedge->v[1] = ptvert;
+
+            ptedge = &bedges[numbedges + 1];
+            ptedge->pnext = psideedges[side];
+            psideedges[side] = ptedge;
+            ptedge->v[0] = ptvert;
+            ptedge->v[1] = pvert;
+
+            numbedges += 2;
+
+            if (side == 0) {
+                pfrontenter = ptvert;
+                makeclippededge = TRUE;
+            } else {
+                pfrontexit = ptvert;
+                makeclippededge = TRUE;
+            }
+        } else {
+            // Edge entirely on one side
+            pedges->pnext = psideedges[side];
+            psideedges[side] = pedges;
+        }
+    }
+
+    // Add clip plane edges if anything was clipped
+    if (makeclippededge) {
+        if (numbedges >= (MAX_BMODEL_EDGES - 2)) {
+            std::cerr << "Out of edges for bmodel\n";
+            return;
+        }
+
+        ptedge = &bedges[numbedges];
+        ptedge->pnext = psideedges[0];
+        psideedges[0] = ptedge;
+        ptedge->v[0] = pfrontexit;
+        ptedge->v[1] = pfrontenter;
+
+        ptedge = &bedges[numbedges + 1];
+        ptedge->pnext = psideedges[1];
+        psideedges[1] = ptedge;
+        ptedge->v[0] = pfrontenter;
+        ptedge->v[1] = pfrontexit;
+
+        numbedges += 2;
+    }
+
+    // Recurse or draw
+    for (int i = 0; i < 2; i++) {
+        if (psideedges[i]) {
+            int child = (i == 0) ? node.frontChild : node.backChild;
+
+            if (child < 0) {
+                // Leaf node
+                int leafIndex = -child - 1;
+                if (leafIndex < (int)nodes.size()) {
+                    const BSPLeaf& leaf = *(BSPLeaf*)&nodes[leafIndex];  // Simplified
+                    if (leaf.contents != CONTENTS_SOLID) {
+                        r_currentkey = leaf.key;
+                        // Render the clipped polygon here
+                    }
+                }
+            } else if (child < (int)nodes.size()) {
+                // Internal node - recurse
+                R_RecursiveClipBPoly(psideedges[i], nodes, child, faces, planes, vertices, edges, surfEdges, faceIndex);
+            }
+        }
+    }
 }
 
 BSPLoader::BSPLoader() {
@@ -655,6 +881,11 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
     loadModels(file, header);
     loadTexInfo(file, header);
     parseEntities(file, header);
+    
+    // Load BSP tree structures for runtime rendering (adapted from r_bsp.c)
+    loadNodes(file, header);
+    loadLeafs(file, header);
+    loadMarkSurfaces(file, header);
 
     // Загружаем WAD файлы из ENTITY секции
     loadRequiredWADsFromEntities();
@@ -694,5 +925,96 @@ void BSPLoader::printStats() const {
     std::cout << "Textures: " << glTextureIds.size() << "\n";
     std::cout << "Draw Calls: " << drawCalls.size() << "\n";
     std::cout << "Required WADs: " << requiredWADs.size() << "\n";
+    std::cout << "BSP Nodes: " << nodes.size() << "\n";
+    std::cout << "BSP Leafs: " << leafs.size() << "\n";
+    std::cout << "Mark Surfaces: " << markSurfaces.size() << "\n";
     std::cout << "==================\n";
+}
+
+// ============================================================================
+// BSP TREE LOADING FUNCTIONS (adapted from Quake r_bsp.c)
+// ============================================================================
+
+bool BSPLoader::loadNodes(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_NODES];
+    if (lump.length == 0) return false;
+    
+    // Quake BSP node format: planeNum (4), children[2] (8), mins[3] (12), maxs[3] (12), firstSurface (4), numSurfaces (4)
+    // Total: 40 bytes per node
+    size_t count = lump.length / 40;
+    nodes.resize(count);
+    
+    fseek(file, lump.offset, SEEK_SET);
+    for (size_t i = 0; i < count; i++) {
+        int planeNum, frontChild, backChild, firstSurface, numSurfaces;
+        float mins[3], maxs[3];
+        
+        fread(&planeNum, sizeof(int), 1, file);
+        fread(&frontChild, sizeof(int), 1, file);
+        fread(&backChild, sizeof(int), 1, file);
+        fread(mins, sizeof(float), 3, file);
+        fread(maxs, sizeof(float), 3, file);
+        fread(&firstSurface, sizeof(int), 1, file);
+        fread(&numSurfaces, sizeof(int), 1, file);
+        
+        nodes[i].planeNum = planeNum;
+        nodes[i].frontChild = frontChild;
+        nodes[i].backChild = backChild;
+        nodes[i].firstSurface = firstSurface;
+        nodes[i].numSurfaces = numSurfaces;
+        nodes[i].contents = 0;  // Internal nodes have no contents
+        nodes[i].mins = convertPosition(glm::vec3(mins[0], mins[1], mins[2]));
+        nodes[i].maxs = convertPosition(glm::vec3(maxs[0], maxs[1], maxs[2]));
+    }
+    
+    return true;
+}
+
+bool BSPLoader::loadLeafs(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_LEAVES];
+    if (lump.length == 0) return false;
+    
+    // Quake BSP leaf format: contents (4), visFrame (4), mins[3] (12), maxs[3] (12), 
+    //                        firstMarkSurface (4), numMarkSurfaces (4), markSurfaces (short[4]) (8)
+    // Total: 52 bytes per leaf
+    size_t count = lump.length / 52;
+    leafs.resize(count);
+    
+    fseek(file, lump.offset, SEEK_SET);
+    for (size_t i = 0; i < count; i++) {
+        int contents, visFrame, firstMarkSurface, numMarkSurfaces;
+        float mins[3], maxs[3];
+        short ambient_levels[4];
+        
+        fread(&contents, sizeof(int), 1, file);
+        fread(&visFrame, sizeof(int), 1, file);
+        fread(mins, sizeof(float), 3, file);
+        fread(maxs, sizeof(float), 3, file);
+        fread(&firstMarkSurface, sizeof(int), 1, file);
+        fread(&numMarkSurfaces, sizeof(int), 1, file);
+        fread(ambient_levels, sizeof(short), 4, file);
+        
+        leafs[i].contents = contents;
+        leafs[i].visFrame = 0;  // Will be set during rendering
+        leafs[i].key = (int)i;  // Unique key for ordering
+        leafs[i].firstMarkSurface = firstMarkSurface;
+        leafs[i].numMarkSurfaces = numMarkSurfaces;
+        leafs[i].mins = convertPosition(glm::vec3(mins[0], mins[1], mins[2]));
+        leafs[i].maxs = convertPosition(glm::vec3(maxs[0], maxs[1], maxs[2]));
+    }
+    
+    return true;
+}
+
+bool BSPLoader::loadMarkSurfaces(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_MARKSURFACES];
+    if (lump.length == 0) return false;
+    
+    size_t count = lump.length / sizeof(unsigned short);
+    markSurfaces.resize(count);
+    
+    fseek(file, lump.offset, SEEK_SET);
+    fread(markSurfaces.data(), sizeof(unsigned short), count, file);
+    
+    return true;
 }
