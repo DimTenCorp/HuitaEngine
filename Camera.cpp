@@ -1,104 +1,58 @@
 #include "Camera.h"
-#include <glad/glad.h>  // Добавить!
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <iostream>
-#include <cstring>
+#include <cmath>
 
-Camera::Camera(float startX, float startY, float startZ) {
-    posX = startX;
-    posY = startY;
-    posZ = startZ;
-
-    worldUpX = 0.0f;
-    worldUpY = 1.0f;
-    worldUpZ = 0.0f;
-
-    yaw = -90.0f;
-    pitch = 0.0f;
-    speed = 5.0f;
-    sensitivity = 0.1f;
-
+Camera::Camera(glm::vec3 startPosition, glm::vec3 startUp)
+    : position(startPosition), worldUp(startUp), yaw(-90.0f), pitch(0.0f) {
     updateVectors();
 }
 
 void Camera::updateVectors() {
-    // Вычисляем направление взгляда
-    frontX = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    frontY = sin(glm::radians(pitch));
-    frontZ = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-
-    // Нормализуем
-    float len = sqrt(frontX * frontX + frontY * frontY + frontZ * frontZ);
-    frontX /= len;
-    frontY /= len;
-    frontZ /= len;
-
-    // Вычисляем правый вектор
-    rightX = frontY * worldUpZ - frontZ * worldUpY;
-    rightY = frontZ * worldUpX - frontX * worldUpZ;
-    rightZ = frontX * worldUpY - frontY * worldUpX;
-
-    // Нормализуем правый вектор
-    len = sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-    rightX /= len;
-    rightY /= len;
-    rightZ /= len;
-
-    // Вычисляем верхний вектор
-    upX = rightY * frontZ - rightZ * frontY;
-    upY = rightZ * frontX - rightX * frontZ;
-    upZ = rightX * frontY - rightY * frontX;
+    // Р’С‹С‡РёСЃР»СЏРµРј РЅР°РїСЂР°РІР»РµРЅРёРµ РІР·РіР»СЏРґР° РёР· СѓРіР»РѕРІ Р­Р№Р»РµСЂР°
+    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front.y = sin(glm::radians(pitch));
+    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front = glm::normalize(front);
+    
+    // Р’С‹С‡РёСЃР»СЏРµРј РїСЂР°РІС‹Р№ Рё РІРµСЂС…РЅРёР№ РІРµРєС‚РѕСЂС‹
+    right = glm::normalize(glm::cross(front, worldUp));
+    up = glm::normalize(glm::cross(right, front));
 }
 
-void Camera::processKeyboard(int key, float deltaTime) {
-    float velocity = speed * deltaTime;
-
-    if (key == GLFW_KEY_W) {
-        posX += frontX * velocity;
-        posY += frontY * velocity;
-        posZ += frontZ * velocity;
+void Camera::processMouseMovement(float xoffset, float yoffset) {
+    xoffset *= settings.sensitivity;
+    yoffset *= settings.sensitivity;
+    
+    if (settings.invertY) {
+        yoffset = -yoffset;
     }
-    if (key == GLFW_KEY_S) {
-        posX -= frontX * velocity;
-        posY -= frontY * velocity;
-        posZ -= frontZ * velocity;
-    }
-    if (key == GLFW_KEY_A) {
-        posX -= rightX * velocity;
-        posY -= rightY * velocity;
-        posZ -= rightZ * velocity;
-    }
-    if (key == GLFW_KEY_D) {
-        posX += rightX * velocity;
-        posY += rightY * velocity;
-        posZ += rightZ * velocity;
-    }
-}
-
-void Camera::processMouse(float xoffset, float yoffset) {
-    yaw += xoffset * sensitivity;
-    pitch += yoffset * sensitivity;
-
-    if (pitch > 89.0f) pitch = 89.0f;
-    if (pitch < -89.0f) pitch = -89.0f;
-
+    
+    yaw += xoffset;
+    pitch += yoffset;
+    
+    // РћРіСЂР°РЅРёС‡РёРІР°РµРј СѓРіРѕР» РѕР±Р·РѕСЂР° РїРѕ РІРµСЂС‚РёРєР°Р»Рё
+    if (pitch > settings.maxPitch) pitch = settings.maxPitch;
+    if (pitch < settings.minPitch) pitch = settings.minPitch;
+    
     updateVectors();
 }
 
-void Camera::getViewMatrix(float* matrix) const {
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(posX, posY, posZ),
-        glm::vec3(posX + frontX, posY + frontY, posZ + frontZ),
-        glm::vec3(upX, upY, upZ)
-    );
-    memcpy(matrix, glm::value_ptr(view), sizeof(glm::mat4));
+void Camera::processKeyboard(int key, float deltaTime) {
+    float velocity = settings.moveSpeed * deltaTime;
+    
+    // РСЃРїРѕР»СЊР·СѓРµРј GLAD РІРјРµСЃС‚Рѕ GLFW РґР»СЏ РЅРµР·Р°РІРёСЃРёРјРѕСЃС‚Рё
+    #ifdef GLFW_INCLUDE_NONE
+    // Р•СЃР»Рё GLFW РїРѕРґРєР»СЋС‡РµРЅ
+    #endif
+    
+    // РћР±СЂР°Р±РѕС‚РєР° РєР»Р°РІРёС€ Р±СѓРґРµС‚ С‡РµСЂРµР· InputHandler
+    // Р­С‚РѕС‚ РјРµС‚РѕРґ РјРѕР¶РЅРѕ СЂР°СЃС€РёСЂРёС‚СЊ РїСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё
 }
 
-void Camera::getPosition(float* x, float* y, float* z) const {
-    *x = posX;
-    *y = posY;
-    *z = posZ;
+glm::mat4 Camera::getViewMatrix() const {
+    return glm::lookAt(position, position + front, up);
+}
+
+void Camera::getViewMatrix(float* matrix) const {
+    glm::mat4 view = getViewMatrix();
+    memcpy(matrix, glm::value_ptr(view), sizeof(glm::mat4));
 }
