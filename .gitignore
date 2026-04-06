@@ -13,37 +13,42 @@ venv/
 .venv/
 __pycache__/
 *.egg-info/
-build/
-dist/
-target/
-.gradle/
-node_modules/
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
-
-# Environment
-.env
-.env.local
-*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # System files
 .DS_Store
 Thumbs.db
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
+
+# Build directories (if present)
+build/
+dist/
+target/
+.gradle/
+
+# Python specific
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Compressed files
 *.zip

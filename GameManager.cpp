@@ -137,12 +137,42 @@ void GameManager::render() {
     glm::mat4 view;
     player.getViewMatrix(glm::value_ptr(view));
 
-    // Setup point light (can be moved around)
+    // Find first light entity from BSP and use its position
+    auto lightEntities = bspLoader.getEntitiesByClass("light");
     PointLight pointLight;
-    pointLight.position = glm::vec3(0.0f, 5.0f, 0.0f);
-    pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
-    pointLight.intensity = 1.5f;
-    pointLight.radius = 25.0f;
+    if (!lightEntities.empty()) {
+        pointLight.position = lightEntities[0].origin;
+        // Try to parse light properties
+        auto colorIt = lightEntities[0].properties.find("_color");
+        if (colorIt != lightEntities[0].properties.end()) {
+            float r, g, b;
+            if (sscanf(colorIt->second.c_str(), "%f %f %f", &r, &g, &b) == 3) {
+                pointLight.color = glm::vec3(r, g, b);
+            } else {
+                pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
+            }
+        } else {
+            pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
+        }
+        
+        auto intensityIt = lightEntities[0].properties.find("light");
+        if (intensityIt != lightEntities[0].properties.end()) {
+            pointLight.intensity = std::stof(intensityIt->second) / 300.0f;
+        } else {
+            pointLight.intensity = 1.5f;
+        }
+        
+        pointLight.radius = 25.0f;
+        std::cout << "[GameManager] Using light entity at (" 
+                  << pointLight.position.x << ", " << pointLight.position.y << ", " << pointLight.position.z << ")\n";
+    } else {
+        // Fallback to default position if no light entity found
+        pointLight.position = glm::vec3(0.0f, 5.0f, 0.0f);
+        pointLight.color = glm::vec3(1.0f, 0.9f, 0.7f);
+        pointLight.intensity = 1.5f;
+        pointLight.radius = 25.0f;
+        std::cout << "[GameManager] No light entity found, using fallback position\n";
+    }
     ShaderManager::setPointLight(pointLight);
 
     // Setup sun light for shadows
