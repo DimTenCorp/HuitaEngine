@@ -79,14 +79,16 @@ int main() {
         collider = std::make_unique<MeshCollider>();
         collider->buildFromBSP(bspLoader.getMeshVertices(), bspLoader.getMeshIndices());
 
-        auto lightPositions = bspLoader.getLightPositions();
+        auto lightInfos = bspLoader.getLightInfos();
 
-        // Создаём лампы из BSP с разными типами теней
-        for (size_t i = 0; i < lightPositions.size() && i < 256; i++) {
+        // Создаём лампы из BSP с параметрами из карты
+        for (size_t i = 0; i < lightInfos.size() && i < 256; i++) {
+            const auto& info = lightInfos[i];
+            
             auto light = std::make_unique<PointLight>();
-            light->color = glm::vec3(1.0f, 0.7f, 0.3f);
-            light->intensity = 2.0f;
-            light->init(lightPositions[i], 25.0f, 256);
+            light->color = info.color;
+            light->intensity = info.intensity;
+            light->init(info.position, info.radius, 256);
 
             // Определяем тип лампы
             // Первые 10 ламп делаем HYBRID (для тестирования динамических теней)
