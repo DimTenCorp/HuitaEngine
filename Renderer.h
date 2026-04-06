@@ -249,6 +249,9 @@ float sampleShadowAtlas(int slot, vec3 fragPos, vec3 lightPos, float radius) {
     
     vec3 lightToFrag = fragPos - lightPos;
     float currentDepth = length(lightToFrag);
+
+    if (currentDepth > radius) return 0.0;
+
     vec3 dir = normalize(lightToFrag);
     
     vec3 absDir = abs(dir);
@@ -283,9 +286,11 @@ float sampleShadowAtlas(int slot, vec3 fragPos, vec3 lightPos, float radius) {
     );
     
     float closestDepth = texture(shadowAtlas, atlasUV).r;
-    float bias = 0.05;
-    
-    return (currentDepth - bias <= closestDepth * radius) ? 1.0 : 0.0;
+    float bias = max(0.01 * (1.0 - dot(normalize(fragPos - lightPos), normalize(vec3(0,1,0)))), 0.005);
+
+    float shadow = (currentDepth > closestDepth + bias) ? 0.0 : 1.0;
+
+    return shadow;
 }
 
 float calcFlashlightShadow(vec3 worldPos) {
