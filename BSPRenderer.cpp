@@ -7,6 +7,8 @@ unsigned int BSPRenderer::vao = 0, BSPRenderer::vbo = 0, BSPRenderer::ebo = 0;
 size_t BSPRenderer::indexCount = 0;
 std::vector<FaceDrawCall> BSPRenderer::sortedDrawCalls;
 GLuint BSPRenderer::defaultTex = 0;
+unsigned int BSPRenderer::shadowMapFBO = 0;
+unsigned int BSPRenderer::shadowMapTexture = 0;
 
 bool BSPRenderer::initialize(BSPLoader& loader, MeshCollider& collider) {
     if (!loader.isLoaded()) return false;
@@ -18,6 +20,7 @@ bool BSPRenderer::initialize(BSPLoader& loader, MeshCollider& collider) {
 
     setupCollider(loader, collider);
     setupBuffers(vertices, indices);
+    setupShadowMap();
 
     // Sort draw calls by texture for batching
     sortedDrawCalls = loader.getDrawCalls();
@@ -27,6 +30,35 @@ bool BSPRenderer::initialize(BSPLoader& loader, MeshCollider& collider) {
     defaultTex = loader.getDefaultTextureID();
 
     return true;
+}
+
+void BSPRenderer::setupShadowMap() {
+    // Create depth texture
+    glGenTextures(1, &shadowMapTexture);
+    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    
+    // Create FBO
+    glGenFramebuffers(1, &shadowMapFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Shadow map framebuffer incomplete!\n";
+    }
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    std::cout << "Shadow map initialized: " << SHADOW_WIDTH << "x" << SHADOW_HEIGHT << "\n";
 }
 
 void BSPRenderer::setupCollider(BSPLoader& loader, MeshCollider& collider) {
@@ -70,6 +102,38 @@ void BSPRenderer::setupBuffers(const std::vector<BSPVertex>& vertices,
     indexCount = indices.size();
 }
 
+void BSPRenderer::renderShadowPass(BSPLoader& loader, const glm::mat4& lightSpaceMatrix) {
+    if (vao == 0) return;
+    
+    // Render to shadow map FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+    
+    ShaderManager::useShadowShader();
+    ShaderManager::setShadowMVP(lightSpaceMatrix);
+    
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    
+    const glm::mat4 model(1.0f);
+    
+    if (!sortedDrawCalls.empty()) {
+        for (const auto& dc : sortedDrawCalls) {
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount),
+                GL_UNSIGNED_INT,
+                (void*)(dc.indexOffset * sizeof(unsigned int)));
+        }
+    }
+    else {
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount),
+            GL_UNSIGNED_INT, 0);
+    }
+    
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void BSPRenderer::render(BSPLoader& loader,
     const glm::mat4& projection,
     const glm::mat4& view,
@@ -77,6 +141,8 @@ void BSPRenderer::render(BSPLoader& loader,
     if (vao == 0) return;
 
     ShaderManager::use();
+    ShaderManager::setView(view);
+    ShaderManager::setProjection(projection);
     ShaderManager::setViewPos(viewPos);
 
     glBindVertexArray(vao);
@@ -99,7 +165,6 @@ void BSPRenderer::render(BSPLoader& loader,
             ShaderManager::setColor(glm::vec3(1.0f));
 
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount),
-                GL_UNSIGNED_INT,
                 (void*)(dc.indexOffset * sizeof(unsigned int)));
         }
     }
@@ -123,4 +188,8 @@ void BSPRenderer::cleanup() {
     vao = vbo = ebo = 0;
     indexCount = 0;
     sortedDrawCalls.clear();
+    
+    if (shadowMapFBO) glDeleteFramebuffers(1, &shadowMapFBO);
+    if (shadowMapTexture) glDeleteTextures(1, &shadowMapTexture);
+    shadowMapFBO = shadowMapTexture = 0;
 }
