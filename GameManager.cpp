@@ -52,6 +52,11 @@ bool GameManager::initOpenGL() {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CW);
+    
+    // Отключаем discard в шейдере для отладки - включаем blending
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
     return true;
 }
 
@@ -193,8 +198,11 @@ void GameManager::render() {
     // Shadow pass
     BSPRenderer::renderShadowPass(bspLoader, lightSpaceMatrix);
 
-    // Restore viewport
+    // Restore viewport and default framebuffer for main render pass
     glViewport(0, 0, Config::SCR_WIDTH, Config::SCR_HEIGHT);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Main render pass
     ShaderManager::bindShadowMap(BSPRenderer::getShadowMapTexture());

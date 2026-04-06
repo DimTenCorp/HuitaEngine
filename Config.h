@@ -22,10 +22,10 @@ namespace Config {
     static constexpr int KEY_NOCLIP = GLFW_KEY_V;
     static constexpr int KEY_QUIT = GLFW_KEY_ESCAPE;
 
-    // Рендеринг
-    static constexpr float CLEAR_R = 0.1f;
-    static constexpr float CLEAR_G = 0.15f;
-    static constexpr float CLEAR_B = 0.2f;
+    // Рендеринг - яркие цвета для отладки
+    static constexpr float CLEAR_R = 0.0f;
+    static constexpr float CLEAR_G = 0.0f;
+    static constexpr float CLEAR_B = 0.0f;
 
     // Игрок
     namespace Player {
