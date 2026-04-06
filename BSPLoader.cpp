@@ -43,6 +43,30 @@ BSPLoader::~BSPLoader() {
     cleanupTextures();
 }
 
+std::vector<glm::vec3> BSPLoader::getLightPositions() const {
+    std::vector<glm::vec3> lights;
+
+    std::cout << "[BSP] Scanning " << entities.size() << " entities for lights...\n";
+
+    for (const auto& entity : entities) {
+        // Расширенный список классов света
+        if (entity.classname == "light" ||
+            entity.classname == "light_spot" ||
+            entity.classname == "light_environment" ||
+            entity.classname == "light_point" ||
+            entity.classname.find("light") != std::string::npos) {
+
+            lights.push_back(entity.origin);
+            std::cout << "[BSP] Found light: " << entity.classname
+                << " at (" << entity.origin.x << ", "
+                << entity.origin.y << ", " << entity.origin.z << ")\n";
+        }
+    }
+
+    std::cout << "[BSP] Total lights found: " << lights.size() << "\n";
+    return lights;
+}
+
 bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_VERTICES];
     if (lump.length == 0) return false;

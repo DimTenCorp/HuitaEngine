@@ -115,6 +115,7 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
+    std::vector<glm::vec3> getLightPositions() const;
 
     friend class LightSystem;
 };
