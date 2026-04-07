@@ -186,6 +186,9 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type) {
 }
 
 int Shader::getUniformLocationInternal(const std::string& name) {
+    // Check if program is valid
+    if (ID == 0) return -1;
+    
     auto it = uniformCache.find(name);
     if (it != uniformCache.end()) {
         return it->second;
@@ -194,6 +197,10 @@ int Shader::getUniformLocationInternal(const std::string& name) {
     int location = glGetUniformLocation(ID, name.c_str());
     uniformCache[name] = location;
     return location;
+}
+
+void Shader::invalidateUniformCache() {
+    uniformCache.clear();
 }
 
 void Shader::use() {

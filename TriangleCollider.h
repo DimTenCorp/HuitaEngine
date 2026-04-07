@@ -16,20 +16,27 @@ struct Triangle {
         bounds.min = glm::vec3(0);
         bounds.max = glm::vec3(0);
     }
-    Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
-        v0 = a; v1 = b; v2 = c;
+    Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) 
+        : v0(a), v1(b), v2(c), normal(0, 0, 1) {
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
-        float len = glm::length(edge1);
-        if (len > 0.0001f && glm::length(edge2) > 0.0001f) {
-            normal = glm::normalize(glm::cross(edge1, edge2));
-        } else {
-            normal = glm::vec3(0, 0, 1);
+        float len1 = glm::length(edge1);
+        float len2 = glm::length(edge2);
+        if (len1 > 0.0001f && len2 > 0.0001f) {
+            glm::vec3 cross = glm::cross(edge1, edge2);
+            float crossLen = glm::length(cross);
+            if (crossLen > 0.0001f) {
+                normal = cross / crossLen;
+            }
         }
         bounds.min = glm::min(glm::min(v0, v1), v2);
         bounds.max = glm::max(glm::max(v0, v1), v2);
         // Ensure valid AABB invariant: min <= max
-        bounds.max = glm::max(bounds.max, bounds.min);
+        for (int i = 0; i < 3; ++i) {
+            if (bounds.min[i] > bounds.max[i]) {
+                std::swap(bounds.min[i], bounds.max[i]);
+            }
+        }
     }
 };
 

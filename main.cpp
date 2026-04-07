@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <new>
 #include "Shader.h"
 #include "Player.h"
 #include "HUD.h"
@@ -24,8 +25,8 @@ const unsigned int SCR_HEIGHT = 720;
 
 // Глобальные переменные инкапсулированы в namespace для лучшей организации
 namespace {
-    Player g_player;
-    Renderer g_renderer;
+    Player* g_player = nullptr;
+    Renderer* g_renderer = nullptr;
     float g_lastX = SCR_WIDTH / 2.0f;
     float g_lastY = SCR_HEIGHT / 2.0f;
     bool g_firstMouse = true;
@@ -35,8 +36,8 @@ namespace {
     float g_pitch = 0.0f;
     bool g_f1Pressed = false, g_f2Pressed = false, g_f3Pressed = false, g_f4Pressed = true, g_noclipPressed = false;
     
-    BSPLoader g_bspLoader;
-    MeshCollider g_meshCollider;
+    BSPLoader* g_bspLoader = nullptr;
+    MeshCollider* g_meshCollider = nullptr;
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -56,6 +57,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void processInput(GLFWwindow* window, HUD& hud) {
+    if (!g_player || !g_renderer) return;
+
     if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS && !g_f1Pressed) {
         hud.toggleCrosshair(); g_f1Pressed = true;
     }
@@ -72,29 +75,31 @@ void processInput(GLFWwindow* window, HUD& hud) {
     if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_RELEASE) g_f3Pressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS && !g_f4Pressed) {
-        g_renderer.setShowHitbox(!g_renderer.getShowHitbox()); g_f4Pressed = true;
+        g_renderer->setShowHitbox(!g_renderer->getShowHitbox()); g_f4Pressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_RELEASE) g_f4Pressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && !g_noclipPressed) {
-        g_player.toggleNoclip();
-        std::cout << "Noclip: " << (g_player.isNoclip() ? "ON" : "OFF") << std::endl;
+        g_player->toggleNoclip();
+        std::cout << "Noclip: " << (g_player->isNoclip() ? "ON" : "OFF") << std::endl;
         g_noclipPressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE) g_noclipPressed = false;
 }
 
 bool initSystems(WADLoader& wadLoader) {
-    if (!g_bspLoader.load("maps/crossfire.bsp", wadLoader)) {
+    if (!g_bspLoader || !g_player || !g_renderer || !g_meshCollider) return false;
+
+    if (!g_bspLoader->load("maps/crossfire.bsp", wadLoader)) {
         std::cerr << "Failed to load BSP" << std::endl;
         return false;
     }
 
-    const auto& vertices = g_bspLoader.getMeshVertices();
-    g_meshCollider.buildFromBSP(vertices, g_bspLoader.getMeshIndices());
-    std::cout << "Mesh collider built with " << g_meshCollider.getTriangleCount() << " triangles" << std::endl;
+    const auto& vertices = g_bspLoader->getMeshVertices();
+    g_meshCollider->buildFromBSP(vertices, g_bspLoader->getMeshIndices());
+    std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount() << " triangles" << std::endl;
 
-    if (!g_renderer.loadWorld(g_bspLoader)) {
+    if (!g_renderer->loadWorld(*g_bspLoader)) {
         std::cerr << "Failed to load world into renderer" << std::endl;
         return false;
     }
@@ -102,16 +107,16 @@ bool initSystems(WADLoader& wadLoader) {
     glm::vec3 spawnPos;
     glm::vec3 spawnAngles;
 
-    if (g_bspLoader.findPlayerStart(spawnPos, spawnAngles)) {
-        g_player.setPosition(spawnPos);
+    if (g_bspLoader->findPlayerStart(spawnPos, spawnAngles)) {
+        g_player->setPosition(spawnPos);
         g_yaw = spawnAngles.y;
         g_pitch = spawnAngles.x;
-        g_player.setYaw(g_yaw);
-        g_player.setPitch(g_pitch);
+        g_player->setYaw(g_yaw);
+        g_player->setPitch(g_pitch);
     }
     else {
-        auto bounds = g_bspLoader.getWorldBounds();
-        g_player.setPosition(glm::vec3(0.0f, bounds.min.y + 10.0f, 0.0f));
+        auto bounds = g_bspLoader->getWorldBounds();
+        g_player->setPosition(glm::vec3(0.0f, bounds.min.y + 10.0f, 0.0f));
     }
 
     return true;
@@ -157,9 +162,30 @@ int main() {
     std::cout << "OpenGL Version: " << version << std::endl;
     std::cout << "Renderer: " << renderer_str << std::endl;
 
+    // Выделяем память для глобальных объектов
+    g_player = new (std::nothrow) Player();
+    g_renderer = new (std::nothrow) Renderer();
+    g_bspLoader = new (std::nothrow) BSPLoader();
+    g_meshCollider = new (std::nothrow) MeshCollider();
+
+    if (!g_player || !g_renderer || !g_bspLoader || !g_meshCollider) {
+        std::cerr << "Failed to allocate global objects" << std::endl;
+        delete g_player;
+        delete g_renderer;
+        delete g_bspLoader;
+        delete g_meshCollider;
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return -1;
+    }
+
     // Инициализация рендерера
-    if (!renderer.init(SCR_WIDTH, SCR_HEIGHT)) {
+    if (!g_renderer->init(SCR_WIDTH, SCR_HEIGHT)) {
         std::cerr << "Failed to init renderer" << std::endl;
+        delete g_player;
+        delete g_renderer;
+        delete g_bspLoader;
+        delete g_meshCollider;
         glfwDestroyWindow(window);
         glfwTerminate();
         return -1;
@@ -186,15 +212,15 @@ int main() {
 
     if (!initSystems(wadLoader)) {
         std::cerr << "Failed to init systems, using fallback" << std::endl;
-        player.setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
+        g_player->setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
     }
 
     // Главный цикл
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = (float)glfwGetTime();
-        deltaTime = currentFrame - lastFrame;
-        lastFrame = currentFrame;
-        if (deltaTime > 0.05f) deltaTime = 0.05f;
+        g_deltaTime = currentFrame - g_lastFrame;
+        g_lastFrame = currentFrame;
+        if (g_deltaTime > 0.05f) g_deltaTime = 0.05f;
 
         // Обработка ввода
         processInput(window, hud);
@@ -203,21 +229,21 @@ int main() {
             glfwSetWindowShouldClose(window, true);
 
         // Обновление игровой логики
-        player.update(deltaTime, yaw, pitch, &meshCollider);
-        hud.update(deltaTime, player.getPosition());
+        g_player->update(g_deltaTime, g_yaw, g_pitch, g_meshCollider);
+        hud.update(g_deltaTime, g_player->getPosition());
 
         // Рендеринг
-        renderer.beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
+        g_renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
 
         glm::mat4 view;
-        player.getViewMatrix(glm::value_ptr(view));
+        g_player->getViewMatrix(glm::value_ptr(view));
 
-        renderer.renderWorld(view, player.getEyePosition());
+        g_renderer->renderWorld(view, g_player->getEyePosition());
 
-        if (renderer.getShowHitbox()) {
+        if (g_renderer->getShowHitbox()) {
             glm::mat4 projection = glm::perspective(glm::radians(75.0f),
                 (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 1000.0f);
-            renderer.renderHitbox(view, projection, player.getPosition(), true);
+            g_renderer->renderHitbox(view, projection, g_player->getPosition(), true);
         }
 
         hud.render(SCR_WIDTH, SCR_HEIGHT);
@@ -227,8 +253,18 @@ int main() {
     }
 
     // Очистка
-    renderer.unloadWorld();
-    bspLoader.cleanupTextures();
+    g_renderer->unloadWorld();
+    g_bspLoader->cleanupTextures();
+    
+    delete g_player;
+    delete g_renderer;
+    delete g_bspLoader;
+    delete g_meshCollider;
+    g_player = nullptr;
+    g_renderer = nullptr;
+    g_bspLoader = nullptr;
+    g_meshCollider = nullptr;
+    
     glfwTerminate();
     return 0;
 }

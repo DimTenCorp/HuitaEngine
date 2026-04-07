@@ -2,6 +2,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
+#include <memory>
 #include "BSPLoader.h"
 #include "Shader.h"
 
@@ -59,9 +60,9 @@ private:
     GLuint cubeVAO = 0, cubeVBO = 0, cubeEBO = 0;
     bool showHitbox = true;
 
-    Shader* geometryShader = nullptr;
-    Shader* lightingShader = nullptr;
-    Shader* forwardShader = nullptr;
+    std::unique_ptr<Shader> geometryShader;
+    std::unique_ptr<Shader> lightingShader;
+    std::unique_ptr<Shader> forwardShader;
 
     GBuffer gBuffer;
     Flashlight flashlight;

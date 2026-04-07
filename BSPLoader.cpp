@@ -352,21 +352,24 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             if (key == "model") entity.model = value;
 
             if (key == "origin") {
-                int parsed = sscanf(value.c_str(), "%f %f %f", &entity.origin.x, &entity.origin.y, &entity.origin.z);
+                float ox = 0, oy = 0, oz = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
                 if (parsed != 3) {
                     std::cerr << "[BSP] Failed to parse origin: \"" << value << "\"\n";
                     entity.origin = glm::vec3(0);
                 } else {
-                    glm::vec3 original(entity.origin.x, entity.origin.y, entity.origin.z);
-                    entity.origin = convertPosition(original);
+                    entity.origin = convertPosition(glm::vec3(ox, oy, oz));
                 }
             }
 
             if (key == "angles") {
-                int parsed = sscanf(value.c_str(), "%f %f %f", &entity.angles.x, &entity.angles.y, &entity.angles.z);
+                float ax = 0, ay = 0, az = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ax, &ay, &az);
                 if (parsed != 3) {
                     std::cerr << "[BSP] Failed to parse angles: \"" << value << "\"\n";
                     entity.angles = glm::vec3(0);
+                } else {
+                    entity.angles = glm::vec3(ax, ay, az);
                 }
             }
         }

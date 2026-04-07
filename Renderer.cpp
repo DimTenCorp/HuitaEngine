@@ -101,21 +101,18 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
-    geometryShader = new Shader();
+    geometryShader = std::make_unique<Shader>();
     if (!geometryShader->loadFromStrings(getGeometryVert(), getGeometryFrag())) {
         std::cerr << "Geometry shader fail: " << geometryShader->getError() << std::endl;
-        delete geometryShader;
-        geometryShader = nullptr;
+        geometryShader.reset();
         return false;
     }
 
-    lightingShader = new Shader();
+    lightingShader = std::make_unique<Shader>();
     if (!lightingShader->loadFromStrings(getLightingVert(), getLightingFrag())) {
         std::cerr << "Lighting shader fail: " << lightingShader->getError() << std::endl;
-        delete geometryShader;
-        geometryShader = nullptr;
-        delete lightingShader;
-        lightingShader = nullptr;
+        geometryShader.reset();
+        lightingShader.reset();
         return false;
     }
 
@@ -127,10 +124,8 @@ bool Renderer::init(int width, int height) {
 
     if (!createGBuffer(width, height)) {
         std::cerr << "Failed to create G-Buffer!" << std::endl;
-        delete geometryShader;
-        geometryShader = nullptr;
-        delete lightingShader;
-        lightingShader = nullptr;
+        geometryShader.reset();
+        lightingShader.reset();
         return false;
     }
 
@@ -394,9 +389,10 @@ void Renderer::createHitboxMesh() {
 void Renderer::cleanup() {
     destroyGBuffer();
 
-    if (geometryShader) { delete geometryShader; geometryShader = nullptr; }
-    if (lightingShader) { delete lightingShader; lightingShader = nullptr; }
-    if (forwardShader) { delete forwardShader; forwardShader = nullptr; }
+    // Unique pointers automatically clean up - just reset them
+    geometryShader.reset();
+    lightingShader.reset();
+    forwardShader.reset();
 
     if (bspVAO) glDeleteVertexArrays(1, &bspVAO);
     if (bspVBO) glDeleteBuffers(1, &bspVBO);
