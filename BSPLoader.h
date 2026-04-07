@@ -40,8 +40,8 @@ struct BSPTexInfo { float s[4]; float t[4]; int textureIndex; int flags; };
 
 struct BSPVertex {
     glm::vec3 position;
-    glm::vec2 texCoord;
     glm::vec3 normal;
+    glm::vec2 texCoord;
 };
 
 struct BSPEntity {

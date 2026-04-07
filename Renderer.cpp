@@ -2,7 +2,9 @@
 #include <iostream>
 #include <algorithm>
 #include <cstring>
+#include <cstddef>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 Renderer::Renderer() = default;
 Renderer::~Renderer() { cleanup(); }
