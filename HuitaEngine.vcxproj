@@ -265,6 +265,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Dev\vcpkg\installed\x64-windows\include\glad\glad.h" />
+    <ClInclude Include="AABB.h" />
     <ClInclude Include="BSPLoader.h" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="Entity.h" />
