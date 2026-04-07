@@ -4,10 +4,12 @@
 #include <unordered_map>
 #include <string>
 #include <glad/glad.h>
-#include "Player.h"
+
+// Включаем полное определение AABB
 #include "TriangleCollider.h"
 
-struct AABB;
+// Forward declaration только для WADLoader
+class WADLoader;
 
 #pragma pack(push, 1)
 struct BSPLump { int offset; int length; };
@@ -55,8 +57,6 @@ struct FaceDrawCall {
     unsigned int indexOffset;
     unsigned int indexCount;
 };
-
-class WADLoader; // Forward declaration
 
 class BSPLoader {
 private:
@@ -111,6 +111,7 @@ public:
     void cleanupTextures();
 
     void printStats() const;
+    void debugPrintEntities() const;
     bool isLoaded() const { return !meshVertices.empty(); }
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;

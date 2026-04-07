@@ -253,14 +253,11 @@
     <ClCompile Include="BSPLoader.cpp" />
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="HUD.cpp" />
-    <ClCompile Include="InputManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Player.cpp" />
-    <ClCompile Include="PointLight.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Shader.cpp" />
-    <ClCompile Include="ShadowSystem.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
   </ItemGroup>
@@ -269,19 +266,12 @@
     <ClInclude Include="BSPLoader.h" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="HUD.h" />
-    <ClInclude Include="InputManager.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Player.h" />
-    <ClInclude Include="PointLight.h" />
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="Shader.h" />
-    <ClInclude Include="ShadowSystem.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="fragment.glsl" />
-    <None Include="vertex.glsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

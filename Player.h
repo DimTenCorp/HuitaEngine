@@ -26,7 +26,7 @@ private:
     const MeshCollider* meshCollider = nullptr;
     bool jumpKeyWasHeld = false;
 
-    float stepHeight = 0.45f; // Максимальная высота ступеньки/склона
+    float stepHeight = 0.45f;
     float stepUpSpeed = 1.0f;
 
 public:
@@ -41,7 +41,8 @@ public:
     bool checkCollision(const glm::vec3& pos, const AABB& box);
     bool checkCollisionMesh(const glm::vec3& pos) const;
     bool checkOnGround() const;
-    bool tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight);
+    // ИСПРАВЛЕНО: добавлен deltaTime параметр
+    bool tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight, float deltaTime);
 
     void resolveCollisionAxis(float deltaTime, int axis);
 

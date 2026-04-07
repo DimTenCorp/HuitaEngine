@@ -3,7 +3,7 @@
 #include <vector>
 #include <algorithm>
 
-// Forward declaration of AABB (must be defined before use)
+// Forward declaration of AABB
 struct AABB {
     glm::vec3 min;
     glm::vec3 max;
@@ -34,7 +34,7 @@ struct SweepResult {
     float distance = 0.0f;
 };
 
-// Forward declaration of BSPVertex (defined in BSPLoader.h)
+// Forward declaration of BSPVertex
 struct BSPVertex;
 
 class MeshCollider {
@@ -51,7 +51,6 @@ private:
 public:
     MeshCollider() = default;
 
-    // Use const reference to avoid needing full BSPVertex definition here
     void buildFromBSP(const std::vector<BSPVertex>& vertices,
         const std::vector<unsigned int>& indices);
 

@@ -8,6 +8,7 @@
 #include <cctype>
 #include <fstream>
 #include "WADLoader.h"
+#include "TriangleCollider.h"
 
 static const float BSP_SCALE = 0.025f;
 
@@ -319,14 +320,12 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             if (key == "classname") entity.classname = value;
             if (key == "model") entity.model = value;
 
-            // Парсим origin (позиция)
             if (key == "origin") {
                 sscanf(value.c_str(), "%f %f %f", &entity.origin.x, &entity.origin.y, &entity.origin.z);
                 glm::vec3 original(entity.origin.x, entity.origin.y, entity.origin.z);
                 entity.origin = convertPosition(original);
             }
 
-            // Парсим angles (поворот)
             if (key == "angles") {
                 sscanf(value.c_str(), "%f %f %f", &entity.angles.x, &entity.angles.y, &entity.angles.z);
             }
@@ -407,12 +406,6 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         glm::vec3 s_vec(texInfo.s[0], texInfo.s[1], texInfo.s[2]);
         glm::vec3 t_vec(texInfo.t[0], texInfo.t[1], texInfo.t[2]);
 
-        glm::vec3 s_converted(-s_vec.x, s_vec.z, s_vec.y);
-        glm::vec3 t_converted(-t_vec.x, t_vec.z, t_vec.y);
-
-        float s_offset = texInfo.s[3];
-        float t_offset = texInfo.t[3];
-
         std::vector<glm::vec2> texCoords;
         texCoords.reserve(faceVerts.size());
 
@@ -423,8 +416,8 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
                 pos.y / BSP_SCALE
             );
 
-            float u = glm::dot(originalBSPPos, s_vec) + s_offset;
-            float v = glm::dot(originalBSPPos, t_vec) + t_offset;
+            float u = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
+            float v = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
 
             u = u / (float)texWidth;
             v = v / (float)texHeight;

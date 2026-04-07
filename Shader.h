@@ -1,11 +1,7 @@
 #pragma once
-
-// Сначала подключаем OpenGL и GLM
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
-// Потом стандартные библиотеки
 #include <string>
 
 class Shader {
@@ -16,9 +12,11 @@ private:
 
 public:
     Shader(const char* vertexPath, const char* fragmentPath);
+    Shader(const std::string& vertexCode, const std::string& fragmentCode);
     ~Shader();
 
     void use();
+    unsigned int getID() const { return ID; }
     void setBool(const std::string& name, bool value) const;
     void setInt(const std::string& name, int value) const;
     void setFloat(const std::string& name, float value) const;

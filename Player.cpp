@@ -50,7 +50,6 @@ void Player::handleInput(float deltaTime) {
         velocity.z = 0.0f;
     }
 
-    // Прыжок
     GLFWwindow* win = glfwGetCurrentContext();
     bool spacePressed = (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS);
 
@@ -123,11 +122,10 @@ bool Player::checkOnGround() const {
     return checkCollisionMesh(testPos);
 }
 
-// Пробуем подняться на ступеньку/склон
-bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight) {
+// ИСПРАВЛЕНО: добавлен deltaTime параметр
+bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight, float deltaTime) {
     if (!meshCollider) return false;
 
-    // 1. Проверяем, есть ли вообще препятствие перед нами
     glm::vec3 horizontalTestPos = fromPos;
     horizontalTestPos.x += moveDir.x;
     horizontalTestPos.z += moveDir.z;
@@ -136,51 +134,40 @@ bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float
         return false;
     }
 
-    // 2. Ищем максимально высокую точку (пол) в направлении движения
-    // Мы сканируем сверху вниз от (текущая высота + maxStepHeight)
-    glm::vec3 scanPos = fromPos;
-    scanPos.x += moveDir.x;
-    scanPos.z += moveDir.z;
-    scanPos.y += maxStepHeight;
+    float low = 0.0f, high = maxStepHeight;
+    float foundHeight = -1.0f;
 
-    float foundHeight = -9999.0f;
-    bool foundFloor = false;
+    for (int i = 0; i < 8; i++) {
+        float mid = (low + high) * 0.5f;
+        glm::vec3 testPos = fromPos + glm::vec3(moveDir.x, mid, moveDir.z);
 
-    // Спускаемся вниз, чтобы найти поверхность ступеньки
-    for (float h = maxStepHeight; h >= -0.01f; h -= 0.01f) {
-        glm::vec3 checkFloorPos = fromPos + glm::vec3(moveDir.x, h, moveDir.z);
-        if (checkCollisionMesh(checkFloorPos)) {
-            foundHeight = fromPos.y + h + 0.005f;
-            foundFloor = true;
-            break;
+        if (checkCollisionMesh(testPos)) {
+            low = mid;
+        }
+        else {
+            foundHeight = fromPos.y + mid;
+            high = mid;
         }
     }
 
-    if (!foundFloor) return false;
+    if (foundHeight < 0.0f || (foundHeight - fromPos.y) < 0.001f) {
+        return false;
+    }
 
     float heightDiff = foundHeight - fromPos.y;
+    if (heightDiff > maxStepHeight) return false;
 
-    // Проверяем, не слишком ли высокая ступенька
-    if (heightDiff > maxStepHeight || heightDiff <= 0.001f) {
+    glm::vec3 headTestPos = fromPos;
+    headTestPos.x += moveDir.x;
+    headTestPos.z += moveDir.z;
+    headTestPos.y = foundHeight + size.y * 2.0f - 0.01f;
+
+    if (checkCollisionMesh(headTestPos)) {
         return false;
     }
 
-    // 3. КРИТИЧЕСКАЯ ПРОВЕРКА: Пролезет ли игрок по росту?
-    // Проверяем коллизию в целевой позиции с учетом новой высоты foundHeight
-    glm::vec3 finalPosCandidate = fromPos;
-    finalPosCandidate.x += moveDir.x;
-    finalPosCandidate.z += moveDir.z;
-    finalPosCandidate.y = foundHeight;
-
-    if (checkCollisionMesh(finalPosCandidate)) {
-        // Если здесь коллизия, значит места для роста 0.9 (size.y * 2) не хватает.
-        // Потолок слишком низко над этой ступенькой.
-        return false;
-    }
-
-    // 4. Если всё чисто, выполняем подъем
-    float maxStepThisFrame = stepUpSpeed * 0.016f;
-    float actualRise = std::min(heightDiff, maxStepThisFrame);
+    float riseThisFrame = stepUpSpeed * deltaTime;
+    float actualRise = std::min(heightDiff, riseThisFrame);
 
     position.y += actualRise;
     position.x = fromPos.x + moveDir.x;
@@ -193,7 +180,6 @@ bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float
     }
     else {
         onGround = false;
-        velocity.y = stepUpSpeed * 0.5f;
     }
 
     return true;
@@ -208,13 +194,12 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
     if (checkCollisionMesh(newPos)) {
         if (axis == 0) {
-            // X коллизия - пробуем подняться на ступеньку
             glm::vec3 moveDir(velocity.x * deltaTime, 0.0f, 0.0f);
-            if (!tryStepUp(position, moveDir, stepHeight)) {
+            // ИСПРАВЛЕНО: передаем deltaTime
+            if (!tryStepUp(position, moveDir, stepHeight, deltaTime)) {
                 velocity.x = 0;
             }
             else {
-                // Если поднялись - очищаем горизонтальную скорость чтобы не застрять
                 velocity.x *= 0.5f;
             }
         }
@@ -228,9 +213,9 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
             }
         }
         else {
-            // Z коллизия - пробуем подняться на ступеньку
             glm::vec3 moveDir(0.0f, 0.0f, velocity.z * deltaTime);
-            if (!tryStepUp(position, moveDir, stepHeight)) {
+            // ИСПРАВЛЕНО: передаем deltaTime
+            if (!tryStepUp(position, moveDir, stepHeight, deltaTime)) {
                 velocity.z = 0;
             }
             else {
@@ -252,14 +237,11 @@ void Player::moveWithCollision(float deltaTime) {
         onGround = false;
     }
 
-    // Горизонтальное движение с подъемом на ступеньки
     resolveCollisionAxis(deltaTime, 0);
     resolveCollisionAxis(deltaTime, 2);
 
-    // Вертикальное
     resolveCollisionAxis(deltaTime, 1);
 
-    // Проверка земли после движения
     if (!onGround && velocity.y < 0) {
         if (checkOnGround()) {
             onGround = true;
@@ -267,26 +249,21 @@ void Player::moveWithCollision(float deltaTime) {
         }
     }
 
-    // === ИСПРАВЛЕНИЕ: Финальный снаппинг к полу ===
     if (onGround && velocity.y == 0) {
-        // Находим точную высоту пола под нами
         glm::vec3 testPos = position;
         float groundHeight = -9999.0f;
 
-        // Спускаемся вниз пока не найдем пол
-        for (int i = 0; i < 60; i++) { // Максимум 0.3 юнита вниз
+        for (int i = 0; i < 60; i++) {
             testPos.y -= 0.005f;
             if (checkCollisionMesh(testPos)) {
-                groundHeight = testPos.y + 0.005f + 0.001f; // +0.001f чтобы не задеть пол
+                groundHeight = testPos.y + 0.005f + 0.001f;
                 break;
             }
         }
 
-        // Если нашли пол и мы выше него - прижимаем
         if (groundHeight > -9000.0f) {
             float diff = position.y - groundHeight;
             if (diff > 0.001f && diff < 0.1f) {
-                // Мы парим над полом - прижимаем
                 position.y = groundHeight;
             }
         }
