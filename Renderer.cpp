@@ -20,7 +20,7 @@ out vec3 vNormal;
 out vec3 vFragPos;
 void main() {
     vTexCoord = aTexCoord;
-    vNormal = aNormal;
+    vNormal = mat3(transpose(inverse(model))) * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
     gl_Position = projection * view * model * vec4(aPos, 1.0);
 }

@@ -278,16 +278,6 @@
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="fragment.glsl">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
-    <None Include="vertex.glsl">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
-  </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Dima|x64'">
     <PostBuildEvent>
       <Message>Copying shader files to output directory</Message>
