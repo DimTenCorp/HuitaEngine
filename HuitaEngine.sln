@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36616.10 d17.14
+VisualStudioVersion = 17.14.36616.10
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HuitaEngine", "HuitaEngine.vcxproj", "{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}"
 EndProject
@@ -9,6 +9,10 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
+		Dima|x64 = Dima|x64
+		Dima|x86 = Dima|x86
+		lesha|x64 = lesha|x64
+		lesha|x86 = lesha|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
@@ -17,6 +21,14 @@ Global
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Debug|x64.Build.0 = Debug|x64
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Debug|x86.ActiveCfg = Debug|Win32
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Debug|x86.Build.0 = Debug|Win32
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Dima|x64.ActiveCfg = Dima|x64
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Dima|x64.Build.0 = Dima|x64
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Dima|x86.ActiveCfg = Dima|Win32
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Dima|x86.Build.0 = Dima|Win32
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.lesha|x64.ActiveCfg = lesha|x64
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.lesha|x64.Build.0 = lesha|x64
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.lesha|x86.ActiveCfg = lesha|Win32
+		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.lesha|x86.Build.0 = lesha|Win32
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Release|x64.ActiveCfg = Release|x64
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Release|x64.Build.0 = Release|x64
 		{619FB01B-3054-49AD-BD29-DED9F0CDE9CE}.Release|x86.ActiveCfg = Release|Win32
