@@ -205,6 +205,13 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
     const BSPLump& lump = header.lumps[LUMP_TEXTURES];
     if (lump.length == 0) return false;
 
+    // Проверка на разумный размер lump для предотвращения переполнения памяти
+    const size_t MAX_TEXTURE_LUMP_SIZE = 64 * 1024 * 1024; // 64 MB
+    if (lump.length > MAX_TEXTURE_LUMP_SIZE) {
+        std::cerr << "[BSP] Texture lump too large: " << lump.length << " bytes\n";
+        return false;
+    }
+
     std::vector<uint8_t> lumpData(lump.length);
     fseek(file, lump.offset, SEEK_SET);
     if (fread(lumpData.data(), 1, lump.length, file) != lump.length) {
@@ -212,10 +219,27 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         return false;
     }
 
-    int numTextures = *(int*)(lumpData.data());
-    if (numTextures <= 0) return false;
+    // Безопасное чтение количества текстур с проверкой выравнивания
+    if (lumpData.size() < sizeof(int)) {
+        std::cerr << "[BSP] Texture lump data too small.\n";
+        return false;
+    }
+    
+    int numTextures = 0;
+    memcpy(&numTextures, lumpData.data(), sizeof(int));
+    if (numTextures <= 0 || numTextures > 100000) {
+        std::cerr << "[BSP] Invalid number of textures: " << numTextures << "\n";
+        return false;
+    }
 
-    const int* offsets = (const int*)(lumpData.data() + sizeof(int));
+    // Проверка что offsets массив помещается в lumpData
+    size_t offsetsSize = numTextures * sizeof(int);
+    if (sizeof(int) + offsetsSize > lumpData.size()) {
+        std::cerr << "[BSP] Texture offsets array out of bounds.\n";
+        return false;
+    }
+
+    const int* offsets = reinterpret_cast<const int*>(lumpData.data() + sizeof(int));
 
     defaultTextureId = wadLoader.getDefaultTexture();
     glTextureIds.reserve(numTextures);
@@ -252,8 +276,14 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
             continue;
         }
 
-        uint32_t width = *(const uint32_t*)(texPtr + 16);
-        uint32_t height = *(const uint32_t*)(texPtr + 20);
+        // Безопасное чтение ширины и высоты с проверкой границ
+        uint32_t width = 256;
+        uint32_t height = 256;
+        size_t texDataSize = lumpData.size() - offsets[i];
+        if (texDataSize >= 24) { // 16 bytes name + 4 bytes width + 4 bytes height
+            memcpy(&width, texPtr + 16, sizeof(uint32_t));
+            memcpy(&height, texPtr + 20, sizeof(uint32_t));
+        }
 
         if (width == 0 || height == 0 || width > 4096 || height > 4096) {
             width = 256;
@@ -322,13 +352,25 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             if (key == "model") entity.model = value;
 
             if (key == "origin") {
-                sscanf(value.c_str(), "%f %f %f", &entity.origin.x, &entity.origin.y, &entity.origin.z);
-                glm::vec3 original(entity.origin.x, entity.origin.y, entity.origin.z);
-                entity.origin = convertPosition(original);
+                float ox = 0, oy = 0, oz = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
+                if (parsed != 3) {
+                    std::cerr << "[BSP] Failed to parse origin: \"" << value << "\"\n";
+                    entity.origin = glm::vec3(0);
+                } else {
+                    entity.origin = convertPosition(glm::vec3(ox, oy, oz));
+                }
             }
 
             if (key == "angles") {
-                sscanf(value.c_str(), "%f %f %f", &entity.angles.x, &entity.angles.y, &entity.angles.z);
+                float ax = 0, ay = 0, az = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ax, &ay, &az);
+                if (parsed != 3) {
+                    std::cerr << "[BSP] Failed to parse angles: \"" << value << "\"\n";
+                    entity.angles = glm::vec3(0);
+                } else {
+                    entity.angles = glm::vec3(ax, ay, az);
+                }
             }
         }
         entities.push_back(entity);

@@ -253,18 +253,24 @@ void Player::moveWithCollision(float deltaTime) {
     if (onGround && velocity.y == 0) {
         glm::vec3 testPos = position;
         float groundHeight = -9999.0f;
+        
+        // Используем именованные константы вместо магических чисел
+        constexpr int GROUND_SAMPLES = 60;
+        constexpr float SAMPLE_STEP = 0.005f;
+        constexpr float GROUND_EPSILON = 0.001f;
+        constexpr float MAX_GROUND_DIFF = 0.1f;
 
-        for (int i = 0; i < 60; i++) {
-            testPos.y -= 0.005f;
+        for (int i = 0; i < GROUND_SAMPLES; i++) {
+            testPos.y -= SAMPLE_STEP;
             if (checkCollisionMesh(testPos)) {
-                groundHeight = testPos.y + 0.005f + 0.001f;
+                groundHeight = testPos.y + SAMPLE_STEP + GROUND_EPSILON;
                 break;
             }
         }
 
         if (groundHeight > -9000.0f) {
             float diff = position.y - groundHeight;
-            if (diff > 0.001f && diff < 0.1f) {
+            if (diff > GROUND_EPSILON && diff < MAX_GROUND_DIFF) {
                 position.y = groundHeight;
             }
         }

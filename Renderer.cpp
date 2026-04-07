@@ -6,6 +6,94 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// Статические строки шейдеров вынесены в cpp файл для избежания дублирования памяти
+static const char* s_geometryVert = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoord;
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+out vec2 vTexCoord;
+out vec3 vNormal;
+out vec3 vFragPos;
+void main() {
+    vTexCoord = aTexCoord;
+    vNormal = aNormal;
+    vFragPos = vec3(model * vec4(aPos, 1.0));
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+}
+)";
+
+static const char* s_geometryFrag = R"(
+#version 330 core
+in vec2 vTexCoord;
+in vec3 vNormal;
+in vec3 vFragPos;
+layout (location = 0) out vec4 FragPosition;
+layout (location = 1) out vec4 FragNormal;
+layout (location = 2) out vec4 FragAlbedo;
+uniform sampler2D uTexture;
+void main() {
+    vec4 texColor = texture(uTexture, vTexCoord);
+    if (texColor.a < 0.5) discard;
+    FragPosition = vec4(vFragPos, 1.0);
+    FragNormal = vec4(normalize(vNormal), 1.0);
+    FragAlbedo = texColor;
+}
+)";
+
+static const char* s_lightingVert = R"(
+#version 330 core
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec2 aTexCoord;
+out vec2 vTexCoord;
+void main() {
+    vTexCoord = aTexCoord;
+    gl_Position = vec4(aPos, 1.0);
+}
+)";
+
+static const char* s_lightingFrag = R"(
+#version 330 core
+in vec2 vTexCoord;
+out vec4 FragColor;
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gAlbedo;
+uniform vec3 uViewPos;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform float uSunIntensity;
+void main() {
+    vec3 fragPos = texture(gPosition, vTexCoord).xyz;
+    vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
+    vec4 albedo = texture(gAlbedo, vTexCoord);
+    
+    // Ambient
+    vec3 ambient = 0.1 * albedo.rgb;
+    
+    // Sun directional light
+    float diff = max(dot(normal, -uSunDir), 0.0);
+    vec3 diffuse = diff * uSunColor * uSunIntensity;
+    
+    // View direction for specular
+    vec3 viewDir = normalize(uViewPos - fragPos);
+    vec3 reflectDir = reflect(uSunDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+    vec3 specular = spec * uSunColor * uSunIntensity * 0.5;
+    
+    vec3 result = ambient + diffuse + specular;
+    FragColor = vec4(result * albedo.rgb, albedo.a);
+}
+)";
+
+const char* Renderer::getGeometryVert() { return s_geometryVert; }
+const char* Renderer::getGeometryFrag() { return s_geometryFrag; }
+const char* Renderer::getLightingVert() { return s_lightingVert; }
+const char* Renderer::getLightingFrag() { return s_lightingFrag; }
+
 Renderer::Renderer() = default;
 Renderer::~Renderer() { cleanup(); }
 
@@ -13,15 +101,18 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
-    geometryShader = new Shader();
-    if (!geometryShader->loadFromStrings(geometryVert, geometryFrag)) {
+    geometryShader = std::make_unique<Shader>();
+    if (!geometryShader->loadFromStrings(getGeometryVert(), getGeometryFrag())) {
         std::cerr << "Geometry shader fail: " << geometryShader->getError() << std::endl;
+        geometryShader.reset();
         return false;
     }
 
-    lightingShader = new Shader();
-    if (!lightingShader->loadFromStrings(lightingVert, lightingFrag)) {
+    lightingShader = std::make_unique<Shader>();
+    if (!lightingShader->loadFromStrings(getLightingVert(), getLightingFrag())) {
         std::cerr << "Lighting shader fail: " << lightingShader->getError() << std::endl;
+        geometryShader.reset();
+        lightingShader.reset();
         return false;
     }
 
@@ -33,6 +124,8 @@ bool Renderer::init(int width, int height) {
 
     if (!createGBuffer(width, height)) {
         std::cerr << "Failed to create G-Buffer!" << std::endl;
+        geometryShader.reset();
+        lightingShader.reset();
         return false;
     }
 
@@ -249,11 +342,26 @@ void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
     const glm::vec3& position, bool visible) {
     if (!visible || !showHitbox) return;
 
+    // Проверка что cubeVAO был создан
+    if (cubeVAO == 0) {
+        createHitboxMesh();
+        if (cubeVAO == 0) return; // Не удалось создать mesh
+    }
+
     glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
     glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
     model = model * scaleMat;
 
-    // Простая отрисовка хитбокса (можно доработать)
+    // Отрисовка хитбокса wireframe
+    glDisable(GL_CULL_FACE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glEnable(GL_CULL_FACE);
 }
 
 void Renderer::createHitboxMesh() {
@@ -281,9 +389,10 @@ void Renderer::createHitboxMesh() {
 void Renderer::cleanup() {
     destroyGBuffer();
 
-    if (geometryShader) { delete geometryShader; geometryShader = nullptr; }
-    if (lightingShader) { delete lightingShader; lightingShader = nullptr; }
-    if (forwardShader) { delete forwardShader; forwardShader = nullptr; }
+    // Unique pointers automatically clean up - just reset them
+    geometryShader.reset();
+    lightingShader.reset();
+    forwardShader.reset();
 
     if (bspVAO) glDeleteVertexArrays(1, &bspVAO);
     if (bspVBO) glDeleteBuffers(1, &bspVBO);

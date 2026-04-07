@@ -4,6 +4,7 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <iostream>
 
 HUD::HUD() {
 }
@@ -25,11 +26,17 @@ void HUD::update(float deltaTime, const glm::vec3& position) {
 }
 
 void HUD::render(int screenWidth, int screenHeight) {
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ ImGui пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+    if (!ImGui::GetCurrentContext()) {
+        std::cerr << "[HUD] ImGui not initialized!\n";
+        return;
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // === FPS и Позиция (левый верхний угол) ===
+    // === FPS пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ) ===
     ImGuiWindowFlags infoFlags =
         ImGuiWindowFlags_NoBackground |
         ImGuiWindowFlags_NoDecoration |
@@ -60,7 +67,7 @@ void HUD::render(int screenWidth, int screenHeight) {
 
     ImGui::End();
 
-    // === Прицел (центр экрана) ===
+    // === пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ) ===
     if (settings.showCrosshair) {
         ImGuiWindowFlags crossFlags =
             ImGuiWindowFlags_NoBackground |
@@ -89,7 +96,7 @@ void HUD::render(int screenWidth, int screenHeight) {
         const CrosshairStyle& ch = settings.crosshair;
         ImU32 col = (ImU32)ch.color;
 
-        // Вертикальная линия (две части)
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ)
         draw->AddLine(
             ImVec2(cx, cy - ch.gap - ch.length),
             ImVec2(cx, cy - ch.gap),
@@ -101,7 +108,7 @@ void HUD::render(int screenWidth, int screenHeight) {
             col, ch.width
         );
 
-        // Горизонтальная линия (две части)
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ)
         draw->AddLine(
             ImVec2(cx - ch.gap - ch.length, cy),
             ImVec2(cx - ch.gap, cy),
@@ -113,7 +120,7 @@ void HUD::render(int screenWidth, int screenHeight) {
             col, ch.width
         );
 
-        // Точка в центре (если размер > 0)
+        // пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ > 0)
         if (ch.dotSize > 0.0f) {
             draw->AddCircleFilled(ImVec2(cx, cy), ch.dotSize, col);
         }

@@ -29,24 +29,33 @@ void Camera::updateVectors() {
     frontY = sin(glm::radians(pitch));
     frontZ = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
 
-    // Ќормализуем
+    // Ќормализуем с проверкой на деление на ноль
     float len = sqrt(frontX * frontX + frontY * frontY + frontZ * frontZ);
-    frontX /= len;
-    frontY /= len;
-    frontZ /= len;
+    if (len > 0.0001f) {
+        frontX /= len;
+        frontY /= len;
+        frontZ /= len;
+    } else {
+        // Fallback: смотрим вперед по умолчанию
+        frontX = 0.0f;
+        frontY = 0.0f;
+        frontZ = 1.0f;
+    }
 
     // ¬ычисл€ем правый вектор
     rightX = frontY * worldUpZ - frontZ * worldUpY;
     rightY = frontZ * worldUpX - frontX * worldUpZ;
     rightZ = frontX * worldUpY - frontY * worldUpX;
 
-    // Ќормализуем правый вектор
+    // Ќормализуем правый вектор с проверкой
     len = sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
-    rightX /= len;
-    rightY /= len;
-    rightZ /= len;
+    if (len > 0.0001f) {
+        rightX /= len;
+        rightY /= len;
+        rightZ /= len;
+    }
 
-    // ¬ычисл€ем верхний вектор
+    // ¬ычисл€ем верхний вектор (уже нормализован если front и right нормализованы)
     upX = rightY * frontZ - rightZ * frontY;
     upY = rightZ * frontX - rightX * frontZ;
     upZ = rightX * frontY - rightY * frontX;
