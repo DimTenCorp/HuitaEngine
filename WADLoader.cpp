@@ -80,10 +80,17 @@ void WADLoader::createDefaultTexture() {
     for (int i = 0; i < 32 * 32; i++) {
         int x = i % 32, y = i / 32;
         bool check = ((x / 4) + (y / 4)) % 2;
-        pixels[i * 4 + 0] = check ? 255 : 255;
-        pixels[i * 4 + 1] = check ? 0 : 0;
-        pixels[i * 4 + 2] = check ? 255 : 255;
-        pixels[i * 4 + 3] = 255;
+        // Шахматная доска: чередование белого и серого
+        if (check) {
+            pixels[i * 4 + 0] = 255;  // R - белый
+            pixels[i * 4 + 1] = 255;  // G
+            pixels[i * 4 + 2] = 255;  // B
+        } else {
+            pixels[i * 4 + 0] = 128;  // R - серый
+            pixels[i * 4 + 1] = 128;  // G
+            pixels[i * 4 + 2] = 128;  // B
+        }
+        pixels[i * 4 + 3] = 255;  // A - полностью непрозрачный
     }
     glGenTextures(1, &defaultTexture);
     glBindTexture(GL_TEXTURE_2D, defaultTexture);

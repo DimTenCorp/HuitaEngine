@@ -6,19 +6,14 @@ layout (location = 2) in vec2 aTexCoord;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform mat4 sunLightSpaceMatrix; // Из LightSystem
 
-out vec3 vNormal;
-out vec3 vPos;
 out vec2 vTexCoord;
-out vec4 vPosLightSpace; // Для теней
+out vec3 vNormal;
+out vec3 vFragPos;
 
 void main() {
-    vec4 worldPos = model * vec4(aPos, 1.0);
-    vPos = worldPos.xyz;
-    vNormal = mat3(transpose(inverse(model))) * aNormal;
     vTexCoord = aTexCoord;
-    vPosLightSpace = sunLightSpaceMatrix * worldPos;
-    
-    gl_Position = projection * view * worldPos;
+    vNormal = aNormal;
+    vFragPos = vec3(model * vec4(aPos, 1.0));
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 }

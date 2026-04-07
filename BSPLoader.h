@@ -5,11 +5,11 @@
 #include <string>
 #include <glad/glad.h>
 
-// Включаем полное определение AABB
-#include "TriangleCollider.h"
-
-// Forward declaration только для WADLoader
+// Forward declaration only for WADLoader
 class WADLoader;
+
+// Include AABB definition - moved to separate header to avoid circular dependency
+#include "AABB.h"
 
 #pragma pack(push, 1)
 struct BSPLump { int offset; int length; };

@@ -1,16 +1,11 @@
 ﻿#pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <algorithm>
 
-// Forward declaration of AABB
-struct AABB {
-    glm::vec3 min;
-    glm::vec3 max;
-
-    AABB() : min(0.0f), max(0.0f) {}
-    AABB(const glm::vec3& mn, const glm::vec3& mx) : min(mn), max(mx) {}
-};
+// Include shared AABB definition
+#include "AABB.h"
 
 struct Triangle {
     glm::vec3 v0, v1, v2;
@@ -47,6 +42,19 @@ private:
         const Triangle& tri, float& t, float& u, float& v) const;
     bool aabbTriangleIntersect(const AABB& box, const Triangle& tri) const;
     float pointTriangleDistance(const glm::vec3& p, const Triangle& tri, glm::vec3& closest) const;
+    
+    // Spatial partitioning for faster collision detection
+    struct GridCell {
+        std::vector<size_t> triangleIndices;
+        AABB bounds;
+    };
+    std::vector<GridCell> spatialGrid;
+    glm::ivec3 gridSize{1, 1, 1};
+    float cellSize = 1.0f;
+    bool gridBuilt = false;
+    
+    void buildSpatialGrid();
+    std::vector<size_t> getCandidateTriangles(const AABB& box) const;
 
 public:
     MeshCollider() = default;

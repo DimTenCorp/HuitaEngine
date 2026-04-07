@@ -185,40 +185,51 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type) {
     }
 }
 
+int Shader::getUniformLocationInternal(const std::string& name) {
+    auto it = uniformCache.find(name);
+    if (it != uniformCache.end()) {
+        return it->second;
+    }
+    
+    int location = glGetUniformLocation(ID, name.c_str());
+    uniformCache[name] = location;
+    return location;
+}
+
 void Shader::use() {
     if (ID != 0) {
         glUseProgram(ID);
     }
 }
 
-void Shader::setBool(const std::string& name, bool value) const {
+void Shader::setBool(const std::string& name, bool value) {
     if (ID == 0) return;
-    glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
+    glUniform1i(getUniformLocationInternal(name), (int)value);
 }
 
-void Shader::setInt(const std::string& name, int value) const {
+void Shader::setInt(const std::string& name, int value) {
     if (ID == 0) return;
-    glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
+    glUniform1i(getUniformLocationInternal(name), value);
 }
 
-void Shader::setFloat(const std::string& name, float value) const {
+void Shader::setFloat(const std::string& name, float value) {
     if (ID == 0) return;
-    glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
+    glUniform1f(getUniformLocationInternal(name), value);
 }
 
-void Shader::setMat4(const std::string& name, const float* value) const {
+void Shader::setMat4(const std::string& name, const float* value) {
     if (ID == 0) return;
-    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value);
+    glUniformMatrix4fv(getUniformLocationInternal(name), 1, GL_FALSE, value);
 }
 
-void Shader::setMat4(const std::string& name, const glm::mat4& value) const {
+void Shader::setMat4(const std::string& name, const glm::mat4& value) {
     if (ID == 0) return;
-    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, glm::value_ptr(value));
+    glUniformMatrix4fv(getUniformLocationInternal(name), 1, GL_FALSE, glm::value_ptr(value));
 }
 
-void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
+void Shader::setVec3(const std::string& name, const glm::vec3& value) {
     if (ID == 0) return;
-    glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, glm::value_ptr(value));
+    glUniform3fv(getUniformLocationInternal(name), 1, glm::value_ptr(value));
 }
 
 void Shader::bind() {
