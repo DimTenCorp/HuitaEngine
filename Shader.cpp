@@ -3,7 +3,9 @@
 #include <fstream>
 #include <sstream>
 
-Shader::Shader(const char* vertexPath, const char* fragmentPath) : ID(0) {
+Shader::Shader() : ID(0), lastError("") {}
+
+Shader::Shader(const char* vertexPath, const char* fragmentPath) : ID(0), lastError("") {
     std::string vertexCode = readFile(vertexPath);
     std::string fragmentCode = readFile(fragmentPath);
 
@@ -60,10 +62,20 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath) : ID(0) {
     glDeleteShader(fragment);
 }
 
-Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) : ID(0) {
+Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) : ID(0), lastError("") {
+    loadFromStrings(vertexCode, fragmentCode);
+}
+
+bool Shader::loadFromStrings(const std::string& vertexCode, const std::string& fragmentCode) {
+    if (ID != 0) {
+        glDeleteProgram(ID);
+        ID = 0;
+    }
+    
     if (vertexCode.empty() || fragmentCode.empty()) {
+        lastError = "Empty shader code provided";
         std::cerr << "ERROR::SHADER: Empty shader code provided" << std::endl;
-        return;
+        return false;
     }
 
     const char* vShaderCode = vertexCode.c_str();
@@ -80,9 +92,10 @@ Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) :
     GLint success;
     glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
     if (!success) {
+        lastError = "Vertex shader compilation failed";
         std::cerr << "Vertex shader compilation failed!" << std::endl;
         glDeleteShader(vertex);
-        return;
+        return false;
     }
 
     // Fragment Shader
@@ -93,10 +106,11 @@ Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) :
 
     glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
     if (!success) {
+        lastError = "Fragment shader compilation failed";
         std::cerr << "Fragment shader compilation failed!" << std::endl;
         glDeleteShader(vertex);
         glDeleteShader(fragment);
-        return;
+        return false;
     }
 
     // Shader Program
@@ -108,12 +122,14 @@ Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) :
 
     glGetProgramiv(ID, GL_LINK_STATUS, &success);
     if (!success) {
+        lastError = "Shader program linking failed";
         std::cerr << "Shader program linking failed!" << std::endl;
         char infoLog[512];
         glGetProgramInfoLog(ID, 512, NULL, infoLog);
         std::cerr << infoLog << std::endl;
         glDeleteProgram(ID);
         ID = 0;
+        return false;
     }
 
     glDeleteShader(vertex);
@@ -122,6 +138,8 @@ Shader::Shader(const std::string& vertexCode, const std::string& fragmentCode) :
     if (ID != 0) {
         std::cout << "Shader compiled successfully! ID: " << ID << std::endl;
     }
+    
+    return true;
 }
 
 Shader::~Shader() {
@@ -201,4 +219,17 @@ void Shader::setMat4(const std::string& name, const glm::mat4& value) const {
 void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
     if (ID == 0) return;
     glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, glm::value_ptr(value));
+}
+
+void Shader::bind() {
+    use();
+}
+
+void Shader::unbind() {
+    glUseProgram(0);
+}
+
+int Shader::getLocation(const std::string& name) {
+    if (ID == 0) return -1;
+    return glGetUniformLocation(ID, name.c_str());
 }
