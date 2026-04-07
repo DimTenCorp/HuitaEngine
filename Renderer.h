@@ -22,14 +22,34 @@ public:
 
     void beginFrame(const glm::vec3& clearColor);
     void renderWorld(const glm::mat4& view, const glm::vec3& viewPos);
+    void renderWorld(const glm::mat4& view, const glm::vec3& viewPos, const glm::vec3& sunDir);
     void renderHitbox(const glm::mat4& view, const glm::mat4& projection,
         const glm::vec3& position, bool visible);
 
     void setShowHitbox(bool show) { showHitbox = show; }
     bool getShowHitbox() const { return showHitbox; }
     const RenderStats& getStats() const { return stats; }
+    void setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool enabled);
 
 private:
+    struct GBuffer {
+        GLuint fbo = 0;
+        GLuint position = 0;
+        GLuint normal = 0;
+        GLuint albedo = 0;
+        GLuint depth = 0;
+        int width = 1280;
+        int height = 720;
+    };
+
+    struct Flashlight {
+        bool enabled = false;
+        glm::vec3 position;
+        glm::vec3 direction;
+        GLuint spotFBO = 0;
+        GLuint spotShadowMap = 0;
+    };
+
     GLuint bspVAO = 0, bspVBO = 0, bspEBO = 0;
     size_t bspIndexCount = 0;
     std::vector<FaceDrawCall> drawCalls;
@@ -38,38 +58,100 @@ private:
     GLuint cubeVAO = 0, cubeVBO = 0, cubeEBO = 0;
     bool showHitbox = true;
 
+    Shader* geometryShader = nullptr;
+    Shader* lightingShader = nullptr;
     Shader* forwardShader = nullptr;
+
+    GBuffer gBuffer;
+    Flashlight flashlight;
 
     RenderStats stats;
     int screenWidth = 1280, screenHeight = 720;
 
     void createHitboxMesh();
     void cleanup();
+    bool createGBuffer(int w, int h);
+    void destroyGBuffer();
+    void geometryPass(const glm::mat4& view, const glm::mat4& proj);
+    void lightingPass(const glm::mat4& view, const glm::vec3& viewPos, const glm::vec3& sunDir);
 
-    const char* forwardVert = R"(
+    const char* geometryVert = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
-uniform mat4 mvp;
 uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 out vec2 vTexCoord;
+out vec3 vNormal;
+out vec3 vFragPos;
 void main() {
     vTexCoord = aTexCoord;
-    gl_Position = mvp * vec4(aPos, 1.0);
+    vNormal = mat3(transpose(inverse(model))) * aNormal;
+    vFragPos = vec3(model * vec4(aPos, 1.0));
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 }
 )";
 
-    const char* forwardFrag = R"(
+    const char* geometryFrag = R"(
 #version 330 core
 in vec2 vTexCoord;
-out vec4 FragColor;
+in vec3 vNormal;
+in vec3 vFragPos;
+layout (location = 0) out vec4 FragPosition;
+layout (location = 1) out vec4 FragNormal;
+layout (location = 2) out vec4 FragAlbedo;
 uniform sampler2D uTexture;
-uniform vec3 color;
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     if (texColor.a < 0.5) discard;
-    FragColor = vec4(texColor.rgb * color, texColor.a);
+    FragPosition = vec4(vFragPos, 1.0);
+    FragNormal = vec4(normalize(vNormal), 1.0);
+    FragAlbedo = texColor;
+}
+)";
+
+    const char* lightingVert = R"(
+#version 330 core
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec2 aTexCoord;
+out vec2 TexCoord;
+void main() {
+    TexCoord = aTexCoord;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+)";
+
+    const char* lightingFrag = R"(
+#version 330 core
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gAlbedo;
+uniform vec3 uViewPos;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform float uSunIntensity;
+void main() {
+    vec3 fragPos = texture(gPosition, TexCoord).xyz;
+    vec3 normal = normalize(texture(gNormal, TexCoord).xyz);
+    vec4 albedo = texture(gAlbedo, TexCoord);
+    
+    if (albedo.a < 0.5) discard;
+    
+    float diff = max(dot(normal, -uSunDir), 0.0);
+    vec3 diffuse = diff * uSunColor * uSunIntensity;
+    
+    vec3 viewDir = normalize(uViewPos - fragPos);
+    vec3 reflectDir = reflect(uSunDir, normal);
+    vec3 halfwayDir = normalize(-uSunDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0);
+    vec3 specular = spec * uSunColor * 0.3;
+    
+    vec3 result = (diffuse + specular) * albedo.rgb;
+    FragColor = vec4(result, 1.0);
 }
 )";
 };
