@@ -1,1 +1,34 @@
-Nothing should be ignored in this case, as the changes consist only of source code files (.h and .cpp files) without any build artifacts, dependencies, or temporary files.
+```
+# Build artifacts
+*.vcxproj.user
+*.vcxproj.filters
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sdf
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+ipch/
+*.ipch
+Debug/
+Release/
+x64/
+Win32/
+# Dependencies
+node_modules/
+# Logs and temp files
+*.log
+*.tmp
+# Environment
+.env
+.env.local
+.env.*
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+```
