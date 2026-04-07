@@ -7,13 +7,21 @@
 class Shader {
 private:
     unsigned int ID;
+    std::string lastError;
     std::string readFile(const char* filePath);
     void checkCompileErrors(unsigned int shader, std::string type);
 
 public:
+    Shader();
     Shader(const char* vertexPath, const char* fragmentPath);
     Shader(const std::string& vertexCode, const std::string& fragmentCode);
     ~Shader();
+
+    bool loadFromStrings(const std::string& vertexCode, const std::string& fragmentCode);
+    void bind();
+    void unbind();
+    int getLocation(const std::string& name);
+    std::string getError() const { return lastError; }
 
     void use();
     unsigned int getID() const { return ID; }
