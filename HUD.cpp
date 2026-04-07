@@ -25,6 +25,12 @@ void HUD::update(float deltaTime, const glm::vec3& position) {
 }
 
 void HUD::render(int screenWidth, int screenHeight) {
+    // Проверка что ImGui инициализирован перед использованием
+    if (!ImGui::GetCurrentContext()) {
+        std::cerr << "[HUD] ImGui not initialized!\n";
+        return;
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();

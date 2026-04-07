@@ -389,8 +389,14 @@ bool WADLoader::loadWADFile(const std::string& path) {
         info.width = tex.width;
         info.height = tex.height;
 
-        textureCache[lowerName] = info;
-        textureCache[rawName] = info;
+        // Избегаем дублирования записей в кэше - проверяем существует ли уже запись
+        if (textureCache.find(lowerName) == textureCache.end()) {
+            textureCache[lowerName] = info;
+        }
+        // Добавляем оригинальное имя только если оно отличается от lowerName
+        if (rawName != lowerName && textureCache.find(rawName) == textureCache.end()) {
+            textureCache[rawName] = info;
+        }
 
         loadedCount++;
     }

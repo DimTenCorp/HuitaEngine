@@ -12,12 +12,24 @@ struct Triangle {
     glm::vec3 normal;
     AABB bounds;
 
-    Triangle() = default;
+    Triangle() : v0(0), v1(0), v2(0), normal(0, 0, 1) {
+        bounds.min = glm::vec3(0);
+        bounds.max = glm::vec3(0);
+    }
     Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
         v0 = a; v1 = b; v2 = c;
-        normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+        float len = glm::length(edge1);
+        if (len > 0.0001f && glm::length(edge2) > 0.0001f) {
+            normal = glm::normalize(glm::cross(edge1, edge2));
+        } else {
+            normal = glm::vec3(0, 0, 1);
+        }
         bounds.min = glm::min(glm::min(v0, v1), v2);
         bounds.max = glm::max(glm::max(v0, v1), v2);
+        // Ensure valid AABB invariant: min <= max
+        bounds.max = glm::max(bounds.max, bounds.min);
     }
 };
 
