@@ -300,11 +300,23 @@ void Renderer::cleanup() {
 void Renderer::destroyGBuffer() {
     if (gBuffer.fbo) {
         glDeleteFramebuffers(1, &gBuffer.fbo);
-        glDeleteTextures(1, &gBuffer.position);
-        glDeleteTextures(1, &gBuffer.normal);
-        glDeleteTextures(1, &gBuffer.albedo);
-        glDeleteTextures(1, &gBuffer.depth);
         gBuffer.fbo = 0;
+    }
+    if (gBuffer.position) {
+        glDeleteTextures(1, &gBuffer.position);
+        gBuffer.position = 0;
+    }
+    if (gBuffer.normal) {
+        glDeleteTextures(1, &gBuffer.normal);
+        gBuffer.normal = 0;
+    }
+    if (gBuffer.albedo) {
+        glDeleteTextures(1, &gBuffer.albedo);
+        gBuffer.albedo = 0;
+    }
+    if (gBuffer.depth) {
+        glDeleteTextures(1, &gBuffer.depth);
+        gBuffer.depth = 0;
     }
 }
 
