@@ -127,52 +127,58 @@ bool Player::checkOnGround() const {
 bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight) {
     if (!meshCollider) return false;
 
-    // Проверяем есть ли препятствие на пути
-    glm::vec3 testPos = fromPos;
-    testPos.x += moveDir.x;
-    testPos.z += moveDir.z;
+    // 1. Проверяем, есть ли вообще препятствие перед нами
+    glm::vec3 horizontalTestPos = fromPos;
+    horizontalTestPos.x += moveDir.x;
+    horizontalTestPos.z += moveDir.z;
 
-    if (!checkCollisionMesh(testPos)) {
-        return false; // Препятствия нет, не нужно подниматься
+    if (!checkCollisionMesh(horizontalTestPos)) {
+        return false;
     }
 
-    // Есть препятствие - пробуем подняться
-    glm::vec3 stepPos = fromPos;
-    stepPos.x += moveDir.x;
-    stepPos.z += moveDir.z;
-    stepPos.y += maxStepHeight;
+    // 2. Ищем максимально высокую точку (пол) в направлении движения
+    // Мы сканируем сверху вниз от (текущая высота + maxStepHeight)
+    glm::vec3 scanPos = fromPos;
+    scanPos.x += moveDir.x;
+    scanPos.z += moveDir.z;
+    scanPos.y += maxStepHeight;
 
-    // Проверяем можно ли подняться (нет ли потолка)
-    if (checkCollisionMesh(stepPos)) {
-        return false; // Над головой препятствие
-    }
-
-    // Ищем пол внизу на высоте подъема
-    glm::vec3 finalPos = stepPos;
     float foundHeight = -9999.0f;
+    bool foundFloor = false;
 
-    // Спускаемся вниз с мелким шагом
-    for (int i = 0; i < (int)(maxStepHeight / 0.005f) + 20; i++) {
-        finalPos.y -= 0.005f;
-        if (checkCollisionMesh(finalPos)) {
-            // Нашли пол - запоминаем высоту чуть выше коллизии
-            foundHeight = finalPos.y + 0.005f;
+    // Спускаемся вниз, чтобы найти поверхность ступеньки
+    for (float h = maxStepHeight; h >= -0.01f; h -= 0.01f) {
+        glm::vec3 checkFloorPos = fromPos + glm::vec3(moveDir.x, h, moveDir.z);
+        if (checkCollisionMesh(checkFloorPos)) {
+            foundHeight = fromPos.y + h + 0.005f;
+            foundFloor = true;
             break;
         }
     }
 
-    if (foundHeight < -9000.0f) {
-        return false; // Не нашли пол
-    }
+    if (!foundFloor) return false;
 
     float heightDiff = foundHeight - fromPos.y;
 
-    // Проверяем что подъем в пределах допустимого
-    if (heightDiff <= 0.001f || heightDiff > maxStepHeight) {
+    // Проверяем, не слишком ли высокая ступенька
+    if (heightDiff > maxStepHeight || heightDiff <= 0.001f) {
         return false;
     }
 
-    // Плавный подъем
+    // 3. КРИТИЧЕСКАЯ ПРОВЕРКА: Пролезет ли игрок по росту?
+    // Проверяем коллизию в целевой позиции с учетом новой высоты foundHeight
+    glm::vec3 finalPosCandidate = fromPos;
+    finalPosCandidate.x += moveDir.x;
+    finalPosCandidate.z += moveDir.z;
+    finalPosCandidate.y = foundHeight;
+
+    if (checkCollisionMesh(finalPosCandidate)) {
+        // Если здесь коллизия, значит места для роста 0.9 (size.y * 2) не хватает.
+        // Потолок слишком низко над этой ступенькой.
+        return false;
+    }
+
+    // 4. Если всё чисто, выполняем подъем
     float maxStepThisFrame = stepUpSpeed * 0.016f;
     float actualRise = std::min(heightDiff, maxStepThisFrame);
 
@@ -180,37 +186,12 @@ bool Player::tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float
     position.x = fromPos.x + moveDir.x;
     position.z = fromPos.z + moveDir.z;
 
-    // === ИСПРАВЛЕНИЕ: Точный снаппинг когда поднялись полностью ===
     if (actualRise >= heightDiff - 0.001f) {
-        // Поднялись полностью - прижимаем точно к полу
+        position.y = foundHeight;
         onGround = true;
         velocity.y = 0;
-
-        // Дополнительная проверка: если мы чуть выше чем нужно - корректируем
-        // Проверяем коллизию чуть ниже
-        glm::vec3 belowTest = position;
-        belowTest.y -= 0.01f;
-
-        if (!checkCollisionMesh(belowTest)) {
-            // Мы выше пола - опускаемся до точной высоты foundHeight
-            position.y = foundHeight;
-        }
-        else {
-            // Проверяем не внутри ли мы пола
-            glm::vec3 insideTest = position;
-            insideTest.y -= 0.001f;
-            if (checkCollisionMesh(insideTest)) {
-                // Мы внутри пола - поднимаемся чуть выше
-                position.y = foundHeight + 0.001f;
-            }
-            else {
-                // Всё ок, но на всякий случай синхронизируем
-                position.y = foundHeight;
-            }
-        }
     }
     else {
-        // Еще поднимаемся
         onGround = false;
         velocity.y = stepUpSpeed * 0.5f;
     }

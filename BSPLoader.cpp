@@ -7,7 +7,6 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
-#include <glm/gtc/matrix_transform.hpp>
 #include "WADLoader.h"
 
 static const float BSP_SCALE = 0.025f;
@@ -35,231 +34,6 @@ static std::string trim(const std::string& str) {
     return str.substr(start, end - start + 1);
 }
 
-// ============================================================================
-// BSP RENDERING FUNCTIONS ADAPTED FROM QUAKE r_bsp.c
-// ============================================================================
-
-// Global rendering state (similar to Quake's r_bsp.c globals)
-static bool insubmodel = false;
-static glm::vec3 modelorg;           // viewpoint relative to currently rendering entity
-static glm::vec3 r_entorigin;        // currently rendering entity in world coordinates
-static float entity_rotation[3][3];  // rotation matrix for current entity
-static int r_currentkey = 0;         // sequence number for ordering surfaces
-static int r_visframecount = 0;      // visibility frame counter
-
-// Clipping edge buffers for bmodel rendering
-static BSPVertexData bverts[MAX_BMODEL_VERTS];
-static BSPEdgeData bedges[MAX_BMODEL_EDGES];
-static int numbverts = 0, numbedges = 0;
-
-static BSPVertexData* pfrontenter = nullptr;
-static BSPVertexData* pfrontexit = nullptr;
-static bool makeclippededge = false;
-
-// Frustum clipping planes
-struct FrustumPlane {
-    glm::vec3 normal;
-    float dist;
-};
-static FrustumPlane view_clipplanes[4];
-static int r_clipflags = 15;  // all 4 planes active
-
-// Back-to-front polygon buffer for transparent sorting
-struct BtoFPoly {
-    int clipflags;
-    int surfIndex;
-};
-static BtoFPoly pbtofpolys[256];
-static int numbtofpolys = 0;
-
-/*
-================
-R_EntityRotate
-Rotate a vector by the entity's rotation matrix
-================
-*/
-static void R_EntityRotate(glm::vec3& vec) {
-    glm::vec3 tvec = vec;
-    vec.x = glm::dot(glm::vec3(entity_rotation[0][0], entity_rotation[0][1], entity_rotation[0][2]), tvec);
-    vec.y = glm::dot(glm::vec3(entity_rotation[1][0], entity_rotation[1][1], entity_rotation[1][2]), tvec);
-    vec.z = glm::dot(glm::vec3(entity_rotation[2][0], entity_rotation[2][1], entity_rotation[2][2]), tvec);
-}
-
-/*
-================
-R_RotateBmodel
-Set up rotation matrix for current entity and rotate viewing vectors
-================
-*/
-static void R_RotateBmodel(const glm::vec3& angles) {
-    float angle;
-    float sr, sp, sy, cr, cp, cy;
-
-    // Convert angles to radians and compute rotation matrix
-    angle = glm::radians(angles.x);
-    sr = sin(angle);
-    cr = cos(angle);
-    
-    angle = glm::radians(angles.y);
-    sp = sin(angle);
-    cp = cos(angle);
-    
-    angle = glm::radians(angles.z);
-    sy = sin(angle);
-    cy = cos(angle);
-
-    // Build rotation matrix (ZYX order)
-    entity_rotation[0][0] = cp * cr;
-    entity_rotation[0][1] = cr * sp;
-    entity_rotation[0][2] = -sr;
-
-    entity_rotation[1][0] = cp * sr * sy - cy * sp;
-    entity_rotation[1][1] = sp * sr * sy + cp * cy;
-    entity_rotation[1][2] = sy * cr;
-
-    entity_rotation[2][0] = sp * sy + cp * cy * sr;
-    entity_rotation[2][1] = sr * cy * sp - sy * cp;
-    entity_rotation[2][2] = cr * cy;
-}
-
-/*
-================
-R_RecursiveClipBPoly
-Recursively clip polygon edges against BSP tree planes
-================
-*/
-static void R_RecursiveClipBPoly(
-    BSPEdgeData* pedges, 
-    const std::vector<BSPNode>& nodes,
-    int nodeIndex,
-    const std::vector<BSPFace>& faces,
-    const std::vector<BSPPlane>& planes,
-    const std::vector<glm::vec3>& vertices,
-    const std::vector<BSPEdge>& edges,
-    const std::vector<int>& surfEdges,
-    int faceIndex
-) {
-    BSPEdgeData* psideedges[2] = { nullptr, nullptr };
-    BSPEdgeData* pnextedge, * ptedge;
-    int side, lastside;
-    float dist, frac, lastdist;
-    BSPVertexData* pvert, * plastvert, * ptvert;
-
-    makeclippededge = false;
-
-    const BSPNode& node = nodes[nodeIndex];
-    const BSPPlane& splitplane = planes[node.planeNum];
-
-    // Transform BSP plane into model space
-    glm::vec3 transformedNormal;
-    transformedNormal.x = glm::dot(glm::vec3(entity_rotation[0][0], entity_rotation[0][1], entity_rotation[0][2]), splitplane.normal);
-    transformedNormal.y = glm::dot(glm::vec3(entity_rotation[1][0], entity_rotation[1][1], entity_rotation[1][2]), splitplane.normal);
-    transformedNormal.z = glm::dot(glm::vec3(entity_rotation[2][0], entity_rotation[2][1], entity_rotation[2][2]), splitplane.normal);
-    
-    float transformedDist = splitplane.dist - glm::dot(r_entorigin, splitplane.normal);
-
-    // Clip edges to BSP plane
-    for (; pedges; pedges = pnextedge) {
-        pnextedge = pedges->pnext;
-
-        plastvert = pedges->v[0];
-        lastdist = glm::dot(plastvert->position, transformedNormal) - transformedDist;
-        lastside = (lastdist > 0) ? 0 : 1;
-
-        pvert = pedges->v[1];
-        dist = glm::dot(pvert->position, transformedNormal) - transformedDist;
-        side = (dist > 0) ? 0 : 1;
-
-        if (side != lastside) {
-            // Edge is clipped - generate intersection vertex
-            if (numbverts >= MAX_BMODEL_VERTS) {
-                std::cerr << "Out of verts for bmodel\n";
-                return;
-            }
-
-            frac = lastdist / (lastdist - dist);
-            ptvert = &bverts[numbverts++];
-            ptvert->position = plastvert->position + frac * (pvert->position - plastvert->position);
-
-            if (numbedges >= (MAX_BMODEL_EDGES - 1)) {
-                std::cerr << "Out of edges for bmodel\n";
-                return;
-            }
-
-            // Create two edges, one on each side of the plane
-            ptedge = &bedges[numbedges];
-            ptedge->pnext = psideedges[lastside];
-            psideedges[lastside] = ptedge;
-            ptedge->v[0] = plastvert;
-            ptedge->v[1] = ptvert;
-
-            ptedge = &bedges[numbedges + 1];
-            ptedge->pnext = psideedges[side];
-            psideedges[side] = ptedge;
-            ptedge->v[0] = ptvert;
-            ptedge->v[1] = pvert;
-
-            numbedges += 2;
-
-            if (side == 0) {
-                pfrontenter = ptvert;
-                makeclippededge = true;
-            } else {
-                pfrontexit = ptvert;
-                makeclippededge = true;
-            }
-        } else {
-            // Edge entirely on one side
-            pedges->pnext = psideedges[side];
-            psideedges[side] = pedges;
-        }
-    }
-
-    // Add clip plane edges if anything was clipped
-    if (makeclippededge) {
-        if (numbedges >= (MAX_BMODEL_EDGES - 2)) {
-            std::cerr << "Out of edges for bmodel\n";
-            return;
-        }
-
-        ptedge = &bedges[numbedges];
-        ptedge->pnext = psideedges[0];
-        psideedges[0] = ptedge;
-        ptedge->v[0] = pfrontexit;
-        ptedge->v[1] = pfrontenter;
-
-        ptedge = &bedges[numbedges + 1];
-        ptedge->pnext = psideedges[1];
-        psideedges[1] = ptedge;
-        ptedge->v[0] = pfrontenter;
-        ptedge->v[1] = pfrontexit;
-
-        numbedges += 2;
-    }
-
-    // Recurse or draw
-    for (int i = 0; i < 2; i++) {
-        if (psideedges[i]) {
-            int child = (i == 0) ? node.frontChild : node.backChild;
-
-            if (child < 0) {
-                // Leaf node
-                int leafIndex = -child - 1;
-                if (leafIndex < (int)nodes.size()) {
-                    const BSPLeaf& leaf = *(BSPLeaf*)&nodes[leafIndex];  // Simplified
-                    if (leaf.contents != CONTENTS_SOLID) {
-                        r_currentkey = leaf.key;
-                        // Render the clipped polygon here
-                    }
-                }
-            } else if (child < (int)nodes.size()) {
-                // Internal node - recurse
-                R_RecursiveClipBPoly(psideedges[i], nodes, child, faces, planes, vertices, edges, surfEdges, faceIndex);
-            }
-        }
-    }
-}
-
 BSPLoader::BSPLoader() {
     worldBounds.min = glm::vec3(0);
     worldBounds.max = glm::vec3(0);
@@ -267,117 +41,6 @@ BSPLoader::BSPLoader() {
 
 BSPLoader::~BSPLoader() {
     cleanupTextures();
-}
-
-std::vector<glm::vec3> BSPLoader::getLightPositions() const {
-    std::vector<glm::vec3> lights;
-
-    std::cout << "[BSP] Scanning " << entities.size() << " entities for lights...\n";
-
-    for (const auto& entity : entities) {
-        // Расширенный список классов света
-        if (entity.classname == "light" ||
-            entity.classname == "light_spot" ||
-            entity.classname == "light_environment" ||
-            entity.classname == "light_point" ||
-            entity.classname.find("light") != std::string::npos) {
-
-            lights.push_back(entity.origin);
-            std::cout << "[BSP] Found light: " << entity.classname
-                << " at (" << entity.origin.x << ", "
-                << entity.origin.y << ", " << entity.origin.z << ")\n";
-        }
-    }
-
-    std::cout << "[BSP] Total lights found: " << lights.size() << "\n";
-    return lights;
-}
-
-std::vector<BSPLightInfo> BSPLoader::getLightInfos() const {
-    std::vector<BSPLightInfo> lights;
-
-    std::cout << "[BSP] Scanning " << entities.size() << " entities for light info...\n";
-
-    for (const auto& entity : entities) {
-        // Расширенный список классов света
-        if (entity.classname == "light" ||
-            entity.classname == "light_spot" ||
-            entity.classname == "light_environment" ||
-            entity.classname == "light_point" ||
-            entity.classname.find("light") != std::string::npos) {
-
-            BSPLightInfo info;
-            info.position = entity.origin;
-            
-            // Парсим цвет из свойства "_light" или "color" (формат "R G B" 0-255)
-            auto lightIt = entity.properties.find("_light");
-            if (lightIt == entity.properties.end()) {
-                lightIt = entity.properties.find("color");
-            }
-            
-            if (lightIt != entity.properties.end()) {
-                int r = 255, g = 255, b = 255;
-                sscanf(lightIt->second.c_str(), "%d %d %d", &r, &g, &b);
-                info.color = glm::vec3(
-                    r / 255.0f,
-                    g / 255.0f,
-                    b / 255.0f
-                );
-            }
-            
-            // Парсим интенсивность (может быть в "_light" после цвета или отдельно)
-            auto intensityIt = entity.properties.find("intensity");
-            if (intensityIt != entity.properties.end()) {
-                info.intensity = std::stof(intensityIt->second);
-            } else if (lightIt != entity.properties.end()) {
-                // Пробуем найти четвёртое число в строке "_light" как интенсивность
-                int dummy1, dummy2, dummy3, intensityInt;
-                if (sscanf(lightIt->second.c_str(), "%d %d %d %d", &dummy1, &dummy2, &dummy3, &intensityInt) == 4) {
-                    info.intensity = intensityInt / 100.0f;
-                }
-            }
-            
-            // Парсим радиус из свойства "radius" или "_radius"
-            auto radiusIt = entity.properties.find("radius");
-            if (radiusIt == entity.properties.end()) {
-                radiusIt = entity.properties.find("_radius");
-            }
-            if (radiusIt != entity.properties.end()) {
-                info.radius = std::stof(radiusIt->second);
-            } else {
-                // Дефолтный радиус на основе интенсивности
-                info.radius = 10.0f * info.intensity;
-            }
-            
-            // Парсим стиль мерцания
-            auto styleIt = entity.properties.find("style");
-            if (styleIt != entity.properties.end()) {
-                info.style = std::stoi(styleIt->second);
-            }
-            
-            // Парсим targetname и target для связанных ламп
-            auto targetnameIt = entity.properties.find("targetname");
-            if (targetnameIt != entity.properties.end()) {
-                info.targetname = targetnameIt->second;
-            }
-            
-            auto targetIt = entity.properties.find("target");
-            if (targetIt != entity.properties.end()) {
-                info.target = targetIt->second;
-            }
-            
-            lights.push_back(info);
-            std::cout << "[BSP] Found light: " << entity.classname
-                << " pos=(" << info.position.x << ", " << info.position.y << ", " << info.position.z << ")"
-                << " color=(" << info.color.r << ", " << info.color.g << ", " << info.color.b << ")"
-                << " intensity=" << info.intensity
-                << " radius=" << info.radius
-                << " style=" << info.style << "\n";
-        }
-    }
-
-    std::cout << "[BSP] Total lights with info found: " << lights.size() << "\n";
-    return lights;
 }
 
 bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
@@ -619,51 +282,6 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
     return true;
 }
 
-bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const {
-    // Список возможных имён спавн точек (Quake / Half-Life)
-    std::vector<std::string> spawnClasses = {
-        "info_player_start",      // Quake / HL singleplayer
-        "info_player_deathmatch", // Quake / HL deathmatch
-        "info_player_coop",       // Quake coop
-        "info_player_team1",      // Team spawn
-        "info_player_team2",
-        "info_player_axis",       // Some mods
-        "info_player_allies",
-        "player_start"            // Alternative name
-    };
-
-    for (const auto& className : spawnClasses) {
-        for (const auto& entity : entities) {
-            if (entity.classname == className) {
-                outPosition = entity.origin;
-                outAngles = entity.angles;
-
-                std::cout << "[BSP] Found player spawn: " << className
-                    << " at (" << outPosition.x << ", " << outPosition.y << ", " << outPosition.z << ")"
-                    << " angles (" << outAngles.x << ", " << outAngles.y << ", " << outAngles.z << ")"
-                    << std::endl;
-                return true;
-            }
-        }
-    }
-
-    // Если не нашли спавн точку, используем центр карты (fallback)
-    outPosition = glm::vec3(0.0f, 100.0f, 0.0f);
-    outAngles = glm::vec3(0.0f, 0.0f, 0.0f);
-    std::cout << "[BSP] No player start found, using fallback position" << std::endl;
-    return false;
-}
-
-std::vector<BSPEntity> BSPLoader::getEntitiesByClass(const std::string& classname) const {
-    std::vector<BSPEntity> result;
-    for (const auto& entity : entities) {
-        if (entity.classname == classname) {
-            result.push_back(entity);
-        }
-    }
-    return result;
-}
-
 bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_ENTITIES];
     if (lump.length == 0) return false;
@@ -704,7 +322,6 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             // Парсим origin (позиция)
             if (key == "origin") {
                 sscanf(value.c_str(), "%f %f %f", &entity.origin.x, &entity.origin.y, &entity.origin.z);
-                // Конвертируем координаты так же, как и вершины BSP
                 glm::vec3 original(entity.origin.x, entity.origin.y, entity.origin.z);
                 entity.origin = convertPosition(original);
             }
@@ -881,20 +498,12 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
     loadModels(file, header);
     loadTexInfo(file, header);
     parseEntities(file, header);
-    
-    // Load BSP tree structures for runtime rendering (adapted from r_bsp.c)
-    loadNodes(file, header);
-    loadLeafs(file, header);
-    loadMarkSurfaces(file, header);
 
-    // Загружаем WAD файлы из ENTITY секции
     loadRequiredWADsFromEntities();
 
-    // Загружаем все WAD файлы из папки
     wadLoader.init();
     wadLoader.loadAllWADs();
 
-    // Теперь загружаем текстуры
     loadTextures(file, header, wadLoader);
 
     fclose(file);
@@ -925,96 +534,62 @@ void BSPLoader::printStats() const {
     std::cout << "Textures: " << glTextureIds.size() << "\n";
     std::cout << "Draw Calls: " << drawCalls.size() << "\n";
     std::cout << "Required WADs: " << requiredWADs.size() << "\n";
-    std::cout << "BSP Nodes: " << nodes.size() << "\n";
-    std::cout << "BSP Leafs: " << leafs.size() << "\n";
-    std::cout << "Mark Surfaces: " << markSurfaces.size() << "\n";
+    std::cout << "Entities: " << entities.size() << "\n";
     std::cout << "==================\n";
 }
 
-// ============================================================================
-// BSP TREE LOADING FUNCTIONS (adapted from Quake r_bsp.c)
-// ============================================================================
+bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const {
+    std::vector<std::string> spawnClasses = {
+        "info_player_start",
+        "info_player_deathmatch",
+        "info_player_coop",
+        "info_player_team1",
+        "info_player_team2",
+        "info_player_axis",
+        "info_player_allies",
+        "player_start"
+    };
 
-bool BSPLoader::loadNodes(FILE* file, const BSPHeader& header) {
-    const BSPLump& lump = header.lumps[LUMP_NODES];
-    if (lump.length == 0) return false;
-    
-    // Quake BSP node format: planeNum (4), children[2] (8), mins[3] (12), maxs[3] (12), firstSurface (4), numSurfaces (4)
-    // Total: 40 bytes per node
-    size_t count = lump.length / 40;
-    nodes.resize(count);
-    
-    fseek(file, lump.offset, SEEK_SET);
-    for (size_t i = 0; i < count; i++) {
-        int planeNum, frontChild, backChild, firstSurface, numSurfaces;
-        float mins[3], maxs[3];
-        
-        fread(&planeNum, sizeof(int), 1, file);
-        fread(&frontChild, sizeof(int), 1, file);
-        fread(&backChild, sizeof(int), 1, file);
-        fread(mins, sizeof(float), 3, file);
-        fread(maxs, sizeof(float), 3, file);
-        fread(&firstSurface, sizeof(int), 1, file);
-        fread(&numSurfaces, sizeof(int), 1, file);
-        
-        nodes[i].planeNum = planeNum;
-        nodes[i].frontChild = frontChild;
-        nodes[i].backChild = backChild;
-        nodes[i].firstSurface = firstSurface;
-        nodes[i].numSurfaces = numSurfaces;
-        nodes[i].contents = 0;  // Internal nodes have no contents
-        nodes[i].mins = convertPosition(glm::vec3(mins[0], mins[1], mins[2]));
-        nodes[i].maxs = convertPosition(glm::vec3(maxs[0], maxs[1], maxs[2]));
+    for (const auto& className : spawnClasses) {
+        for (const auto& entity : entities) {
+            if (entity.classname == className) {
+                outPosition = entity.origin;
+                outAngles = entity.angles;
+
+                std::cout << "[BSP] Found player spawn: " << className
+                    << " at (" << outPosition.x << ", " << outPosition.y << ", " << outPosition.z << ")"
+                    << " angles (" << outAngles.x << ", " << outAngles.y << ", " << outAngles.z << ")"
+                    << std::endl;
+                return true;
+            }
+        }
     }
-    
-    return true;
+
+    outPosition = glm::vec3(0.0f, 100.0f, 0.0f);
+    outAngles = glm::vec3(0.0f, 0.0f, 0.0f);
+    std::cout << "[BSP] No player start found, using fallback position" << std::endl;
+    return false;
 }
 
-bool BSPLoader::loadLeafs(FILE* file, const BSPHeader& header) {
-    const BSPLump& lump = header.lumps[LUMP_LEAVES];
-    if (lump.length == 0) return false;
-    
-    // Quake BSP leaf format: contents (4), visFrame (4), mins[3] (12), maxs[3] (12), 
-    //                        firstMarkSurface (4), numMarkSurfaces (4), markSurfaces (short[4]) (8)
-    // Total: 52 bytes per leaf
-    size_t count = lump.length / 52;
-    leafs.resize(count);
-    
-    fseek(file, lump.offset, SEEK_SET);
-    for (size_t i = 0; i < count; i++) {
-        int contents, visFrame, firstMarkSurface, numMarkSurfaces;
-        float mins[3], maxs[3];
-        short ambient_levels[4];
-        
-        fread(&contents, sizeof(int), 1, file);
-        fread(&visFrame, sizeof(int), 1, file);
-        fread(mins, sizeof(float), 3, file);
-        fread(maxs, sizeof(float), 3, file);
-        fread(&firstMarkSurface, sizeof(int), 1, file);
-        fread(&numMarkSurfaces, sizeof(int), 1, file);
-        fread(ambient_levels, sizeof(short), 4, file);
-        
-        leafs[i].contents = contents;
-        leafs[i].visFrame = 0;  // Will be set during rendering
-        leafs[i].key = (int)i;  // Unique key for ordering
-        leafs[i].firstMarkSurface = firstMarkSurface;
-        leafs[i].numMarkSurfaces = numMarkSurfaces;
-        leafs[i].mins = convertPosition(glm::vec3(mins[0], mins[1], mins[2]));
-        leafs[i].maxs = convertPosition(glm::vec3(maxs[0], maxs[1], maxs[2]));
+std::vector<BSPEntity> BSPLoader::getEntitiesByClass(const std::string& classname) const {
+    std::vector<BSPEntity> result;
+    for (const auto& entity : entities) {
+        if (entity.classname == classname) {
+            result.push_back(entity);
+        }
     }
-    
-    return true;
+    return result;
 }
 
-bool BSPLoader::loadMarkSurfaces(FILE* file, const BSPHeader& header) {
-    const BSPLump& lump = header.lumps[LUMP_MARKSURFACES];
-    if (lump.length == 0) return false;
-    
-    size_t count = lump.length / sizeof(unsigned short);
-    markSurfaces.resize(count);
-    
-    fseek(file, lump.offset, SEEK_SET);
-    fread(markSurfaces.data(), sizeof(unsigned short), count, file);
-    
-    return true;
+void BSPLoader::debugPrintEntities() const {
+    std::cout << "=== BSP Entities (" << entities.size() << ") ===" << std::endl;
+    for (const auto& entity : entities) {
+        std::cout << "  Class: " << entity.classname;
+        if (entity.classname == "info_player_start" ||
+            entity.classname == "info_player_deathmatch") {
+            std::cout << " at (" << entity.origin.x << ", "
+                << entity.origin.y << ", " << entity.origin.z << ")";
+        }
+        std::cout << std::endl;
+    }
 }

@@ -9,13 +9,6 @@
 
 struct AABB;
 
-// BSP rendering constants adapted from Quake r_bsp.c
-#define MAX_BMODEL_VERTS 500
-#define MAX_BMODEL_EDGES 1000
-#define BACKFACE_EPSILON 0.01f
-#define CONTENTS_SOLID -1
-#define CONTENTS_EMPTY 0
-
 #pragma pack(push, 1)
 struct BSPLump { int offset; int length; };
 struct BSPHeader { int version; BSPLump lumps[15]; };
@@ -41,49 +34,12 @@ struct BSPFace { unsigned short planeNum; unsigned short side; int firstEdge; un
 struct BSPEdge { unsigned short v[2]; };
 struct BSPModel { float min[3]; float max[3]; float origin[3]; int headNode[4]; int visLeafs; int firstFace; int numFaces; };
 struct BSPTexInfo { float s[4]; float t[4]; int textureIndex; int flags; };
-
-// BSP Node structure for runtime traversal
-struct BSPNode {
-    int planeNum;
-    int frontChild;  // positive = node index, negative = leaf index (-leaf-1)
-    int backChild;
-    int firstSurface;
-    int numSurfaces;
-    int contents;    // negative = leaf content, -1 = solid
-    glm::vec3 mins;
-    glm::vec3 maxs;
-};
-
-// BSP Leaf structure
-struct BSPLeaf {
-    int contents;
-    int visFrame;      // for PVS culling
-    int key;           // for ordering
-    int firstMarkSurface;
-    int numMarkSurfaces;
-    glm::vec3 mins;
-    glm::vec3 maxs;
-};
-
-struct BSPVertexData { glm::vec3 position; };
-struct BSPEdgeData { BSPVertexData* v[2]; BSPEdgeData* pnext; };
-
 #pragma pack(pop)
 
 struct BSPVertex {
     glm::vec3 position;
     glm::vec2 texCoord;
     glm::vec3 normal;
-};
-
-struct BSPLightInfo {
-    glm::vec3 position{ 0 };
-    glm::vec3 color{ 1.0f, 1.0f, 1.0f };
-    float intensity = 1.0f;
-    float radius = 10.0f;
-    int style = 0;  // стиль мерцания (0 = постоянный)
-    std::string targetname;
-    std::string target;
 };
 
 struct BSPEntity {
@@ -112,11 +68,6 @@ private:
     std::vector<BSPModel> models;
     std::vector<BSPTexInfo> texInfos;
 
-    // Runtime BSP structures for rendering (loaded from LUMP_NODES and LUMP_LEAVES)
-    std::vector<BSPNode> nodes;
-    std::vector<BSPLeaf> leafs;
-    std::vector<int> markSurfaces;
-
     std::vector<BSPVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
     std::vector<AABB> faceBoundingBoxes;
@@ -142,11 +93,6 @@ private:
     bool loadRequiredWADsFromEntities();
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel);
-    
-    // BSP loading functions
-    bool loadNodes(FILE* file, const BSPHeader& header);
-    bool loadLeafs(FILE* file, const BSPHeader& header);
-    bool loadMarkSurfaces(FILE* file, const BSPHeader& header);
 
 public:
     BSPLoader();
@@ -160,8 +106,6 @@ public:
     const std::vector<BSPEntity>& getEntities() const { return entities; }
     const std::vector<FaceDrawCall>& getDrawCalls() const { return drawCalls; }
     const std::vector<std::string>& getRequiredWADs() const { return requiredWADs; }
-    const std::vector<BSPNode>& getNodes() const { return nodes; }
-    const std::vector<BSPLeaf>& getLeafs() const { return leafs; }
 
     GLuint getDefaultTextureID() const { return defaultTextureId; }
     void cleanupTextures();
@@ -171,8 +115,4 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
-    std::vector<glm::vec3> getLightPositions() const;
-    std::vector<BSPLightInfo> getLightInfos() const;
-
-    friend class LightSystem;
 };

@@ -1,4 +1,5 @@
-﻿#include "WADLoader.h"
+﻿#define NOMINMAX
+#include "WADLoader.h"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -124,7 +125,6 @@ bool WADLoader::loadQuakePalette(const std::string& path) {
         hasQuakePalette = true;
         std::cout << "[WAD] Loaded Quake palette from: " << path << " (768 bytes)" << std::endl;
 
-        // Вывести первые несколько цветов для проверки
         std::cout << "[WAD] First few colors in palette: ";
         for (int i = 0; i < 3; i++) {
             std::cout << "[" << (int)quakePalette[i * 3] << ","
@@ -151,6 +151,11 @@ GLuint WADLoader::createTexture(const WADTexture& tex) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    // Для прозрачных текстур немного меняем фильтрацию
+    if (!tex.name.empty() && tex.name[0] == '{') {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+    }
 
     glBindTexture(GL_TEXTURE_2D, 0);
     return id;
@@ -279,7 +284,6 @@ bool WADLoader::loadWADFile(const std::string& path) {
             palOk = (file.gcount() == 768);
 
             if (!palOk) {
-                // Пробуем без +2 (старый способ)
                 file.clear();
                 file.seekg(filepos + texHeader.offsets[0] + totalMipSize, std::ios::beg);
                 file.read(reinterpret_cast<char*>(palette), 768);
@@ -293,7 +297,6 @@ bool WADLoader::loadWADFile(const std::string& path) {
             file.read(reinterpret_cast<char*>(palette), 768);
             palOk = (file.gcount() == 768);
 
-            // Если не нашли, пробуем после всех MIP уровней
             if (!palOk) {
                 uint32_t totalMipSize = 0;
                 uint32_t w = texHeader.width, h = texHeader.height;
@@ -310,7 +313,7 @@ bool WADLoader::loadWADFile(const std::string& path) {
             }
         }
 
-        // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: используем внешнюю палитру Quake для WAD2
+        // Используем внешнюю палитру Quake для WAD2
         if (!palOk && !isWAD3 && hasQuakePalette) {
             memcpy(palette, quakePalette, 768);
             palOk = true;
@@ -320,7 +323,7 @@ bool WADLoader::loadWADFile(const std::string& path) {
             }
         }
 
-        // Fallback градиентная палитра если ничего не работает
+        // Fallback градиентная палитра
         if (!palOk) {
             if (!isWAD3) {
                 std::cout << "[WAD] No palette for: " << rawName << ", using gradient" << std::endl;
@@ -340,20 +343,19 @@ bool WADLoader::loadWADFile(const std::string& path) {
         tex.height = texHeader.height;
         tex.rgba.resize(pixelCount * 4);
 
-        // Прозрачность для { текстур (обычно спрайты/декали)
-        bool isTransparent = (rawName[0] == '{');
+        // Прозрачность для { текстур (спрайты/декали/сетки)
+        bool isTransparent = (!rawName.empty() && rawName[0] == '{');
 
         for (size_t pi = 0; pi < pixelCount; ++pi) {
             uint8_t idx = pixels[pi];
 
-            // Для прозрачных текстур (с { в начале)
+            // Для прозрачных текстур
             if (isTransparent && idx == 255) {
-                // ВАЖНО: ставим ЧЁРНЫЙ цвет (0,0,0) вместо синего
-                // Это предотвращает синее свечение вокруг прозрачных областей
-                tex.rgba[pi * 4 + 0] = 0;   // R = 0
-                tex.rgba[pi * 4 + 1] = 0;   // G = 0
-                tex.rgba[pi * 4 + 2] = 0;   // B = 0
-                tex.rgba[pi * 4 + 3] = 0;   // A = 0 (полностью прозрачный)
+                // Ставим ЧЁРНЫЙ цвет вместо синего - это убирает синее свечение
+                tex.rgba[pi * 4 + 0] = 0;   // R
+                tex.rgba[pi * 4 + 1] = 0;   // G
+                tex.rgba[pi * 4 + 2] = 0;   // B
+                tex.rgba[pi * 4 + 3] = 0;   // A = полностью прозрачный
             }
             else {
                 // Непрозрачный пиксель
@@ -365,7 +367,7 @@ bool WADLoader::loadWADFile(const std::string& path) {
                     tex.rgba[pi * 4 + 2] = palette[idx * 3 + 2];
                 }
                 else {
-                    // Fallback magenta (только если индекс вне палитры)
+                    // Fallback magenta
                     tex.rgba[pi * 4 + 0] = 255;
                     tex.rgba[pi * 4 + 1] = 0;
                     tex.rgba[pi * 4 + 2] = 255;
@@ -449,7 +451,6 @@ GLuint WADLoader::getTexture(const std::string& name) {
         return it->second.id;
     }
 
-    // Очистка имени от префиксов
     std::string cleanName = name;
     while (!cleanName.empty()) {
         char c = cleanName[0];
