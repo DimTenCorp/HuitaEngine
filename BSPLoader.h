@@ -8,13 +8,8 @@
 // Forward declaration only for WADLoader
 class WADLoader;
 
-// Include AABB definition directly to avoid circular dependency
-struct AABB {
-    glm::vec3 min;
-    glm::vec3 max;
-    AABB() : min(0.0f), max(0.0f) {}
-    AABB(const glm::vec3& mn, const glm::vec3& mx) : min(mn), max(mx) {}
-};
+// Include AABB definition - moved to separate header to avoid circular dependency
+#include "AABB.h"
 
 #pragma pack(push, 1)
 struct BSPLump { int offset; int length; };

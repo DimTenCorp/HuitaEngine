@@ -202,32 +202,32 @@ void Shader::use() {
     }
 }
 
-void Shader::setBool(const std::string& name, bool value) const {
+void Shader::setBool(const std::string& name, bool value) {
     if (ID == 0) return;
     glUniform1i(getUniformLocationInternal(name), (int)value);
 }
 
-void Shader::setInt(const std::string& name, int value) const {
+void Shader::setInt(const std::string& name, int value) {
     if (ID == 0) return;
     glUniform1i(getUniformLocationInternal(name), value);
 }
 
-void Shader::setFloat(const std::string& name, float value) const {
+void Shader::setFloat(const std::string& name, float value) {
     if (ID == 0) return;
     glUniform1f(getUniformLocationInternal(name), value);
 }
 
-void Shader::setMat4(const std::string& name, const float* value) const {
+void Shader::setMat4(const std::string& name, const float* value) {
     if (ID == 0) return;
     glUniformMatrix4fv(getUniformLocationInternal(name), 1, GL_FALSE, value);
 }
 
-void Shader::setMat4(const std::string& name, const glm::mat4& value) const {
+void Shader::setMat4(const std::string& name, const glm::mat4& value) {
     if (ID == 0) return;
     glUniformMatrix4fv(getUniformLocationInternal(name), 1, GL_FALSE, glm::value_ptr(value));
 }
 
-void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
+void Shader::setVec3(const std::string& name, const glm::vec3& value) {
     if (ID == 0) return;
     glUniform3fv(getUniformLocationInternal(name), 1, glm::value_ptr(value));
 }

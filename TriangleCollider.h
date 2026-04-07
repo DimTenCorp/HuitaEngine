@@ -1,16 +1,11 @@
 ﻿#pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <algorithm>
 
-// Forward declaration of AABB
-struct AABB {
-    glm::vec3 min;
-    glm::vec3 max;
-
-    AABB() : min(0.0f), max(0.0f) {}
-    AABB(const glm::vec3& mn, const glm::vec3& mx) : min(mn), max(mx) {}
-};
+// Include shared AABB definition
+#include "AABB.h"
 
 struct Triangle {
     glm::vec3 v0, v1, v2;

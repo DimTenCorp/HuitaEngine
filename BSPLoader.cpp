@@ -7,6 +7,7 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
+#include <glm/gtc/type_ptr.hpp>
 #include "WADLoader.h"
 #include "TriangleCollider.h"
 
