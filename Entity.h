@@ -13,8 +13,12 @@ protected:
     bool isActive;
 
 public:
-    CBaseEntity();
-    virtual ~CBaseEntity();
+    inline CBaseEntity()
+        : position(glm::vec3(0.0f, 0.0f, 0.0f)),
+        rotation(glm::vec3(0.0f, 0.0f, 0.0f)),
+        scale(glm::vec3(1.0f, 1.0f, 1.0f)),
+        isActive(true) {}
+    virtual inline ~CBaseEntity() {}
 
     // Виртуальные методы для переопределения
     virtual void Update(float deltaTime);
