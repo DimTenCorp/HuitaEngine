@@ -1,62 +1,67 @@
-#ifndef LIGHT_H
-#define LIGHT_H
+#pragma once
+#include <glm/glm.hpp>
+#include "Entity.h"
 
-#include <string>
-#include <vector>
-#include <chrono>
-#include "Entity.h" // Предполагаем наличие базового класса Entity
-#include "MathTypes.h" // Векторы и прочее
+class CLight : public CBaseEntity {
+public:
+    enum LightType {
+        POINT_LIGHT = 0,
+        SPOT_LIGHT = 1,
+        DIRECTIONAL_LIGHT = 2
+    };
 
-// Флаги спавна (из Quake/Half-Life)
-#define SF_LIGHT_START_OFF 1
+private:
+    LightType lightType;
+    glm::vec3 color;
+    float brightness;
+    float radius;
+    float constant;
+    float linear;
+    float quadratic;
+    float spotCutoff;
+    float spotOuterCutoff;
+    glm::vec3 direction;
 
-class LightManager; // Forward declaration
-
-class CLight : public CBaseEntity
-{
 public:
     CLight();
     virtual ~CLight();
 
-    // Инициализация из параметров карты
-    void KeyValue(const std::string& key, const std::string& value);
+    // Override методы базового класса
+    virtual void Update(float deltaTime) override;
+    virtual void Render() override;
 
-    // Спавн сущности
-    void Spawn() override;
+    // Геттеры и сеттеры
+    LightType getLightType() const { return lightType; }
+    void setLightType(LightType type) { lightType = type; }
 
-    // Обновление состояния (вызывается каждый кадр)
-    void Think() override;
+    glm::vec3 getColor() const { return color; }
+    void setColor(const glm::vec3& col) { color = col; }
 
-    // Обработка активации (триггеры)
-    void Use(CBaseEntity* pActivator, CBaseEntity* pCaller);
+    float getBrightness() const { return brightness; }
+    void SetBrightness(float b) { brightness = b; }
 
-    // Доступ к данным
-    int GetStyle() const { return m_iStyle; }
-    const std::string& GetPattern() const { return m_szPattern; }
-    bool IsOn() const { return !m_bIsOff; }
+    float getRadius() const { return radius; }
+    void setRadius(float r) { radius = r; }
 
-protected:
-    int m_iStyle;                 // Стиль света (0-31 статические, 32+ динамические)
-    std::string m_szPattern;      // Строка паттерна яркости (например, "abcde...")
-    bool m_bIsOff;                // Текущее состояние (включен/выключен)
+    float getConstant() const { return constant; }
+    void setConstant(float c) { constant = c; }
 
-    // Для анимации паттерна
-    float m_flNextChangeTime;     // Время следующего изменения яркости
-    int m_iCurrentPatternIndex;   // Текущий индекс в строке паттерна
-    float m_flFrameTime;          // Накопленное время для анимации
+    float getLinear() const { return linear; }
+    void setLinear(float l) { linear = l; }
+
+    float getQuadratic() const { return quadratic; }
+    void setQuadratic(float q) { quadratic = q; }
+
+    float getSpotCutoff() const { return spotCutoff; }
+    void setSpotCutoff(float cutoff) { spotCutoff = cutoff; }
+
+    float getSpotOuterCutoff() const { return spotOuterCutoff; }
+    void setSpotOuterCutoff(float outerCutoff) { spotOuterCutoff = outerCutoff; }
+
+    glm::vec3 getDirection() const { return direction; }
+    void setDirection(const glm::vec3& dir) { direction = dir; }
+
+    // Вектор позиции (наследуется от CBaseEntity)
+    vec3_t getPosition() const;
+    void setPosition(const vec3_t& pos);
 };
-
-// Специализированный класс для окружающего света (небо/солнце)
-class CEnvLight : public CLight
-{
-public:
-    void KeyValue(const std::string& key, const std::string& value) override;
-    void Spawn() override;
-
-private:
-    vec3_t m_vecDirection; // Направление света
-    vec3_t m_vecColor;     // Цвет света (RGB)
-    int m_iIntensity;      // Интенсивность
-};
-
-#endif // LIGHT_H
