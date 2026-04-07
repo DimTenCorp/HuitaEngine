@@ -225,6 +225,10 @@ int Shader::getLocation(const std::string& name) const {
     return glGetUniformLocation(ID, name.c_str());
 }
 
+std::string Shader::getError() const {
+    return errorMsg;
+}
+
 std::string Shader::readFile(const char* filePath) {
     std::string content;
     std::ifstream fileStream(filePath, std::ios::in);
