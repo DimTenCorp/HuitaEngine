@@ -47,6 +47,19 @@ private:
         const Triangle& tri, float& t, float& u, float& v) const;
     bool aabbTriangleIntersect(const AABB& box, const Triangle& tri) const;
     float pointTriangleDistance(const glm::vec3& p, const Triangle& tri, glm::vec3& closest) const;
+    
+    // Spatial partitioning for faster collision detection
+    struct GridCell {
+        std::vector<size_t> triangleIndices;
+        AABB bounds;
+    };
+    std::vector<GridCell> spatialGrid;
+    glm::ivec3 gridSize{1, 1, 1};
+    float cellSize = 1.0f;
+    bool gridBuilt = false;
+    
+    void buildSpatialGrid();
+    std::vector<size_t> getCandidateTriangles(const AABB& box) const;
 
 public:
     MeshCollider() = default;

@@ -3,13 +3,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <string>
+#include <unordered_map>
 
 class Shader {
 private:
     unsigned int ID;
     std::string lastError;
+    std::unordered_map<std::string, int> uniformCache;
     std::string readFile(const char* filePath);
     void checkCompileErrors(unsigned int shader, std::string type);
+    int getUniformLocationInternal(const std::string& name);
 
 public:
     Shader();

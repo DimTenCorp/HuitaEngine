@@ -461,7 +461,18 @@ void BSPLoader::buildMesh() {
         if (entity.classname.find("func_") == std::string::npos &&
             entity.classname.find("brush") == std::string::npos) continue;
 
-        int modelIndex = std::stoi(entity.model.substr(1));
+        // Безопасный парсинг индекса модели
+        if (entity.model.length() < 2 || entity.model[0] != '*') continue;
+        
+        int modelIndex = 0;
+        try {
+            modelIndex = std::stoi(entity.model.substr(1));
+        }
+        catch (const std::exception& e) {
+            std::cerr << "[BSP] Failed to parse model index from \"" << entity.model << "\": " << e.what() << std::endl;
+            continue;
+        }
+        
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
         buildSubmodelMesh(models[modelIndex]);
     }

@@ -5,11 +5,16 @@
 #include <string>
 #include <glad/glad.h>
 
-// Включаем полное определение AABB
-#include "TriangleCollider.h"
-
-// Forward declaration только для WADLoader
+// Forward declaration only for WADLoader
 class WADLoader;
+
+// Include AABB definition directly to avoid circular dependency
+struct AABB {
+    glm::vec3 min;
+    glm::vec3 max;
+    AABB() : min(0.0f), max(0.0f) {}
+    AABB(const glm::vec3& mn, const glm::vec3& mx) : min(mn), max(mx) {}
+};
 
 #pragma pack(push, 1)
 struct BSPLump { int offset; int length; };

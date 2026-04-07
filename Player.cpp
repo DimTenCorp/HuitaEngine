@@ -34,6 +34,7 @@ void Player::handleInput(float deltaTime) {
     glm::vec3 right(sin(yawRad), 0.0f, -cos(yawRad));
 
     GLFWwindow* window = glfwGetCurrentContext();
+    if (!window) return;
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishDir += forward;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishDir -= forward;
@@ -50,8 +51,7 @@ void Player::handleInput(float deltaTime) {
         velocity.z = 0.0f;
     }
 
-    GLFWwindow* win = glfwGetCurrentContext();
-    bool spacePressed = (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS);
+    bool spacePressed = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
 
     if (spacePressed) {
         if (!jumpKeyWasHeld && onGround && velocity.y <= 0.01f) {
@@ -77,6 +77,7 @@ void Player::moveNoclip(float deltaTime) {
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
     GLFWwindow* window = glfwGetCurrentContext();
+    if (!window) return;
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishDir += forward;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishDir -= forward;
