@@ -679,12 +679,14 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             // Вычисляем направление взгляда (куда смотрят углы)
             glm::vec3 forward;
             forward.x = sin(yawRad) * cos(pitchRad);
-            forward.y = -sin(pitchRad);  // Инвертируем Y, т.к. положительный pitch = вниз
+            forward.y = sin(pitchRad);  // Оставляем как есть, т.к. в HL +pitch это вниз, и sin(положительный) = положитльный Y
             forward.z = cos(yawRad) * cos(pitchRad);
             forward = glm::normalize(forward);
             
             // Свет идет ОТ солнца, поэтому инвертируем направление
-            glm::vec3 sunDir = -forward;
+            // Если сущность смотрит вниз (+pitch), forward.y положительный
+            // Инвертированный sunDir.y будет отрицательным (свет сверху вниз) - ПРАВИЛЬНО
+            glm::vec3 sunDir = forward; // НЕ инвертируем, т.к. forward уже направлен "вниз" при +pitch
             
             std::cout << "[BSP] light_environment angles: (" 
                       << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
