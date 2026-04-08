@@ -34,6 +34,17 @@ struct GBuffer {
 };
 
 // ============================================================================
+// PointLight Structure - точечный источник света
+// ============================================================================
+struct PointLight {
+    glm::vec3 position{0.0f};
+    glm::vec3 color{1.0f};
+    float intensity = 1.0f;
+    float radius = 10.0f;
+    bool enabled = true;
+};
+
+// ============================================================================
 // Flashlight Structure - параметры прожектора игрока
 // ============================================================================
 struct Flashlight {
@@ -104,6 +115,11 @@ public:
     const RenderStats& getStats() const { return stats; }
 
     void setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool enabled);
+    
+    // Point light management
+    void addPointLight(const PointLight& light);
+    void clearPointLights();
+    void setAmbientStrength(float strength) { ambientStrength = strength; }
 
 private:
     // Mesh resources
@@ -136,6 +152,9 @@ private:
     RenderStats stats;
     int screenWidth = 1280, screenHeight = 720;
     Flashlight flashlight;
+    float ambientStrength = 0.1f;
+    std::vector<PointLight> pointLights;
+    static constexpr int MAX_POINT_LIGHTS = 8;
 
     // Quad for fullscreen passes
     GLuint quadVAO = 0;

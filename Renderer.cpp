@@ -258,7 +258,7 @@ out vec2 vTexCoord;
 
 void main() {
     vTexCoord = aTexCoord;
-    gl_Position = vec4(aPos, 1.0);
+    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
 }
 )glsl";
 
@@ -274,26 +274,69 @@ uniform vec3 uViewPos;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uSunIntensity;
+uniform float uAmbientStrength;
+
+// Point light structure
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float intensity;
+    float radius;
+    bool enabled;
+};
+
+#define MAX_POINT_LIGHTS 8
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uPointLightCount;
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
     
+    // Skip if no valid position (background)
+    if (length(fragPos) < 0.001) {
+        FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    
     // Ambient
-    vec3 ambient = 0.1 * albedo.rgb;
+    vec3 ambient = uAmbientStrength * albedo.rgb;
     
     // Sun directional light
     float diff = max(dot(normal, -uSunDir), 0.0);
     vec3 diffuse = diff * uSunColor * uSunIntensity;
     
-    // View direction for specular
+    // Specular for sun
     vec3 viewDir = normalize(uViewPos - fragPos);
     vec3 reflectDir = reflect(uSunDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
     vec3 specular = spec * uSunColor * uSunIntensity * 0.5;
     
-    vec3 result = ambient + diffuse + specular;
+    // Accumulate point lights
+    vec3 pointLightAccum = vec3(0.0);
+    for (int i = 0; i < uPointLightCount; i++) {
+        if (!uPointLights[i].enabled) continue;
+        
+        vec3 lightDir = uPointLights[i].position - fragPos;
+        float dist = length(lightDir);
+        
+        // Skip if outside radius
+        if (dist > uPointLights[i].radius) continue;
+        
+        lightDir = normalize(lightDir);
+        
+        // Diffuse
+        float pointDiff = max(dot(normal, lightDir), 0.0);
+        
+        // Attenuation
+        float attenuation = 1.0 - (dist / uPointLights[i].radius);
+        attenuation = attenuation * attenuation;
+        
+        pointLightAccum += pointDiff * attenuation * uPointLights[i].color * uPointLights[i].intensity;
+    }
+    
+    vec3 result = ambient + diffuse + specular + pointLightAccum;
     FragColor = vec4(result * albedo.rgb, albedo.a);
 }
 )glsl";
@@ -444,6 +487,8 @@ bool Renderer::init(int width, int height) {
     lightingShader->setInt("gPosition", 0);
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
+    lightingShader->setFloat("uAmbientStrength", 0.1f);
+    lightingShader->setInt("uPointLightCount", 0);
     lightingShader->unbind();
 
     // Create flashlight shader
@@ -611,6 +656,20 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, con
     lightingShader->setVec3("uSunDir", sunDir);
     lightingShader->setVec3("uSunColor", glm::vec3(1.0f, 0.95f, 0.8f));
     lightingShader->setFloat("uSunIntensity", 1.0f);
+    lightingShader->setFloat("uAmbientStrength", ambientStrength);
+    
+    // Upload point lights
+    int lightCount = std::min((int)pointLights.size(), MAX_POINT_LIGHTS);
+    lightingShader->setInt("uPointLightCount", lightCount);
+    
+    for (int i = 0; i < lightCount; i++) {
+        std::string prefix = "uPointLights[" + std::to_string(i) + "].";
+        lightingShader->setVec3(prefix + "position", pointLights[i].position);
+        lightingShader->setVec3(prefix + "color", pointLights[i].color);
+        lightingShader->setFloat(prefix + "intensity", pointLights[i].intensity);
+        lightingShader->setFloat(prefix + "radius", pointLights[i].radius);
+        lightingShader->setBool(prefix + "enabled", pointLights[i].enabled);
+    }
 
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -686,6 +745,16 @@ void Renderer::setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool en
     }
 }
 
+void Renderer::addPointLight(const PointLight& light) {
+    if ((int)pointLights.size() < MAX_POINT_LIGHTS) {
+        pointLights.push_back(light);
+    }
+}
+
+void Renderer::clearPointLights() {
+    pointLights.clear();
+}
+
 void Renderer::setViewport(int width, int height) {
     screenWidth = width;
     screenHeight = height;
@@ -698,6 +767,7 @@ void Renderer::cleanup() {
     shadowFBO.destroy();
     worldMesh.destroy();
     hitboxMesh.destroy();
+    pointLights.clear();
 
     geometryShader.reset();
     lightingShader.reset();
