@@ -13,8 +13,8 @@ node_modules/
 venv/
 .venv/
 __pycache__/
-dist/
-build/
+.mypy_cache/
+.pytest_cache/
 target/
 .gradle/
 
@@ -22,20 +22,15 @@ target/
 *.log
 *.tmp
 *.swp
-*.swo
-
-# Environment
-.env
-.env.local
-*.env.*
 
 # Editors
 .vscode/
 .idea/
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment
+.env
+.env.local
+*.env.*
 
 # Coverage
 coverage/

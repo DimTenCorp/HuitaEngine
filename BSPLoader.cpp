@@ -677,16 +677,16 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             float pitchRad = glm::radians(angles.x);
             
             // Вычисляем направление взгляда (куда смотрят углы)
+            // В системе координат Half-Life: X вперед, Y вправо, Z вверх
             glm::vec3 forward;
-            forward.x = sin(yawRad) * cos(pitchRad);
-            forward.y = sin(pitchRad);  // Оставляем как есть, т.к. в HL +pitch это вниз, и sin(положительный) = положитльный Y
-            forward.z = cos(yawRad) * cos(pitchRad);
+            forward.x = cos(pitchRad) * sin(yawRad);
+            forward.y = cos(pitchRad) * cos(yawRad);
+            forward.z = -sin(pitchRad);  // Инвертируем Z, т.к. +pitch в HL это вниз, а нам нужно чтобы свет шел сверху
             forward = glm::normalize(forward);
             
-            // Свет идет ОТ солнца, поэтому инвертируем направление
-            // Если сущность смотрит вниз (+pitch), forward.y положительный
-            // Инвертированный sunDir.y будет отрицательным (свет сверху вниз) - ПРАВИЛЬНО
-            glm::vec3 sunDir = forward; // НЕ инвертируем, т.к. forward уже направлен "вниз" при +pitch
+            // Свет идет ОТ солнца к земле, поэтому используем направление forward как есть
+            // Если сущность смотрит вниз (+pitch), forward.z будет отрицательным (свет сверху вниз)
+            glm::vec3 sunDir = forward;
             
             std::cout << "[BSP] light_environment angles: (" 
                       << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
@@ -717,12 +717,13 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                         b = static_cast<int>(b * (v / 255.0f));
                     }
                     
-                    // Эмуляция QRAD и масштабирования движка (как в оригинальном GoldSrc)
-                    float rf = std::pow(r / 114.0f, 0.6f) * 264.0f;
-                    float gf = std::pow(g / 114.0f, 0.6f) * 264.0f;
-                    float bf = std::pow(b / 114.0f, 0.6f) * 264.0f;
+                    // Ограничиваем значения максимум 255
+                    r = std::clamp(r, 0, 255);
+                    g = std::clamp(g, 0, 255);
+                    b = std::clamp(b, 0, 255);
                     
-                    glm::vec3 sunColor(rf / 255.0f, gf / 255.0f, bf / 255.0f);
+                    // Конвертируем в диапазон [0, 1] для шейдера
+                    glm::vec3 sunColor(r / 255.0f, g / 255.0f, b / 255.0f);
                     
                     std::cout << "[BSP] light_environment color: (" 
                               << r << ", " << g << ", " << b << ")" << std::endl;
@@ -730,13 +731,6 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                     lightManager.setSunColor(sunColor);
                     lightManager.setSunIntensity(1.0f);
                 }
-            }
-            
-            // Также можно извлечь pitch для совместимости
-            auto pitchIt = entity.properties.find("pitch");
-            if (pitchIt != entity.properties.end()) {
-                float pitchOverride = std::stof(pitchIt->second);
-                std::cout << "[BSP] light_environment pitch override: " << pitchOverride << std::endl;
             }
             
             return; // Обрабатываем только первый light_environment
