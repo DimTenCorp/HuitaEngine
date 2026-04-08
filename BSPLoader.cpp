@@ -480,8 +480,8 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         unsigned int startIdxOffset = (unsigned int)meshIndices.size();
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
             meshIndices.push_back(faceStartVertex);
-            meshIndices.push_back(faceStartVertex + (unsigned int)j);
             meshIndices.push_back(faceStartVertex + (unsigned int)j + 1);
+            meshIndices.push_back(faceStartVertex + (unsigned int)j);
         }
 
         drawCalls.push_back({ textureID, startIdxOffset, (unsigned int)((faceVerts.size() - 2) * 3) });
