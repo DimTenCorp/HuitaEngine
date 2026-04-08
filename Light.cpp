@@ -72,11 +72,10 @@ LightData CLight::createDirectional(const glm::vec3& direction,
                                      float intensity) {
     LightData data;
     data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Directional));
-    data.directionCutoff.xyz = glm::normalize(direction);
-    data.colorIntensity.xyz = color;
-    data.colorIntensity.w = intensity;
+    data.directionCutoff = glm::vec4(glm::normalize(direction), 0.0f);
+    data.colorIntensity = glm::vec4(color, intensity);
     data.positionRadius.w = 0.0f;
-    data.enabled = true;
+    data.outerEnabled.y = 1.0f;
     return data;
 }
 
@@ -86,11 +85,10 @@ LightData CLight::createPoint(const glm::vec3& position,
                                float radius) {
     LightData data;
     data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Point));
-    data.positionRadius.xyz = position;
-    data.positionRadius.w = radius;
-    data.colorIntensity.xyz = color;
-    data.colorIntensity.w = intensity;
-    data.directionCutoff.xyz = glm::vec3(0.0f, -1.0f, 0.0f);
+    data.positionRadius = glm::vec4(position, radius);
+    data.colorIntensity = glm::vec4(color, intensity);
+    data.directionCutoff = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
+    data.outerEnabled.x = 0.0f;
     data.outerEnabled.y = 1.0f;
     return data;
 }
@@ -104,12 +102,9 @@ LightData CLight::createSpot(const glm::vec3& position,
                               float radius) {
     LightData data;
     data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Spot));
-    data.positionRadius.xyz = position;
-    data.positionRadius.w = radius;
-    data.directionCutoff.xyz = glm::normalize(direction);
-    data.colorIntensity.xyz = color;
-    data.colorIntensity.w = intensity;
-    data.directionCutoff.w = glm::cos(glm::radians(innerDegrees));
+    data.positionRadius = glm::vec4(position, radius);
+    data.directionCutoff = glm::vec4(glm::normalize(direction), glm::cos(glm::radians(innerDegrees)));
+    data.colorIntensity = glm::vec4(color, intensity);
     data.outerEnabled.x = glm::cos(glm::radians(outerDegrees));
     data.outerEnabled.y = 1.0f;
     return data;

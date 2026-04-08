@@ -62,16 +62,16 @@ public:
     void setType(ELightType type);
 
     // Позиция (для point/spot lights)
-    glm::vec3 getPosition() const { return data.positionRadius.xyz; }
-    void setPosition(const glm::vec3& pos) { data.positionRadius.xyz = pos; }
+    glm::vec3 getPosition() const { return glm::vec3(data.positionRadius); }
+    void setPosition(const glm::vec3& pos) { data.positionRadius = glm::vec4(pos, data.positionRadius.w); }
 
     // Направление (для spot/directional lights)
-    glm::vec3 getDirection() const { return data.directionCutoff.xyz; }
-    void setDirection(const glm::vec3& dir) { data.directionCutoff.xyz = glm::normalize(dir); }
+    glm::vec3 getDirection() const { return glm::vec3(data.directionCutoff); }
+    void setDirection(const glm::vec3& dir) { data.directionCutoff = glm::vec4(glm::normalize(dir), data.directionCutoff.w); }
 
     // Цвет
-    glm::vec3 getColor() const { return data.colorIntensity.xyz; }
-    void setColor(const glm::vec3& col) { data.colorIntensity.xyz = col; }
+    glm::vec3 getColor() const { return glm::vec3(data.colorIntensity); }
+    void setColor(const glm::vec3& col) { data.colorIntensity = glm::vec4(col, data.colorIntensity.w); }
 
     // Интенсивность
     float getIntensity() const { return data.colorIntensity.w; }
