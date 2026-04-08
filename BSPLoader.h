@@ -7,6 +7,8 @@
 
 // Forward declaration only for WADLoader
 class WADLoader;
+// Forward declaration for LightManager to avoid circular dependency
+class LightManager;
 
 // Include AABB definition - moved to separate header to avoid circular dependency
 #include "AABB.h"
@@ -118,6 +120,5 @@ public:
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
     
     // Setup lighting from light_environment entity
-    class LightManager;
     void setupLightEnvironment(LightManager& lightManager) const;
 };
