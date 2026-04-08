@@ -422,8 +422,20 @@ void main() {
     vec3 normal = normalize(vNormal);
     vec3 lightDir = normalize(uLightPos - vFragPos);
     float theta = dot(lightDir, normalize(-uLightDir));
-    float epsilon = cos(uCutOffOuter) - cos(uCutOffInner);
-    float intensity = clamp((theta - cos(uCutOffOuter)) / epsilon, 0.0, 1.0);
+    
+    // uCutOffInner and uCutOffOuter are already cosines, don't apply cos() again
+    float innerCos = uCutOffInner;
+    float outerCos = uCutOffOuter;
+    float epsilon = innerCos - outerCos;  // inner > outer for spotlights
+    
+    float intensity = 0.0;
+    if (epsilon != 0.0) {
+        intensity = clamp((theta - outerCos) / epsilon, 0.0, 1.0);
+    } else {
+        intensity = (theta >= outerCos) ? 1.0 : 0.0;
+    }
+    
+    if (intensity <= 0.0) discard;
     
     float diff = max(dot(normal, lightDir), 0.0);
     float shadow = calcShadow();
