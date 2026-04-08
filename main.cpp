@@ -93,7 +93,7 @@ void processInput(GLFWwindow* window, HUD& hud) {
 bool initSystems(WADLoader& wadLoader) {
     if (!g_bspLoader || !g_player || !g_renderer || !g_meshCollider) return false;
 
-    if (!g_bspLoader->load("maps/crossfire.bsp", wadLoader)) {
+    if (!g_bspLoader->load("maps/de_pasan.bsp", wadLoader)) {
         std::cerr << "Failed to load BSP" << std::endl;
         return false;
     }
