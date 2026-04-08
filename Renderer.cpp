@@ -640,6 +640,11 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
+    // Setup lighting from light_environment entity if LightManager is available
+    if (lightManager) {
+        bsp.setupLightEnvironment(*lightManager);
+    }
+
     std::cout << "Renderer: World loaded successfully, " << drawCalls.size() << " draw calls after sort" << std::endl;
     
     worldLoaded = true;
@@ -660,7 +665,7 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
 }
 
 void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
-    renderWorld(view, viewPos, glm::vec3(0.5f, -1.0f, 0.3f));
+    renderWorld(view, viewPos, glm::vec3(-0.5f, 1.0f, -0.3f));
 }
 
 void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, const glm::vec3& sunDir) {

@@ -7,6 +7,8 @@
 
 // Forward declaration only for WADLoader
 class WADLoader;
+// Forward declaration for LightManager to avoid circular dependency
+class LightManager;
 
 // Include AABB definition - moved to separate header to avoid circular dependency
 #include "AABB.h"
@@ -116,4 +118,7 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
+    
+    // Setup lighting from light_environment entity
+    void setupLightEnvironment(LightManager& lightManager) const;
 };

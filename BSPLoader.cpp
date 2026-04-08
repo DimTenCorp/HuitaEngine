@@ -1,5 +1,6 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include "BSPLoader.h"
+#include "Light.h"
 #include <iostream>
 #include <cstdio>
 #include <cstring>
@@ -388,11 +389,13 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         if (face.planeNum >= planes.size()) continue;
         if (face.texInfo >= texInfos.size()) continue;
 
+        // Для GoldSrc BSP сторона плоскости определяет направление нормали
+        // side == 0: нормаль направлена в положительную сторону
+        // side == 1: нормаль направлена в отрицательную сторону
         glm::vec3 normal = planes[face.planeNum].normal;
-        if (face.side) normal = -normal;
-        
-        // Инвертируем нормали для исправления проблемы с рендерингом
-        normal = -normal;
+        if (face.side != 0) {
+            normal = -normal;
+        }
 
         std::vector<glm::vec3> faceVerts;
         faceVerts.reserve(face.numEdges);
@@ -484,8 +487,8 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         unsigned int startIdxOffset = (unsigned int)meshIndices.size();
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
             meshIndices.push_back(faceStartVertex);
-            meshIndices.push_back(faceStartVertex + (unsigned int)j);
             meshIndices.push_back(faceStartVertex + (unsigned int)j + 1);
+            meshIndices.push_back(faceStartVertex + (unsigned int)j);
         }
 
         drawCalls.push_back({ textureID, startIdxOffset, (unsigned int)((faceVerts.size() - 2) * 3) });
@@ -615,6 +618,14 @@ bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) co
         }
     }
 
+    // Also try light_environment for sun direction
+    for (const auto& entity : entities) {
+        if (entity.classname == "light_environment") {
+            std::cout << "[BSP] Found light_environment" << std::endl;
+            // Can be used to extract _light and angles for sun direction
+        }
+    }
+
     outPosition = glm::vec3(0.0f, 100.0f, 0.0f);
     outAngles = glm::vec3(0.0f, 0.0f, 0.0f);
     std::cout << "[BSP] No player start found, using fallback position" << std::endl;
@@ -642,4 +653,90 @@ void BSPLoader::debugPrintEntities() const {
         }
         std::cout << std::endl;
     }
+}
+
+// Адаптированный код освещения из GoldSrc для HuitaEngine
+// Оригинал: lights.cpp из Half-Life SDK
+
+// Парсинг сущности light_environment из BSP и настройка освещения
+void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
+    for (const auto& entity : entities) {
+        if (entity.classname == "light_environment") {
+            std::cout << "[BSP] Processing light_environment entity" << std::endl;
+            
+            // Извлекаем углы для направления солнца
+            glm::vec3 angles = entity.angles;
+            
+            // Конвертируем углы в вектор направления
+            // В GoldSrc/Half-Life:
+            // - angles.y (yaw): 0 = South, 90 = East, 180 = North, 270 = West
+            // - angles.x (pitch): положительный = вниз, отрицательный = вверх
+            // Солнце светит В направлении, куда смотрят углы
+            
+            float yawRad = glm::radians(angles.y);
+            float pitchRad = glm::radians(angles.x);
+            
+            // Вычисляем направление взгляда (куда смотрят углы)
+            // В системе координат Half-Life: X вперед, Y вправо, Z вверх
+            // Формула для конвертации углов в вектор направления:
+            glm::vec3 forward;
+            forward.x = cos(pitchRad) * sin(yawRad);
+            forward.y = cos(pitchRad) * cos(yawRad);
+            forward.z = -sin(pitchRad);  // +pitch в HL это вниз, поэтому инвертируем для Z-up
+            forward = glm::normalize(forward);
+            
+            // Свет идет ОТ солнца к земле, поэтому используем направление forward как есть
+            // Если сущность смотрит вниз (+pitch), forward.z будет отрицательным (свет сверху вниз)
+            glm::vec3 sunDir = forward;
+            
+            std::cout << "[BSP] light_environment angles: (" 
+                      << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
+            std::cout << "[BSP] Forward vector: (" 
+                      << forward.x << ", " << forward.y << ", " << forward.z << ")" << std::endl;
+            std::cout << "[BSP] Calculated sun direction: (" 
+                      << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
+            
+            lightManager.setSunDirection(sunDir);
+            
+            // Извлекаем цвет и интенсивность из свойства "_light"
+            auto it = entity.properties.find("_light");
+            if (it != entity.properties.end()) {
+                const std::string& lightValue = it->second;
+                int r, g, b, v;
+                int parsed = sscanf(lightValue.c_str(), "%d %d %d %d", &r, &g, &b, &v);
+                
+                if (parsed >= 1) {
+                    if (parsed == 1) {
+                        // Только одно значение - используем как яркость для всех каналов
+                        g = b = r;
+                    }
+                    
+                    if (parsed >= 4) {
+                        // Применяем множитель интенсивности
+                        r = static_cast<int>(r * (v / 255.0f));
+                        g = static_cast<int>(g * (v / 255.0f));
+                        b = static_cast<int>(b * (v / 255.0f));
+                    }
+                    
+                    // Ограничиваем значения максимум 255 (используем glm::clamp для совместимости)
+                    r = static_cast<int>(glm::clamp(static_cast<float>(r), 0.0f, 255.0f));
+                    g = static_cast<int>(glm::clamp(static_cast<float>(g), 0.0f, 255.0f));
+                    b = static_cast<int>(glm::clamp(static_cast<float>(b), 0.0f, 255.0f));
+                    
+                    // Конвертируем в диапазон [0, 1] для шейдера
+                    glm::vec3 sunColor(r / 255.0f, g / 255.0f, b / 255.0f);
+                    
+                    std::cout << "[BSP] light_environment color: (" 
+                              << r << ", " << g << ", " << b << ")" << std::endl;
+                    
+                    lightManager.setSunColor(sunColor);
+                    lightManager.setSunIntensity(1.0f);
+                }
+            }
+            
+            return; // Обрабатываем только первый light_environment
+        }
+    }
+    
+    std::cout << "[BSP] No light_environment found, using default sun settings" << std::endl;
 }

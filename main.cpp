@@ -14,6 +14,7 @@
 #include "TriangleCollider.h"
 #include "Renderer.h"
 #include "WADLoader.h"
+#include "Light.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -30,6 +31,7 @@ const unsigned int SCR_HEIGHT = 720;
 namespace {
     Player* g_player = nullptr;
     Renderer* g_renderer = nullptr;
+    LightManager* g_lightManager = nullptr;
     float g_lastX = SCR_WIDTH / 2.0f;
     float g_lastY = SCR_HEIGHT / 2.0f;
     bool g_firstMouse = true;
@@ -181,13 +183,15 @@ int main() {
     // Выделяем память для глобальных объектов
     g_player = new (std::nothrow) Player();
     g_renderer = new (std::nothrow) Renderer();
+    g_lightManager = new (std::nothrow) LightManager();
     g_bspLoader = new (std::nothrow) BSPLoader();
     g_meshCollider = new (std::nothrow) MeshCollider();
 
-    if (!g_player || !g_renderer || !g_bspLoader || !g_meshCollider) {
+    if (!g_player || !g_renderer || !g_bspLoader || !g_meshCollider || !g_lightManager) {
         std::cerr << "Failed to allocate global objects" << std::endl;
         delete g_player;
         delete g_renderer;
+        delete g_lightManager;
         delete g_bspLoader;
         delete g_meshCollider;
         glfwDestroyWindow(window);
@@ -200,12 +204,16 @@ int main() {
         std::cerr << "Failed to init renderer" << std::endl;
         delete g_player;
         delete g_renderer;
+        delete g_lightManager;
         delete g_bspLoader;
         delete g_meshCollider;
         glfwDestroyWindow(window);
         glfwTerminate();
         return -1;
     }
+
+    // Устанавливаем LightManager в Renderer
+    g_renderer->setLightManager(g_lightManager);
 
     // Настройка OpenGL
     glEnable(GL_DEPTH_TEST);
@@ -286,10 +294,12 @@ int main() {
     
     delete g_player;
     delete g_renderer;
+    delete g_lightManager;
     delete g_bspLoader;
     delete g_meshCollider;
     g_player = nullptr;
     g_renderer = nullptr;
+    g_lightManager = nullptr;
     g_bspLoader = nullptr;
     g_meshCollider = nullptr;
     
