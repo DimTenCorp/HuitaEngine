@@ -388,7 +388,13 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         if (face.planeNum >= planes.size()) continue;
         if (face.texInfo >= texInfos.size()) continue;
 
-        glm::vec3 normal = -planes[face.planeNum].normal;
+        // Для GoldSrc BSP сторона плоскости определяет направление нормали
+        // side == 0: нормаль направлена в положительную сторону
+        // side == 1: нормаль направлена в отрицательную сторону
+        glm::vec3 normal = planes[face.planeNum].normal;
+        if (face.side != 0) {
+            normal = -normal;
+        }
 
         std::vector<glm::vec3> faceVerts;
         faceVerts.reserve(face.numEdges);
@@ -611,6 +617,14 @@ bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) co
         }
     }
 
+    // Also try light_environment for sun direction
+    for (const auto& entity : entities) {
+        if (entity.classname == "light_environment") {
+            std::cout << "[BSP] Found light_environment" << std::endl;
+            // Can be used to extract _light and angles for sun direction
+        }
+    }
+
     outPosition = glm::vec3(0.0f, 100.0f, 0.0f);
     outAngles = glm::vec3(0.0f, 0.0f, 0.0f);
     std::cout << "[BSP] No player start found, using fallback position" << std::endl;
@@ -638,4 +652,87 @@ void BSPLoader::debugPrintEntities() const {
         }
         std::cout << std::endl;
     }
+}
+
+// Адаптированный код освещения из GoldSrc для HuitaEngine
+// Оригинал: lights.cpp из Half-Life SDK
+
+// Парсинг сущности light_environment из BSP и настройка освещения
+void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
+    for (const auto& entity : entities) {
+        if (entity.classname == "light_environment") {
+            std::cout << "[BSP] Processing light_environment entity" << std::endl;
+            
+            // Извлекаем углы для направления солнца
+            glm::vec3 angles = entity.angles;
+            
+            // Конвертируем углы в вектор направления
+            // В GoldSrc/Half-Life углы: pitch (x), yaw (y), roll (z)
+            float pitchRad = glm::radians(angles.x);
+            float yawRad = glm::radians(angles.y);
+            
+            // Вычисляем направление света (солнце светит В направлении углов)
+            glm::vec3 sunDir;
+            sunDir.x = cos(pitchRad) * sin(yawRad);
+            sunDir.y = sin(pitchRad);
+            sunDir.z = cos(pitchRad) * cos(yawRad);
+            sunDir = glm::normalize(sunDir);
+            
+            // Инвертируем направление, т.к. свет идет ОТ солнца
+            sunDir = -sunDir;
+            
+            std::cout << "[BSP] light_environment angles: (" 
+                      << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
+            std::cout << "[BSP] Calculated sun direction: (" 
+                      << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
+            
+            lightManager.setSunDirection(sunDir);
+            
+            // Извлекаем цвет и интенсивность из свойства "_light"
+            auto it = entity.properties.find("_light");
+            if (it != entity.properties.end()) {
+                const std::string& lightValue = it->second;
+                int r, g, b, v;
+                int parsed = sscanf(lightValue.c_str(), "%d %d %d %d", &r, &g, &b, &v);
+                
+                if (parsed >= 1) {
+                    if (parsed == 1) {
+                        // Только одно значение - используем как яркость для всех каналов
+                        g = b = r;
+                    }
+                    
+                    if (parsed >= 4) {
+                        // Применяем множитель интенсивности
+                        r = static_cast<int>(r * (v / 255.0f));
+                        g = static_cast<int>(g * (v / 255.0f));
+                        b = static_cast<int>(b * (v / 255.0f));
+                    }
+                    
+                    // Эмуляция QRAD и масштабирования движка (как в оригинальном GoldSrc)
+                    float rf = std::pow(r / 114.0f, 0.6f) * 264.0f;
+                    float gf = std::pow(g / 114.0f, 0.6f) * 264.0f;
+                    float bf = std::pow(b / 114.0f, 0.6f) * 264.0f;
+                    
+                    glm::vec3 sunColor(rf / 255.0f, gf / 255.0f, bf / 255.0f);
+                    
+                    std::cout << "[BSP] light_environment color: (" 
+                              << r << ", " << g << ", " << b << ")" << std::endl;
+                    
+                    lightManager.setSunColor(sunColor);
+                    lightManager.setSunIntensity(1.0f);
+                }
+            }
+            
+            // Также можно извлечь pitch для совместимости
+            auto pitchIt = entity.properties.find("pitch");
+            if (pitchIt != entity.properties.end()) {
+                float pitchOverride = std::stof(pitchIt->second);
+                std::cout << "[BSP] light_environment pitch override: " << pitchOverride << std::endl;
+            }
+            
+            return; // Обрабатываем только первый light_environment
+        }
+    }
+    
+    std::cout << "[BSP] No light_environment found, using default sun settings" << std::endl;
 }

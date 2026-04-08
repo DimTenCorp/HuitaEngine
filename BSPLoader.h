@@ -116,4 +116,8 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
+    
+    // Setup lighting from light_environment entity
+    class LightManager;
+    void setupLightEnvironment(LightManager& lightManager) const;
 };

@@ -640,6 +640,11 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
+    // Setup lighting from light_environment entity if LightManager is available
+    if (lightManager) {
+        bsp.setupLightEnvironment(*lightManager);
+    }
+
     std::cout << "Renderer: World loaded successfully, " << drawCalls.size() << " draw calls after sort" << std::endl;
     
     worldLoaded = true;
