@@ -276,18 +276,22 @@ uniform vec3 uSunColor;
 uniform float uSunIntensity;
 uniform float uAmbientStrength;
 
-// Point light structure
-struct PointLight {
-    vec3 position;
+// Unified light structure for all light types
+struct Light {
+    vec3 position;        // For directional: direction
+    float radius;
     vec3 color;
     float intensity;
-    float radius;
+    vec3 direction;       // For spot/directional
+    float spotInnerCutoff; // cos(innerAngle), 0 for non-spot
+    float spotOuterCutoff; // cos(outerAngle)
     bool enabled;
+    uint lightType;       // 0=Point, 1=Spot, 2=Directional
 };
 
-#define MAX_POINT_LIGHTS 8
-uniform PointLight uPointLights[MAX_POINT_LIGHTS];
-uniform int uPointLightCount;
+#define MAX_LIGHTS 16
+uniform Light uLights[MAX_LIGHTS];
+uniform int uLightCount;
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
@@ -301,43 +305,57 @@ void main() {
     }
     
     // Ambient
-    vec3 ambient = uAmbientStrength * albedo.rgb;
+    vec3 result = uAmbientStrength * albedo.rgb;
     
     // Sun directional light
-    float diff = max(dot(normal, -uSunDir), 0.0);
-    vec3 diffuse = diff * uSunColor * uSunIntensity;
+    float sunDiff = max(dot(normal, -uSunDir), 0.0);
+    vec3 sunDiffuse = sunDiff * uSunColor * uSunIntensity;
     
     // Specular for sun
     vec3 viewDir = normalize(uViewPos - fragPos);
     vec3 reflectDir = reflect(uSunDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-    vec3 specular = spec * uSunColor * uSunIntensity * 0.5;
+    vec3 sunSpecular = spec * uSunColor * uSunIntensity * 0.5;
     
-    // Accumulate point lights
-    vec3 pointLightAccum = vec3(0.0);
-    for (int i = 0; i < uPointLightCount; i++) {
-        if (!uPointLights[i].enabled) continue;
+    result += sunDiffuse + sunSpecular;
+    
+    // Accumulate dynamic lights
+    for (int i = 0; i < uLightCount; i++) {
+        if (!uLights[i].enabled) continue;
         
-        vec3 lightDir = uPointLights[i].position - fragPos;
+        vec3 lightPos = uLights[i].position;
+        vec3 lightDir = lightPos - fragPos;
         float dist = length(lightDir);
         
         // Skip if outside radius
-        if (dist > uPointLights[i].radius) continue;
+        if (dist > uLights[i].radius || dist < 0.001) continue;
         
         lightDir = normalize(lightDir);
         
-        // Diffuse
-        float pointDiff = max(dot(normal, lightDir), 0.0);
-        
-        // Attenuation
-        float attenuation = 1.0 - (dist / uPointLights[i].radius);
-        attenuation = attenuation * attenuation;
-        
-        pointLightAccum += pointDiff * attenuation * uPointLights[i].color * uPointLights[i].intensity;
+        // Spot light check
+        if (uLights[i].lightType == 1u) { // Spot
+            float theta = dot(lightDir, normalize(-uLights[i].direction));
+            float epsilon = uLights[i].spotOuterCutoff - uLights[i].spotInnerCutoff;
+            float spotIntensity = clamp((theta - uLights[i].spotOuterCutoff) / epsilon, 0.0, 1.0);
+            if (spotIntensity <= 0.0) continue;
+            
+            float diff = max(dot(normal, lightDir), 0.0);
+            float attenuation = 1.0 - (dist / uLights[i].radius);
+            attenuation = attenuation * attenuation * spotIntensity;
+            
+            result += diff * attenuation * uLights[i].color * uLights[i].intensity * albedo.rgb;
+        }
+        else if (uLights[i].lightType == 0u) { // Point
+            float diff = max(dot(normal, lightDir), 0.0);
+            float attenuation = 1.0 - (dist / uLights[i].radius);
+            attenuation = attenuation * attenuation;
+            
+            result += diff * attenuation * uLights[i].color * uLights[i].intensity * albedo.rgb;
+        }
+        // Directional lights handled separately via sun
     }
     
-    vec3 result = ambient + diffuse + specular + pointLightAccum;
-    FragColor = vec4(result * albedo.rgb, albedo.a);
+    FragColor = vec4(result, albedo.a);
 }
 )glsl";
 
@@ -488,7 +506,7 @@ bool Renderer::init(int width, int height) {
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
     lightingShader->setFloat("uAmbientStrength", 0.1f);
-    lightingShader->setInt("uPointLightCount", 0);
+    lightingShader->setInt("uLightCount", 0);
     lightingShader->unbind();
 
     // Create flashlight shader
@@ -652,23 +670,39 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, con
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
 
+    // Use LightManager if available, otherwise use legacy sun parameters
+    glm::vec3 effectiveSunDir = lightManager ? lightManager->getSunDirection() : sunDir;
+    glm::vec3 effectiveSunColor = lightManager ? lightManager->getSunColor() : sunColor;
+    float effectiveSunIntensity = lightManager ? lightManager->getSunIntensity() : sunIntensity;
+    float effectiveAmbient = lightManager ? lightManager->getAmbientStrength() : ambientStrength;
+
     lightingShader->setVec3("uViewPos", viewPos);
-    lightingShader->setVec3("uSunDir", sunDir);
-    lightingShader->setVec3("uSunColor", glm::vec3(1.0f, 0.95f, 0.8f));
-    lightingShader->setFloat("uSunIntensity", 1.0f);
-    lightingShader->setFloat("uAmbientStrength", ambientStrength);
+    lightingShader->setVec3("uSunDir", effectiveSunDir);
+    lightingShader->setVec3("uSunColor", effectiveSunColor);
+    lightingShader->setFloat("uSunIntensity", effectiveSunIntensity);
+    lightingShader->setFloat("uAmbientStrength", effectiveAmbient);
     
-    // Upload point lights
-    int lightCount = std::min((int)pointLights.size(), MAX_POINT_LIGHTS);
-    lightingShader->setInt("uPointLightCount", lightCount);
-    
-    for (int i = 0; i < lightCount; i++) {
-        std::string prefix = "uPointLights[" + std::to_string(i) + "].";
-        lightingShader->setVec3(prefix + "position", pointLights[i].position);
-        lightingShader->setVec3(prefix + "color", pointLights[i].color);
-        lightingShader->setFloat(prefix + "intensity", pointLights[i].intensity);
-        lightingShader->setFloat(prefix + "radius", pointLights[i].radius);
-        lightingShader->setBool(prefix + "enabled", pointLights[i].enabled);
+    // Upload lights from LightManager
+    int lightCount = 0;
+    if (lightManager) {
+        const auto& lights = lightManager->getLightData();
+        lightCount = std::min(static_cast<int>(lights.size()), MAX_POINT_LIGHTS);
+        lightingShader->setInt("uLightCount", lightCount);
+        
+        for (int i = 0; i < lightCount; i++) {
+            std::string prefix = "uLights[" + std::to_string(i) + "].";
+            lightingShader->setVec3(prefix + "position", lights[i].position);
+            lightingShader->setFloat(prefix + "radius", lights[i].radius);
+            lightingShader->setVec3(prefix + "color", lights[i].color);
+            lightingShader->setFloat(prefix + "intensity", lights[i].intensity);
+            lightingShader->setVec3(prefix + "direction", lights[i].direction);
+            lightingShader->setFloat(prefix + "spotInnerCutoff", lights[i].spotInnerCutoff);
+            lightingShader->setFloat(prefix + "spotOuterCutoff", lights[i].spotOuterCutoff);
+            lightingShader->setBool(prefix + "enabled", lights[i].enabled);
+            lightingShader->setUInt(prefix + "lightType", lights[i].lightType);
+        }
+    } else {
+        lightingShader->setInt("uLightCount", 0);
     }
 
     glBindVertexArray(quadVAO);
@@ -745,16 +779,6 @@ void Renderer::setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool en
     }
 }
 
-void Renderer::addPointLight(const PointLight& light) {
-    if ((int)pointLights.size() < MAX_POINT_LIGHTS) {
-        pointLights.push_back(light);
-    }
-}
-
-void Renderer::clearPointLights() {
-    pointLights.clear();
-}
-
 void Renderer::setViewport(int width, int height) {
     screenWidth = width;
     screenHeight = height;
@@ -767,7 +791,6 @@ void Renderer::cleanup() {
     shadowFBO.destroy();
     worldMesh.destroy();
     hitboxMesh.destroy();
-    pointLights.clear();
 
     geometryShader.reset();
     lightingShader.reset();

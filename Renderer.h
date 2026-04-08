@@ -6,6 +6,7 @@
 #include <optional>
 #include "BSPLoader.h"
 #include "Shader.h"
+#include "Light.h"
 
 // ============================================================================
 // G-Buffer Structure - хранит текстуры и FBO для deferred rendering
@@ -116,10 +117,15 @@ public:
 
     void setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool enabled);
     
-    // Point light management
-    void addPointLight(const PointLight& light);
-    void clearPointLights();
-    void setAmbientStrength(float strength) { ambientStrength = strength; }
+    // Light management via LightManager
+    void setLightManager(LightManager* manager) { lightManager = manager; }
+    LightManager* getLightManager() const { return lightManager; }
+    
+    // Direct sun control (legacy API)
+    void setSunDirection(const glm::vec3& dir) { sunDirection = glm::normalize(dir); }
+    void setSunColor(const glm::vec3& color) { sunColor = color; }
+    void setSunIntensity(float intensity) { sunIntensity = glm::max(0.0f, intensity); }
+    void setAmbientStrength(float strength) { ambientStrength = glm::clamp(strength, 0.0f, 1.0f); }
 
 private:
     // Mesh resources
@@ -152,9 +158,15 @@ private:
     RenderStats stats;
     int screenWidth = 1280, screenHeight = 720;
     Flashlight flashlight;
-    float ambientStrength = 0.1f;
-    std::vector<PointLight> pointLights;
-    static constexpr int MAX_POINT_LIGHTS = 8;
+    
+    // Lighting
+    LightManager* lightManager = nullptr;  // Non-owning pointer
+    glm::vec3 sunDirection{0.5f, -1.0f, 0.3f};
+    glm::vec3 sunColor{1.0f, 0.95f, 0.8f};
+    float sunIntensity{1.0f};
+    float ambientStrength{0.1f};
+    
+    static constexpr int MAX_POINT_LIGHTS = 16;
 
     // Quad for fullscreen passes
     GLuint quadVAO = 0;
