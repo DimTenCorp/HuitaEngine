@@ -281,8 +281,8 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Dima|x64'">
     <PostBuildEvent>
       <Message>Copying shader files to output directory</Message>
-      <Command>copy "$(ProjectDir)vertex.glsl" "$(OutDir)" &gt; nul
-copy "$(ProjectDir)fragment.glsl" "$(OutDir)" &gt; nul</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
