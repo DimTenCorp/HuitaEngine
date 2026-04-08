@@ -402,7 +402,7 @@ uniform vec3 uLightPos;
 uniform vec3 uLightDir;
 uniform float uCutOffInner;
 uniform float uCutOffOuter;
-uniform float uIntensity;
+uniform vec3 uIntensity;
 
 float calcShadow() {
     vec3 projCoords = vFragPosLightSpace.xyz / vFragPosLightSpace.w;
@@ -741,6 +741,11 @@ void Renderer::renderFlashlight(const glm::mat4& view, const glm::mat4& proj, co
 
     flashlightShader->bind();
     flashlightShader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
+    flashlightShader->setVec3("uLightPos", flashlight.position);
+    flashlightShader->setVec3("uLightDir", flashlight.direction);
+    flashlightShader->setFloat("uCutOffInner", glm::cos(glm::radians(flashlight.innerCutoff)));
+    flashlightShader->setFloat("uCutOffOuter", glm::cos(glm::radians(flashlight.outerCutoff)));
+    flashlightShader->setVec3("uIntensity", glm::vec3(1.0f));  // White light with intensity 1.0
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, shadowFBO.depthMap);
