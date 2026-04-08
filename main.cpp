@@ -14,6 +14,9 @@
 #include "TriangleCollider.h"
 #include "Renderer.h"
 #include "WADLoader.h"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -162,6 +165,16 @@ int main() {
     std::cout << "OpenGL Version: " << version << std::endl;
     std::cout << "Renderer: " << renderer_str << std::endl;
 
+    // Инициализация ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+
+    std::cout << "ImGui initialized successfully" << std::endl;
+
     // Выделяем память для глобальных объектов
     g_player = new (std::nothrow) Player();
     g_renderer = new (std::nothrow) Renderer();
@@ -253,6 +266,10 @@ int main() {
     }
 
     // Очистка
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    
     g_renderer->unloadWorld();
     g_bspLoader->cleanupTextures();
     
