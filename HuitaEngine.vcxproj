@@ -260,6 +260,7 @@
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Shader.cpp" />
+    <ClCompile Include="ShadowSystem.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
   </ItemGroup>
@@ -275,6 +276,7 @@
     <ClInclude Include="Player.h" />
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="Shader.h" />
+    <ClInclude Include="ShadowSystem.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
   </ItemGroup>

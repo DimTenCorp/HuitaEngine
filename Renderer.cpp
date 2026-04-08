@@ -10,10 +10,10 @@
 // GBuffer Implementation
 // ============================================================================
 
-GBuffer::GBuffer(GBuffer&& other) noexcept 
+GBuffer::GBuffer(GBuffer&& other) noexcept
     : fbo(other.fbo), positionTex(other.positionTex), normalTex(other.normalTex),
-      albedoTex(other.albedoTex), depthTex(other.depthTex), 
-      width(other.width), height(other.height) {
+    albedoTex(other.albedoTex), depthTex(other.depthTex),
+    width(other.width), height(other.height) {
     other.fbo = 0; other.positionTex = 0; other.normalTex = 0;
     other.albedoTex = 0; other.depthTex = 0; other.width = 0; other.height = 0;
 }
@@ -39,7 +39,6 @@ bool GBuffer::create(int w, int h) {
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-    // Position texture
     glGenTextures(1, &positionTex);
     glBindTexture(GL_TEXTURE_2D, positionTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
@@ -47,7 +46,6 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, positionTex, 0);
 
-    // Normal texture
     glGenTextures(1, &normalTex);
     glBindTexture(GL_TEXTURE_2D, normalTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
@@ -55,7 +53,6 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, normalTex, 0);
 
-    // Albedo texture
     glGenTextures(1, &albedoTex);
     glBindTexture(GL_TEXTURE_2D, albedoTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -63,13 +60,11 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, albedoTex, 0);
 
-    // Depth texture
     glGenTextures(1, &depthTex);
     glBindTexture(GL_TEXTURE_2D, depthTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
-    // Setup draw buffers
     unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
     glDrawBuffers(3, attachments);
 
@@ -123,12 +118,11 @@ BspMesh& BspMesh::operator=(BspMesh&& other) noexcept {
 
 BspMesh::~BspMesh() { destroy(); }
 
-bool BspMesh::buildFromBSP(const std::vector<BSPVertex>& vertices, 
-                           const std::vector<unsigned int>& indices) {
+bool BspMesh::buildFromBSP(const std::vector<BSPVertex>& vertices,
+    const std::vector<unsigned int>& indices) {
     destroy();
     if (vertices.empty() || indices.empty()) {
-        std::cerr << "BspMesh: Empty vertices or indices - vertices: " 
-                  << vertices.size() << ", indices: " << indices.size() << std::endl;
+        std::cerr << "BspMesh: Empty vertices or indices" << std::endl;
         return false;
     }
 
@@ -142,25 +136,21 @@ bool BspMesh::buildFromBSP(const std::vector<BSPVertex>& vertices,
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), 
-                          (void*)offsetof(BSPVertex, position));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+        (void*)offsetof(BSPVertex, position));
     glEnableVertexAttribArray(0);
-    // Normal attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), 
-                          (void*)offsetof(BSPVertex, normal));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+        (void*)offsetof(BSPVertex, normal));
     glEnableVertexAttribArray(1);
-    // TexCoord attribute
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), 
-                          (void*)offsetof(BSPVertex, texCoord));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+        (void*)offsetof(BSPVertex, texCoord));
     glEnableVertexAttribArray(2);
 
     glBindVertexArray(0);
     indexCount = indices.size();
-    
-    std::cout << "BspMesh: Built mesh with VAO=" << vao << ", VBO=" << vbo 
-              << ", EBO=" << ebo << ", indexCount=" << indexCount << std::endl;
-    
+
+    std::cout << "BspMesh: Built with " << indexCount << " indices" << std::endl;
+
     return true;
 }
 
@@ -210,7 +200,7 @@ void Renderer::ShadowFBO::destroy() {
 }
 
 // ============================================================================
-// Shader Sources - вынесены в отдельные статические строки
+// Shader Sources
 // ============================================================================
 
 static const char* s_geometryVert = R"glsl(
@@ -242,18 +232,19 @@ in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
 
-layout (location = 0) out vec4 FragPosition;
-layout (location = 1) out vec4 FragNormal;
-layout (location = 2) out vec4 FragAlbedo;
+layout (location = 0) out vec4 gPosition;
+layout (location = 1) out vec4 gNormal;
+layout (location = 2) out vec4 gAlbedo;
 
 uniform sampler2D uTexture;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     if (texColor.a < 0.5) discard;
-    FragPosition = vec4(vFragPos, 1.0);
-    FragNormal = vec4(normalize(vNormal), 1.0);
-    FragAlbedo = texColor;
+    
+    gPosition = vec4(vFragPos, 1.0);
+    gNormal = vec4(normalize(vNormal), 1.0);
+    gAlbedo = texColor;
 }
 )glsl";
 
@@ -278,178 +269,115 @@ out vec4 FragColor;
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
+uniform sampler2D gShadowMap;
+
 uniform vec3 uViewPos;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uSunIntensity;
-uniform float uAmbientStrength;
+uniform float uAmbient;
 
-// Unified light structure for all light types - matches LightData in C++
 struct Light {
-    vec4 positionRadius;    // xyz = position, w = radius
-    vec4 colorIntensity;    // xyz = color, w = intensity
-    vec4 directionCutoff;   // xyz = direction, w = inner cutoff (cos)
-    vec4 outerEnabled;      // x = outer cutoff (cos), y = enabled (1.0/0.0), z = lightType, w = padding
+    vec4 positionRadius;
+    vec4 colorIntensity;
+    vec4 directionCutoff;
+    vec4 outerEnabled;
 };
 
-#define MAX_LIGHTS 16
+#define MAX_LIGHTS 32
 uniform Light uLights[MAX_LIGHTS];
 uniform int uLightCount;
+
+uniform bool uHasFlashlight;
+uniform mat4 uFlashlightMatrix;
+uniform vec3 uFlashlightPos;
+uniform vec3 uFlashlightDir;
+uniform float uFlashlightCutoff;
+
+float calcFlashlightShadow(vec3 fragPos) {
+    vec4 fragPosLightSpace = uFlashlightMatrix * vec4(fragPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    
+    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 
+        || projCoords.y < 0.0 || projCoords.y > 1.0) return 0.0;
+    
+    float closestDepth = texture(gShadowMap, projCoords.xy).r;
+    float currentDepth = projCoords.z;
+    float bias = 0.005;
+    
+    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    return shadow;
+}
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
     
-    // Skip if no valid position (background)
     if (length(fragPos) < 0.001) {
-        FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    // Ambient
-    vec3 result = uAmbientStrength * albedo.rgb;
+    vec3 result = uAmbient * albedo.rgb;
     
-    // Sun directional light
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
-    vec3 sunDiffuse = sunDiff * uSunColor * uSunIntensity;
+    result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
     
-    // Specular for sun
-    vec3 viewDir = normalize(uViewPos - fragPos);
-    vec3 reflectDir = reflect(uSunDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-    vec3 sunSpecular = spec * uSunColor * uSunIntensity * 0.5;
-    
-    result += sunDiffuse + sunSpecular;
-    
-    // Accumulate dynamic lights
     for (int i = 0; i < uLightCount; i++) {
-        // Check if enabled (y component of outerEnabled)
         if (uLights[i].outerEnabled.y < 0.5) continue;
+        
+        int type = int(uLights[i].outerEnabled.z);
+        if (type == 2) continue;
         
         vec3 lightPos = uLights[i].positionRadius.xyz;
         float radius = uLights[i].positionRadius.w;
-        vec3 lightDir = lightPos - fragPos;
-        float dist = length(lightDir);
+        vec3 toLight = lightPos - fragPos;
+        float dist = length(toLight);
         
-        // Skip if outside radius
         if (dist > radius || dist < 0.001) continue;
         
-        lightDir = normalize(lightDir);
+        vec3 lightDir = normalize(toLight);
         
-        // Get light type from z component
-        uint lightType = uint(uLights[i].outerEnabled.z);
+        float spotAtten = 1.0;
+        if (type == 1) {
+            vec3 spotDir = normalize(uLights[i].directionCutoff.xyz);
+            float theta = dot(lightDir, -spotDir);
+            float inner = uLights[i].directionCutoff.w;
+            float outer = uLights[i].outerEnabled.x;
+            
+            if (theta < outer) continue;
+            spotAtten = (theta - outer) / max(inner - outer, 0.001);
+            spotAtten = clamp(spotAtten, 0.0, 1.0);
+        }
         
-        // Spot light check
-        if (lightType == 1u) { // Spot
-            float theta = dot(lightDir, normalize(-uLights[i].directionCutoff.xyz));
-            float innerCutoff = uLights[i].directionCutoff.w;
-            float outerCutoff = uLights[i].outerEnabled.x;
-            float epsilon = outerCutoff - innerCutoff;
-            float spotIntensity = clamp((theta - outerCutoff) / epsilon, 0.0, 1.0);
-            if (spotIntensity <= 0.0) continue;
+        float diff = max(dot(normal, lightDir), 0.0);
+        float atten = 1.0 - (dist / radius);
+        atten = atten * atten;
+        
+        vec3 lightColor = uLights[i].colorIntensity.xyz;
+        float intensity = uLights[i].colorIntensity.w;
+        
+        result += diff * atten * spotAtten * intensity * lightColor * albedo.rgb;
+    }
+    
+    if (uHasFlashlight) {
+        vec3 toFlashlight = normalize(uFlashlightPos - fragPos);
+        float theta = dot(toFlashlight, -uFlashlightDir);
+        
+        if (theta > uFlashlightCutoff) {
+            float shadow = calcFlashlightShadow(fragPos);
+            float flashDiff = max(dot(normal, toFlashlight), 0.0);
             
-            float diff = max(dot(normal, lightDir), 0.0);
-            float attenuation = 1.0 - (dist / radius);
-            attenuation = attenuation * attenuation * spotIntensity;
+            float coneAtten = (theta - uFlashlightCutoff) / 0.1;
+            coneAtten = clamp(coneAtten, 0.0, 1.0);
             
-            result += diff * attenuation * uLights[i].colorIntensity.xyz * uLights[i].colorIntensity.w * albedo.rgb;
+            result += (1.0 - shadow) * flashDiff * coneAtten * vec3(3.0) * albedo.rgb;
         }
-        else if (lightType == 0u) { // Point
-            float diff = max(dot(normal, lightDir), 0.0);
-            float attenuation = 1.0 - (dist / radius);
-            attenuation = attenuation * attenuation;
-            
-            result += diff * attenuation * uLights[i].colorIntensity.xyz * uLights[i].colorIntensity.w * albedo.rgb;
-        }
-        // Directional lights (type 2) handled separately via sun
     }
     
     FragColor = vec4(result, albedo.a);
-}
-)glsl";
-
-static const char* s_flashlightVert = R"glsl(
-#version 330 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec2 aTexCoord;
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-uniform mat4 lightSpaceMatrix;
-
-out vec2 vTexCoord;
-out vec3 vNormal;
-out vec3 vFragPos;
-out vec4 vFragPosLightSpace;
-
-void main() {
-    vTexCoord = aTexCoord;
-    mat3 normalMatrix = mat3(transpose(inverse(model)));
-    vNormal = normalMatrix * aNormal;
-    vFragPos = vec3(model * vec4(aPos, 1.0));
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    vFragPosLightSpace = lightSpaceMatrix * model * vec4(aPos, 1.0);
-}
-)glsl";
-
-static const char* s_flashlightFrag = R"glsl(
-#version 330 core
-in vec2 vTexCoord;
-in vec3 vNormal;
-in vec3 vFragPos;
-in vec4 vFragPosLightSpace;
-
-out vec4 FragColor;
-
-uniform sampler2D uTexture;
-uniform sampler2D shadowMap;
-uniform vec3 uLightPos;
-uniform vec3 uLightDir;
-uniform float uCutOffInner;
-uniform float uCutOffOuter;
-uniform vec3 uIntensity;
-
-float calcShadow() {
-    vec3 projCoords = vFragPosLightSpace.xyz / vFragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
-    if (projCoords.z > 1.0) return 0.0;
-    float closestDepth = texture(shadowMap, projCoords.xy).r;
-    float currentDepth = projCoords.z;
-    float bias = 0.005;
-    float shadow = currentDepth - bias > closestDepth ? 0.5 : 0.0;
-    return shadow;
-}
-
-void main() {
-    vec4 texColor = texture(uTexture, vTexCoord);
-    if (texColor.a < 0.5) discard;
-    
-    vec3 normal = normalize(vNormal);
-    vec3 lightDir = normalize(uLightPos - vFragPos);
-    float theta = dot(lightDir, normalize(-uLightDir));
-    
-    // uCutOffInner and uCutOffOuter are already cosines, don't apply cos() again
-    float innerCos = uCutOffInner;
-    float outerCos = uCutOffOuter;
-    float epsilon = innerCos - outerCos;  // inner > outer for spotlights
-    
-    float intensity = 0.0;
-    if (epsilon != 0.0) {
-        intensity = clamp((theta - outerCos) / epsilon, 0.0, 1.0);
-    } else {
-        intensity = (theta >= outerCos) ? 1.0 : 0.0;
-    }
-    
-    if (intensity <= 0.0) discard;
-    
-    float diff = max(dot(normal, lightDir), 0.0);
-    float shadow = calcShadow();
-    vec3 lighting = (1.0 - shadow) * diff * intensity * uIntensity;
-    
-    FragColor = vec4(lighting * texColor.rgb, texColor.a);
 }
 )glsl";
 
@@ -457,8 +385,6 @@ const char* Renderer::getGeometryVert() { return s_geometryVert; }
 const char* Renderer::getGeometryFrag() { return s_geometryFrag; }
 const char* Renderer::getLightingVert() { return s_lightingVert; }
 const char* Renderer::getLightingFrag() { return s_lightingFrag; }
-const char* Renderer::getFlashlightVert() { return s_flashlightVert; }
-const char* Renderer::getFlashlightFrag() { return s_flashlightFrag; }
 
 // ============================================================================
 // Renderer Implementation
@@ -468,11 +394,14 @@ Renderer::Renderer() = default;
 
 Renderer::Renderer(Renderer&& other) noexcept
     : worldMesh(std::move(other.worldMesh)), hitboxMesh(std::move(other.hitboxMesh)),
-      geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
-      flashlightShader(std::move(other.flashlightShader)), gBuffer(std::move(other.gBuffer)),
-      shadowFBO(std::move(other.shadowFBO)), stats(other.stats),
-      screenWidth(other.screenWidth), screenHeight(other.screenHeight),
-      flashlight(other.flashlight), quadVAO(other.quadVAO), quadVBO(other.quadVBO) {
+    geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
+    flashlightShader(std::move(other.flashlightShader)), gBuffer(std::move(other.gBuffer)),
+    shadowFBO(std::move(other.shadowFBO)), stats(other.stats),
+    screenWidth(other.screenWidth), screenHeight(other.screenHeight),
+    flashlight(other.flashlight), quadVAO(other.quadVAO), quadVBO(other.quadVBO),
+    lights(std::move(other.lights)), sunDirection(other.sunDirection),
+    sunColor(other.sunColor), sunIntensity(other.sunIntensity),
+    ambientStrength(other.ambientStrength) {
     other.quadVAO = 0; other.quadVBO = 0;
     other.screenWidth = 1280; other.screenHeight = 720;
 }
@@ -493,6 +422,11 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
         flashlight = other.flashlight;
         quadVAO = other.quadVAO;
         quadVBO = other.quadVBO;
+        lights = std::move(other.lights);
+        sunDirection = other.sunDirection;
+        sunColor = other.sunColor;
+        sunIntensity = other.sunIntensity;
+        ambientStrength = other.ambientStrength;
         other.quadVAO = 0; other.quadVBO = 0;
         other.screenWidth = 1280; other.screenHeight = 720;
     }
@@ -505,10 +439,8 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
-    // Setup viewport
     glViewport(0, 0, width, height);
 
-    // Create geometry shader
     geometryShader = std::make_unique<Shader>();
     if (!geometryShader->compile(getGeometryVert(), getGeometryFrag())) {
         std::cerr << "Geometry shader fail: " << geometryShader->getLastError() << std::endl;
@@ -516,7 +448,6 @@ bool Renderer::init(int width, int height) {
         return false;
     }
 
-    // Create lighting shader
     lightingShader = std::make_unique<Shader>();
     if (!lightingShader->compile(getLightingVert(), getLightingFrag())) {
         std::cerr << "Lighting shader fail: " << lightingShader->getLastError() << std::endl;
@@ -525,61 +456,35 @@ bool Renderer::init(int width, int height) {
         return false;
     }
 
-    // Setup lighting shader uniforms
     lightingShader->bind();
     lightingShader->setInt("gPosition", 0);
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
-    lightingShader->setFloat("uAmbientStrength", 0.1f);
-    lightingShader->setInt("uLightCount", 0);
+    lightingShader->setInt("gShadowMap", 3);
     lightingShader->unbind();
 
-    // Create flashlight shader
-    flashlightShader = std::make_unique<Shader>();
-    if (!flashlightShader->compile(getFlashlightVert(), getFlashlightFrag())) {
-        std::cerr << "Flashlight shader fail: " << flashlightShader->getLastError() << std::endl;
-        flashlightShader.reset();
-    } else {
-        flashlightShader->bind();
-        flashlightShader->setInt("uTexture", 0);
-        flashlightShader->setInt("shadowMap", 1);
-        flashlightShader->unbind();
-        
-        // Create shadow map FBO
-        if (!shadowFBO.create(1024)) {
-            std::cerr << "Failed to create shadow FBO" << std::endl;
-        }
-    }
-
-    // Create G-Buffer
     if (!createGBuffer(width, height)) {
         std::cerr << "Failed to create G-Buffer!" << std::endl;
-        geometryShader.reset();
-        lightingShader.reset();
-        flashlightShader.reset();
+        cleanup();
         return false;
     }
 
-    // Create fullscreen quad
     createQuadMesh();
 
-    // Enable OpenGL states
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    // BSP files typically use CCW winding for front faces
     glFrontFace(GL_CCW);
 
-    // Create hitbox mesh
     hitboxMesh.buildFromBSP(
         std::vector<BSPVertex>{
-            {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-            {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-            {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-            {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-            {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-            {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}}
-        },
+            {{-0.5f, -0.5f, -0.5f}, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f }},
+            { { 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} },
+            { { 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} },
+            { { 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} },
+            { {-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} },
+            { {-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} }
+    },
         {}
     );
 
@@ -627,12 +532,11 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
 
     const auto& vertices = bsp.getMeshVertices();
     const auto& indices = bsp.getMeshIndices();
-    
-    std::cout << "Renderer: Loading world with " << vertices.size() << " vertices, " 
-              << indices.size() << " indices, " << bsp.getDrawCalls().size() << " draw calls" << std::endl;
+
+    std::cout << "Renderer: Loading world with " << vertices.size() << " vertices" << std::endl;
 
     if (!worldMesh.buildFromBSP(vertices, indices)) {
-        std::cerr << "Renderer: Failed to build mesh from BSP" << std::endl;
+        std::cerr << "Renderer: Failed to build mesh" << std::endl;
         return false;
     }
 
@@ -640,13 +544,8 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
-    // Setup lighting from light_environment entity if LightManager is available
-    if (lightManager) {
-        bsp.setupLightEnvironment(*lightManager);
-    }
+    std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 
-    std::cout << "Renderer: World loaded successfully, " << drawCalls.size() << " draw calls after sort" << std::endl;
-    
     worldLoaded = true;
     return true;
 }
@@ -664,29 +563,41 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
-    renderWorld(view, viewPos, glm::vec3(-0.5f, 1.0f, -0.3f));
+void Renderer::addLight(const Light& light) {
+    RenderLight rl;
+    rl.data = light.getShaderData();
+    rl.type = light.getType();
+    rl.position = light.getPosition();
+    rl.radius = light.getRadius();
+    rl.shadowID = light.getShadowID();
+    rl.enabled = true;
+    lights.push_back(rl);
 }
 
-void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, const glm::vec3& sunDir) {
+void Renderer::clearLights() {
+    lights.clear();
+}
+
+void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem) {
     if (!worldLoaded) return;
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / screenHeight, 0.1f, 1000.0f);
+        (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f);
 
     geometryPass(view, projection);
-    lightingPass(view, viewPos, sunDir);
-    
-    if (flashlight.enabled) {
-        renderFlashlight(view, projection, viewPos);
+
+    if (flashlight.enabled && shadowSystem) {
+        shadowSystem->bindDynamicShadowForWriting();
+        renderShadowPass(shadowSystem->getDynamicLightSpaceMatrix());
+        shadowSystem->unbindDynamicShadow(screenWidth, screenHeight);
     }
+
+    lightingPass(view, viewPos, shadowSystem);
 }
 
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
     glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Ensure polygon mode is set to fill for world rendering
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
@@ -704,46 +615,68 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
         stats.drawCalls++;
         stats.triangles += dc.indexCount / 3;
     }
-    
+
     BspMesh::unbind();
     geometryShader->unbind();
 }
 
-void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, const glm::vec3& sunDir) {
+void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem) {
     GBuffer::unbind();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
 
-    // Use LightManager if available, otherwise use legacy sun parameters
-    glm::vec3 effectiveSunDir = lightManager ? lightManager->getSunDirection() : sunDir;
-    glm::vec3 effectiveSunColor = lightManager ? lightManager->getSunColor() : sunColor;
-    float effectiveSunIntensity = lightManager ? lightManager->getSunIntensity() : sunIntensity;
-    float effectiveAmbient = lightManager ? lightManager->getAmbientStrength() : ambientStrength;
-
     lightingShader->setVec3("uViewPos", viewPos);
-    lightingShader->setVec3("uSunDir", effectiveSunDir);
-    lightingShader->setVec3("uSunColor", effectiveSunColor);
-    lightingShader->setFloat("uSunIntensity", effectiveSunIntensity);
-    lightingShader->setFloat("uAmbientStrength", effectiveAmbient);
-    
-    // Upload lights from LightManager
-    int lightCount = 0;
-    if (lightManager) {
-        const auto& lights = lightManager->getLightData();
-        lightCount = std::min(static_cast<int>(lights.size()), MAX_POINT_LIGHTS);
-        lightingShader->setInt("uLightCount", lightCount);
-        
-        for (int i = 0; i < lightCount; i++) {
-            std::string prefix = "uLights[" + std::to_string(i) + "].";
-            lightingShader->setVec4(prefix + "positionRadius", lights[i].positionRadius);
-            lightingShader->setVec4(prefix + "colorIntensity", lights[i].colorIntensity);
-            lightingShader->setVec4(prefix + "directionCutoff", lights[i].directionCutoff);
-            lightingShader->setVec4(prefix + "outerEnabled", lights[i].outerEnabled);
+    lightingShader->setVec3("uSunDir", sunDirection);
+    lightingShader->setVec3("uSunColor", sunColor);
+    lightingShader->setFloat("uSunIntensity", sunIntensity);
+    lightingShader->setFloat("uAmbient", ambientStrength);
+
+    bool hasFlashlight = (flashlight.enabled && shadowSystem);
+    lightingShader->setBool("uHasFlashlight", hasFlashlight);
+
+    if (hasFlashlight) {
+        shadowSystem->updateDynamicShadow(flashlight.position, flashlight.direction);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, shadowSystem->getDynamicDepthMap());
+        lightingShader->setInt("gShadowMap", 3);
+
+        lightingShader->setMat4("uFlashlightMatrix", shadowSystem->getDynamicLightSpaceMatrix());
+        lightingShader->setVec3("uFlashlightPos", flashlight.position);
+        lightingShader->setVec3("uFlashlightDir", flashlight.direction);
+        lightingShader->setFloat("uFlashlightCutoff", glm::cos(flashlight.cutoffOuter));
+    }
+
+    std::vector<LightShaderData> visibleLights;
+    visibleLights.reserve(lights.size());
+
+    for (const auto& light : lights) {
+        if (!light.enabled) continue;
+        if (light.type == LightType::Directional) continue;
+
+        float distToCamera = glm::distance(light.position, viewPos);
+        if (distToCamera > light.radius * 1.5f) continue;
+
+        if (light.shadowID >= 0 && shadowSystem) {
+            if (!shadowSystem->canSeeLight(light.shadowID, viewPos)) {
+                if (distToCamera > light.radius) continue;
+            }
         }
-    } else {
-        lightingShader->setInt("uLightCount", 0);
+
+        visibleLights.push_back(light.data);
+    }
+
+    int lightCount = std::min((int)visibleLights.size(), MAX_LIGHTS);
+    lightingShader->setInt("uLightCount", lightCount);
+
+    for (int i = 0; i < lightCount; i++) {
+        std::string prefix = "uLights[" + std::to_string(i) + "].";
+        lightingShader->setVec4(prefix + "positionRadius", visibleLights[i].positionRadius);
+        lightingShader->setVec4(prefix + "colorIntensity", visibleLights[i].colorIntensity);
+        lightingShader->setVec4(prefix + "directionCutoff", visibleLights[i].directionCutoff);
+        lightingShader->setVec4(prefix + "outerEnabled", visibleLights[i].outerEnabled);
     }
 
     glBindVertexArray(quadVAO);
@@ -752,52 +685,23 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, con
     lightingShader->unbind();
 }
 
-void Renderer::renderFlashlight(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
-    if (!flashlightShader || !flashlight.enabled) return;
+void Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) {
+    if (!geometryShader) return;
 
-    // Render shadow map from light perspective
-    float aspect = 1.0f;
-    float nearPlane = 0.1f;
-    float farPlane = 50.0f;
-    float fov = glm::radians(45.0f);
-    
-    glm::mat4 lightProjection = glm::perspective(fov, aspect, nearPlane, farPlane);
-    glm::mat4 lightView = glm::lookAt(flashlight.position, 
-                                       flashlight.position + flashlight.direction, 
-                                       glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+    geometryShader->bind();
+    geometryShader->setMat4("model", glm::mat4(1.0f));
+    geometryShader->setMat4("view", lightSpaceMatrix);
+    geometryShader->setMat4("projection", glm::mat4(1.0f));
 
-    // Shadow pass
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO.fbo);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    flashlightShader->bind();
-    flashlightShader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
-    flashlightShader->setVec3("uLightPos", flashlight.position);
-    flashlightShader->setVec3("uLightDir", flashlight.direction);
-    flashlightShader->setFloat("uCutOffInner", glm::cos(flashlight.cutoffInner));
-    flashlightShader->setFloat("uCutOffOuter", glm::cos(flashlight.cutoffOuter));
-    flashlightShader->setVec3("uIntensity", glm::vec3(flashlight.intensity));
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, shadowFBO.depthMap);
-
-    glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
 
     for (const auto& dc : drawCalls) {
-        glBindTexture(GL_TEXTURE_2D, dc.texID);
         glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
             (void*)(dc.indexOffset * sizeof(unsigned int)));
     }
-    BspMesh::unbind();
 
-    // Note: Flashlight rendering would be done as a screen-space overlay
-    // For now we just render the shadow pass - full implementation would add
-    // a second pass to blend the flashlight illumination onto the scene
-    
-    GBuffer::unbind();
-    flashlightShader->unbind();
+    BspMesh::unbind();
+    geometryShader->unbind();
 }
 
 void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
@@ -808,11 +712,11 @@ void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
 
     glDisable(GL_CULL_FACE);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    
+
     hitboxMesh.bind();
     glDrawArrays(GL_TRIANGLES, 0, 6);
     BspMesh::unbind();
-    
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glEnable(GL_CULL_FACE);
 }

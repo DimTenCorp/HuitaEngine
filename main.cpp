@@ -15,6 +15,7 @@
 #include "Renderer.h"
 #include "WADLoader.h"
 #include "Light.h"
+#include "ShadowSystem.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -27,11 +28,10 @@
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
-// Глобальные переменные инкапсулированы в namespace для лучшей организации
 namespace {
     Player* g_player = nullptr;
     Renderer* g_renderer = nullptr;
-    LightManager* g_lightManager = nullptr;
+    ShadowSystem* g_shadowSystem = nullptr;
     float g_lastX = SCR_WIDTH / 2.0f;
     float g_lastY = SCR_HEIGHT / 2.0f;
     bool g_firstMouse = true;
@@ -39,8 +39,9 @@ namespace {
     float g_lastFrame = 0.0f;
     float g_yaw = -90.0f;
     float g_pitch = 0.0f;
-    bool g_f1Pressed = false, g_f2Pressed = false, g_f3Pressed = false, g_f4Pressed = true, g_noclipPressed = false;
-    
+    bool g_f1Pressed = false, g_f2Pressed = false, g_f3Pressed = false,
+        g_f4Pressed = true, g_noclipPressed = false;
+
     BSPLoader* g_bspLoader = nullptr;
     MeshCollider* g_meshCollider = nullptr;
 }
@@ -80,7 +81,8 @@ void processInput(GLFWwindow* window, HUD& hud) {
     if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_RELEASE) g_f3Pressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS && !g_f4Pressed) {
-        g_renderer->setShowHitbox(!g_renderer->getShowHitbox()); g_f4Pressed = true;
+        g_renderer->setShowHitbox(!g_renderer->getShowHitbox());
+        g_f4Pressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_RELEASE) g_f4Pressed = false;
 
@@ -102,15 +104,37 @@ bool initSystems(WADLoader& wadLoader) {
 
     const auto& vertices = g_bspLoader->getMeshVertices();
     g_meshCollider->buildFromBSP(vertices, g_bspLoader->getMeshIndices());
-    std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount() << " triangles" << std::endl;
-    std::cout << "BSP mesh has " << vertices.size() << " vertices and " 
-              << g_bspLoader->getMeshIndices().size() << " indices" << std::endl;
+    std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount()
+        << " triangles" << std::endl;
 
     if (!g_renderer->loadWorld(*g_bspLoader)) {
         std::cerr << "Failed to load world into renderer" << std::endl;
         return false;
     }
-    std::cout << "World loaded into renderer successfully" << std::endl;
+
+    // === НОВАЯ СИСТЕМА СВЕТА ===
+    g_shadowSystem = new ShadowSystem();
+    g_shadowSystem->init(g_meshCollider);
+
+    auto lights = g_bspLoader->extractLights();
+    for (auto& light : lights) {
+        if (light.getType() != LightType::Directional) {
+            int shadowID = g_shadowSystem->bakeStaticLight(
+                light.getPosition(),
+                light.getRadius(),
+                g_bspLoader->getWorldBounds()
+            );
+            light.setShadowID(shadowID);
+        }
+        g_renderer->addLight(light);
+    }
+
+    g_shadowSystem->createDynamicShadow(
+        glm::vec3(0), glm::vec3(0, 0, -1), 60.0f, 30.0f
+    );
+    std::cout << "[Init] Light system initialized with " << lights.size()
+        << " lights" << std::endl;
+    // ===========================
 
     glm::vec3 spawnPos;
     glm::vec3 spawnAngles;
@@ -131,7 +155,6 @@ bool initSystems(WADLoader& wadLoader) {
 }
 
 int main() {
-    // Инициализация GLFW
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
@@ -156,7 +179,6 @@ int main() {
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // Инициализация GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Failed to init GLAD" << std::endl;
         glfwDestroyWindow(window);
@@ -164,13 +186,11 @@ int main() {
         return -1;
     }
 
-    // Проверяем версию OpenGL
     const GLubyte* version = glGetString(GL_VERSION);
     const GLubyte* renderer_str = glGetString(GL_RENDERER);
     std::cout << "OpenGL Version: " << version << std::endl;
     std::cout << "Renderer: " << renderer_str << std::endl;
 
-    // Инициализация ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -178,20 +198,15 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
-    std::cout << "ImGui initialized successfully" << std::endl;
-
-    // Выделяем память для глобальных объектов
     g_player = new (std::nothrow) Player();
     g_renderer = new (std::nothrow) Renderer();
-    g_lightManager = new (std::nothrow) LightManager();
     g_bspLoader = new (std::nothrow) BSPLoader();
     g_meshCollider = new (std::nothrow) MeshCollider();
 
-    if (!g_player || !g_renderer || !g_bspLoader || !g_meshCollider || !g_lightManager) {
-        std::cerr << "Failed to allocate global objects" << std::endl;
+    if (!g_player || !g_renderer || !g_bspLoader || !g_meshCollider) {
+        std::cerr << "Failed to allocate objects" << std::endl;
         delete g_player;
         delete g_renderer;
-        delete g_lightManager;
         delete g_bspLoader;
         delete g_meshCollider;
         glfwDestroyWindow(window);
@@ -199,12 +214,10 @@ int main() {
         return -1;
     }
 
-    // Инициализация рендерера
     if (!g_renderer->init(SCR_WIDTH, SCR_HEIGHT)) {
         std::cerr << "Failed to init renderer" << std::endl;
         delete g_player;
         delete g_renderer;
-        delete g_lightManager;
         delete g_bspLoader;
         delete g_meshCollider;
         glfwDestroyWindow(window);
@@ -212,17 +225,11 @@ int main() {
         return -1;
     }
 
-    // Устанавливаем LightManager в Renderer
-    g_renderer->setLightManager(g_lightManager);
-
-    // Настройка OpenGL
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    // BSP files typically use CCW winding for front faces
     glFrontFace(GL_CCW);
 
-    // Проверяем ошибки OpenGL
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
         std::cerr << "OpenGL error during init: " << err << std::endl;
@@ -236,43 +243,31 @@ int main() {
     }
 
     if (!initSystems(wadLoader)) {
-        std::cerr << "Failed to init systems, using fallback" << std::endl;
+        std::cerr << "Failed to init systems" << std::endl;
         g_player->setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
     }
 
-    // Главный цикл
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = (float)glfwGetTime();
         g_deltaTime = currentFrame - g_lastFrame;
         g_lastFrame = currentFrame;
         if (g_deltaTime > 0.05f) g_deltaTime = 0.05f;
 
-        // Обработка ввода
         processInput(window, hud);
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Обновление игровой логики
         g_player->update(g_deltaTime, g_yaw, g_pitch, g_meshCollider);
         hud.update(g_deltaTime, g_player->getPosition());
 
-        // Рендеринг
         g_renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
 
         glm::mat4 view;
         g_player->getViewMatrix(glm::value_ptr(view));
 
-        g_renderer->renderWorld(view, g_player->getEyePosition());
-        
-        // Debug: print render stats
-        /*
-        const auto& stats = g_renderer->getStats();
-        if (stats.drawCalls > 0) {
-            std::cout << "Rendered " << stats.drawCalls << " draw calls, " 
-                      << stats.triangles << " triangles" << std::endl;
-        }
-*/
+        g_renderer->renderWorld(view, g_player->getEyePosition(), g_shadowSystem);
+
         if (g_renderer->getShowHitbox()) {
             glm::mat4 projection = glm::perspective(glm::radians(75.0f),
                 (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 1000.0f);
@@ -285,25 +280,19 @@ int main() {
         glfwPollEvents();
     }
 
-    // Очистка
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-    
+
     g_renderer->unloadWorld();
     g_bspLoader->cleanupTextures();
-    
+
     delete g_player;
     delete g_renderer;
-    delete g_lightManager;
+    delete g_shadowSystem;
     delete g_bspLoader;
     delete g_meshCollider;
-    g_player = nullptr;
-    g_renderer = nullptr;
-    g_lightManager = nullptr;
-    g_bspLoader = nullptr;
-    g_meshCollider = nullptr;
-    
+
     glfwTerminate();
     return 0;
 }

@@ -580,6 +580,20 @@ void BSPLoader::cleanupTextures() {
     defaultTextureId = 0;
 }
 
+std::vector<Light> BSPLoader::extractLights() const {
+    std::vector<Light> result;
+
+    for (const auto& entity : entities) {
+        if (entity.classname.find("light") == 0 ||
+            entity.classname.find("light_") != std::string::npos) {
+            result.push_back(Light::fromBSPEntity(entity));
+        }
+    }
+
+    std::cout << "[BSP] Extracted " << result.size() << " lights" << std::endl;
+    return result;
+}
+
 void BSPLoader::printStats() const {
     std::cout << "=== BSP Loaded ===\n";
     std::cout << "Vertices: " << vertices.size() << "\n";
@@ -696,7 +710,6 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             std::cout << "[BSP] Calculated sun direction: (" 
                       << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
             
-            lightManager.setSunDirection(sunDir);
             
             // Извлекаем цвет и интенсивность из свойства "_light"
             auto it = entity.properties.find("_light");
@@ -728,9 +741,7 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                     
                     std::cout << "[BSP] light_environment color: (" 
                               << r << ", " << g << ", " << b << ")" << std::endl;
-                    
-                    lightManager.setSunColor(sunColor);
-                    lightManager.setSunIntensity(1.0f);
+                   
                 }
             }
             

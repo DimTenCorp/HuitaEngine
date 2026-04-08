@@ -2,10 +2,6 @@
 #include <iostream>
 #include <cstring>
 
-// ============================================================================
-// Constructor / Destructor / Move operations
-// ============================================================================
-
 Shader::Shader() : programID(0), lastError("") {}
 
 Shader::~Shader() {
@@ -15,7 +11,7 @@ Shader::~Shader() {
     }
 }
 
-Shader::Shader(Shader&& other) noexcept 
+Shader::Shader(Shader&& other) noexcept
     : programID(other.programID), lastError(std::move(other.lastError)) {
     other.programID = 0;
     other.uniformCache.clear();
@@ -33,10 +29,6 @@ Shader& Shader::operator=(Shader&& other) noexcept {
     }
     return *this;
 }
-
-// ============================================================================
-// Shader Compilation
-// ============================================================================
 
 unsigned int Shader::compileShader(GLenum type, const std::string& source, std::string& errorLog) {
     GLuint shader = glCreateShader(type);
@@ -57,7 +49,6 @@ unsigned int Shader::compileShader(GLenum type, const std::string& source, std::
 }
 
 bool Shader::compile(const std::string& vertexSource, const std::string& fragmentSource) {
-    // Cleanup existing program
     if (programID != 0) {
         glDeleteProgram(programID);
         programID = 0;
@@ -87,7 +78,6 @@ bool Shader::compile(const std::string& vertexSource, const std::string& fragmen
         return false;
     }
 
-    // Link program
     programID = glCreateProgram();
     glAttachShader(programID, vertexShader);
     glAttachShader(programID, fragmentShader);
@@ -108,7 +98,6 @@ bool Shader::compile(const std::string& vertexSource, const std::string& fragmen
         return false;
     }
 
-    // Delete individual shaders (they are now linked into the program)
     glDetachShader(programID, vertexShader);
     glDetachShader(programID, fragmentShader);
     glDeleteShader(vertexShader);
@@ -118,9 +107,75 @@ bool Shader::compile(const std::string& vertexSource, const std::string& fragmen
     return true;
 }
 
-// ============================================================================
-// Uniform Management
-// ============================================================================
+// === НОВОЕ: Compile with geometry shader ===
+bool Shader::compile(const std::string& vertexSource, const std::string& geometrySource,
+    const std::string& fragmentSource) {
+    if (programID != 0) {
+        glDeleteProgram(programID);
+        programID = 0;
+        uniformCache.clear();
+    }
+    lastError.clear();
+
+    if (vertexSource.empty() || geometrySource.empty() || fragmentSource.empty()) {
+        lastError = "Empty shader source provided";
+        return false;
+    }
+
+    std::string vertError, geomError, fragError;
+
+    GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, vertError);
+    if (vertexShader == 0) {
+        lastError = "Vertex shader compilation failed:\n" + vertError;
+        return false;
+    }
+
+    GLuint geometryShader = compileShader(GL_GEOMETRY_SHADER, geometrySource, geomError);
+    if (geometryShader == 0) {
+        lastError = "Geometry shader compilation failed:\n" + geomError;
+        glDeleteShader(vertexShader);
+        return false;
+    }
+
+    GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragError);
+    if (fragmentShader == 0) {
+        lastError = "Fragment shader compilation failed:\n" + fragError;
+        glDeleteShader(vertexShader);
+        glDeleteShader(geometryShader);
+        return false;
+    }
+
+    programID = glCreateProgram();
+    glAttachShader(programID, vertexShader);
+    glAttachShader(programID, geometryShader);
+    glAttachShader(programID, fragmentShader);
+    glLinkProgram(programID);
+
+    GLint linkSuccess = 0;
+    glGetProgramiv(programID, GL_LINK_STATUS, &linkSuccess);
+    if (!linkSuccess) {
+        char log[2048];
+        glGetProgramInfoLog(programID, sizeof(log), nullptr, log);
+        lastError = "Shader program linking failed:\n";
+        lastError += log;
+        glDeleteProgram(programID);
+        programID = 0;
+        glDeleteShader(vertexShader);
+        glDeleteShader(geometryShader);
+        glDeleteShader(fragmentShader);
+        return false;
+    }
+
+    glDetachShader(programID, vertexShader);
+    glDetachShader(programID, geometryShader);
+    glDetachShader(programID, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(geometryShader);
+    glDeleteShader(fragmentShader);
+
+    std::cout << "Shader with geometry shader compiled! ID: " << programID << std::endl;
+    return true;
+}
 
 int Shader::getUniformLocation(const std::string& name) const {
     if (programID == 0) return -1;
@@ -138,10 +193,6 @@ int Shader::getUniformLocation(const std::string& name) const {
 void Shader::clearCache() {
     uniformCache.clear();
 }
-
-// ============================================================================
-// Uniform Setters
-// ============================================================================
 
 void Shader::setBool(const std::string& name, bool value) const {
     int loc = getUniformLocation(name);
@@ -177,10 +228,6 @@ void Shader::setMat4(const std::string& name, const glm::mat4& value) const {
     int loc = getUniformLocation(name);
     if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
 }
-
-// ============================================================================
-// Bind/Unbind
-// ============================================================================
 
 void Shader::bind() const {
     if (programID != 0) {

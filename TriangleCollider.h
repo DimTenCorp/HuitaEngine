@@ -3,8 +3,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <algorithm>
-
-// Include shared AABB definition
 #include "AABB.h"
 
 struct Triangle {
@@ -16,7 +14,7 @@ struct Triangle {
         bounds.min = glm::vec3(0);
         bounds.max = glm::vec3(0);
     }
-    Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) 
+    Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
         : v0(a), v1(b), v2(c), normal(0, 0, 1) {
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
@@ -31,7 +29,6 @@ struct Triangle {
         }
         bounds.min = glm::min(glm::min(v0, v1), v2);
         bounds.max = glm::max(glm::max(v0, v1), v2);
-        // Ensure valid AABB invariant: min <= max
         for (int i = 0; i < 3; ++i) {
             if (bounds.min[i] > bounds.max[i]) {
                 std::swap(bounds.min[i], bounds.max[i]);
@@ -48,7 +45,6 @@ struct SweepResult {
     float distance = 0.0f;
 };
 
-// Forward declaration of BSPVertex
 struct BSPVertex;
 
 class MeshCollider {
@@ -61,19 +57,17 @@ private:
         const Triangle& tri, float& t, float& u, float& v) const;
     bool aabbTriangleIntersect(const AABB& box, const Triangle& tri) const;
     float pointTriangleDistance(const glm::vec3& p, const Triangle& tri, glm::vec3& closest) const;
-    
-    // Spatial partitioning for faster collision detection
+
     struct GridCell {
         std::vector<size_t> triangleIndices;
         AABB bounds;
     };
     std::vector<GridCell> spatialGrid;
-    glm::ivec3 gridSize{1, 1, 1};
+    glm::ivec3 gridSize{ 1, 1, 1 };
     float cellSize = 1.0f;
     bool gridBuilt = false;
-    
+
     void buildSpatialGrid();
-    std::vector<size_t> getCandidateTriangles(const AABB& box) const;
 
 public:
     MeshCollider() = default;
@@ -91,4 +85,5 @@ public:
 
     const std::vector<Triangle>& getTriangles() const { return triangles; }
     size_t getTriangleCount() const { return triangles.size(); }
+    std::vector<size_t> getCandidateTriangles(const AABB& box) const;
 };

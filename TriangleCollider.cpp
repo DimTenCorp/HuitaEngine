@@ -10,28 +10,28 @@ void MeshCollider::buildSpatialGrid() {
         gridBuilt = false;
         return;
     }
-    
+
     // Determine grid size based on world bounds
     glm::vec3 extent = worldBounds.max - worldBounds.min;
-    float maxExtent = std::max({extent.x, extent.y, extent.z});
-    
+    float maxExtent = std::max({ extent.x, extent.y, extent.z });
+
     // Target ~10 cells along the largest axis for reasonable performance
     cellSize = maxExtent / 10.0f;
     if (cellSize < 1.0f) cellSize = 1.0f;
-    
+
     gridSize.x = static_cast<int>(std::ceil(extent.x / cellSize)) + 1;
     gridSize.y = static_cast<int>(std::ceil(extent.y / cellSize)) + 1;
     gridSize.z = static_cast<int>(std::ceil(extent.z / cellSize)) + 1;
-    
+
     // Limit grid dimensions to prevent excessive memory usage
     const int maxGridDim = 50;
     if (gridSize.x > maxGridDim) gridSize.x = maxGridDim;
     if (gridSize.y > maxGridDim) gridSize.y = maxGridDim;
     if (gridSize.z > maxGridDim) gridSize.z = maxGridDim;
-    
+
     spatialGrid.clear();
     spatialGrid.resize(gridSize.x * gridSize.y * gridSize.z);
-    
+
     // Initialize cell bounds
     for (int z = 0; z < gridSize.z; ++z) {
         for (int y = 0; y < gridSize.y; ++y) {
@@ -42,11 +42,11 @@ void MeshCollider::buildSpatialGrid() {
             }
         }
     }
-    
+
     // Assign triangles to cells
     for (size_t i = 0; i < triangles.size(); ++i) {
         const Triangle& tri = triangles[i];
-        
+
         // Find all cells that this triangle's bounds overlaps
         glm::ivec3 minCell(
             static_cast<int>((tri.bounds.min.x - worldBounds.min.x) / cellSize),
@@ -58,11 +58,11 @@ void MeshCollider::buildSpatialGrid() {
             static_cast<int>((tri.bounds.max.y - worldBounds.min.y) / cellSize),
             static_cast<int>((tri.bounds.max.z - worldBounds.min.z) / cellSize)
         );
-        
+
         // Clamp to grid bounds
         minCell = glm::clamp(minCell, glm::ivec3(0), gridSize - 1);
         maxCell = glm::clamp(maxCell, glm::ivec3(0), gridSize - 1);
-        
+
         for (int z = minCell.z; z <= maxCell.z; ++z) {
             for (int y = minCell.y; y <= maxCell.y; ++y) {
                 for (int x = minCell.x; x <= maxCell.x; ++x) {
@@ -72,23 +72,21 @@ void MeshCollider::buildSpatialGrid() {
             }
         }
     }
-    
+
     gridBuilt = true;
 }
 
 std::vector<size_t> MeshCollider::getCandidateTriangles(const AABB& box) const {
     std::unordered_set<size_t> candidates;
-    
+
     if (!gridBuilt || triangles.empty()) {
-        // Fallback: return all triangles
         candidates.reserve(triangles.size());
         for (size_t i = 0; i < triangles.size(); ++i) {
             candidates.insert(i);
         }
         return std::vector<size_t>(candidates.begin(), candidates.end());
     }
-    
-    // Find overlapping cells
+
     glm::ivec3 minCell(
         static_cast<int>((box.min.x - worldBounds.min.x) / cellSize),
         static_cast<int>((box.min.y - worldBounds.min.y) / cellSize),
@@ -99,11 +97,10 @@ std::vector<size_t> MeshCollider::getCandidateTriangles(const AABB& box) const {
         static_cast<int>((box.max.y - worldBounds.min.y) / cellSize),
         static_cast<int>((box.max.z - worldBounds.min.z) / cellSize)
     );
-    
-    // Clamp to grid bounds
+
     minCell = glm::clamp(minCell, glm::ivec3(0), gridSize - 1);
     maxCell = glm::clamp(maxCell, glm::ivec3(0), gridSize - 1);
-    
+
     for (int z = minCell.z; z <= maxCell.z; ++z) {
         for (int y = minCell.y; y <= maxCell.y; ++y) {
             for (int x = minCell.x; x <= maxCell.x; ++x) {
@@ -114,7 +111,7 @@ std::vector<size_t> MeshCollider::getCandidateTriangles(const AABB& box) const {
             }
         }
     }
-    
+
     return std::vector<size_t>(candidates.begin(), candidates.end());
 }
 
@@ -156,7 +153,7 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
             worldBounds.min = glm::min(worldBounds.min, tri.bounds.min);
             worldBounds.max = glm::max(worldBounds.max, tri.bounds.max);
         }
-        
+
         // Build spatial partitioning grid
         buildSpatialGrid();
     }
@@ -254,13 +251,13 @@ SweepResult MeshCollider::sweepAABB(const AABB& playerBox, const glm::vec3& star
     AABB sweepBox;
     sweepBox.min = glm::min(start, end) - glm::vec3(playerBox.max - playerBox.min);
     sweepBox.max = glm::max(start, end) + glm::vec3(playerBox.max - playerBox.min);
-    
+
     std::vector<size_t> candidates = getCandidateTriangles(sweepBox);
 
     // Проверяем только кандидаты
     for (size_t triIdx : candidates) {
         const Triangle& tri = triangles[triIdx];
-        
+
         // Быстрая проверка: пересекается ли расширенный AABB треугольника с лучом?
         glm::vec3 triCenter = (tri.bounds.min + tri.bounds.max) * 0.5f;
         float triRadius = glm::length(tri.bounds.max - tri.bounds.min) * 0.5f;
@@ -374,12 +371,12 @@ bool MeshCollider::findClosestPoint(const glm::vec3& point, float radius,
     AABB searchBox;
     searchBox.min = point - glm::vec3(radius);
     searchBox.max = point + glm::vec3(radius);
-    
+
     std::vector<size_t> candidates = getCandidateTriangles(searchBox);
 
     for (size_t triIdx : candidates) {
         const Triangle& tri = triangles[triIdx];
-        
+
         // Broad phase
         if (glm::distance(point, (tri.bounds.min + tri.bounds.max) * 0.5f) >
             glm::length(tri.bounds.max - tri.bounds.min) * 0.5f + radius) {

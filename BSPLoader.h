@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include <glad/glad.h>
+#include "Light.h"
 
 // Forward declaration only for WADLoader
 class WADLoader;
@@ -121,4 +122,6 @@ public:
     
     // Setup lighting from light_environment entity
     void setupLightEnvironment(LightManager& lightManager) const;
+
+    std::vector<Light> extractLights() const;
 };
