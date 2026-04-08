@@ -266,12 +266,13 @@ int main() {
         g_renderer->renderWorld(view, g_player->getEyePosition());
         
         // Debug: print render stats
+        /*
         const auto& stats = g_renderer->getStats();
         if (stats.drawCalls > 0) {
             std::cout << "Rendered " << stats.drawCalls << " draw calls, " 
                       << stats.triangles << " triangles" << std::endl;
         }
-
+*/
         if (g_renderer->getShowHitbox()) {
             glm::mat4 projection = glm::perspective(glm::radians(75.0f),
                 (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 1000.0f);
