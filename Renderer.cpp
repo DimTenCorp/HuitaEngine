@@ -497,6 +497,9 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
+    // Setup viewport
+    glViewport(0, 0, width, height);
+
     // Create geometry shader
     geometryShader = std::make_unique<Shader>();
     if (!geometryShader->compile(getGeometryVert(), getGeometryFrag())) {
