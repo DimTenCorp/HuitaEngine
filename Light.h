@@ -15,21 +15,23 @@ enum class ELightType : uint8_t {
 
 // ============================================================================
 // Light Data Structure - POD для передачи в шейдеры
+// Выравнивание: структура должна быть кратна 16 байтам для GLSL uniform buffer
 // ============================================================================
-struct LightData {
-    glm::vec3 position{0.0f};      // Для directional: направление
-    float radius{10.0f};
-    glm::vec3 color{1.0f};
-    float intensity{1.0f};
-    glm::vec3 direction{0.0f, -1.0f, 0.0f}; // Для spot/directional
-    float spotInnerCutoff{0.0f};   // cos(innerAngle)
-    float spotOuterCutoff{0.0f};   // cos(outerAngle)
-    bool enabled{true};
-    uint8_t lightType{0};          // ELightType
-    uint8_t padding[3]{0};         // Выравнивание до 16 байт
+struct alignas(16) LightData {
+    glm::vec4 positionRadius;    // xyz = позиция, w = радиус
+    glm::vec4 colorIntensity;    // xyz = цвет, w = интенсивность
+    glm::vec4 directionCutoff;   // xyz = направление, w = inner cutoff (cos)
+    glm::vec4 outerEnabled;      // x = outer cutoff (cos), y = enabled (1.0/0.0), z = lightType, w = padding
+    
+    LightData() 
+        : positionRadius(0.0f)
+        , colorIntensity(1.0f, 1.0f, 1.0f, 1.0f)
+        , directionCutoff(0.0f, -1.0f, 0.0f, 0.0f)
+        , outerEnabled(0.0f, 1.0f, 0.0f, 0.0f) {}
 };
 
-static_assert(sizeof(LightData) % 16 == 0, "LightData must be 16-byte aligned for GPU");
+static_assert(sizeof(LightData) == 64, "LightData must be exactly 64 bytes (4 vec4)");
+static_assert(alignof(LightData) == 16, "LightData must be 16-byte aligned");
 
 // ============================================================================
 // CLight Class - высокоуровневый класс источника света
@@ -56,37 +58,37 @@ public:
     LightData& getData() { return data; }
 
     // Тип света
-    ELightType getType() const { return static_cast<ELightType>(data.lightType); }
+    ELightType getType() const { return static_cast<ELightType>(static_cast<uint8_t>(data.outerEnabled.z)); }
     void setType(ELightType type);
 
     // Позиция (для point/spot lights)
-    glm::vec3 getPosition() const { return data.position; }
-    void setPosition(const glm::vec3& pos) { data.position = pos; }
+    glm::vec3 getPosition() const { return data.positionRadius.xyz; }
+    void setPosition(const glm::vec3& pos) { data.positionRadius.xyz = pos; }
 
     // Направление (для spot/directional lights)
-    glm::vec3 getDirection() const { return data.direction; }
-    void setDirection(const glm::vec3& dir) { data.direction = glm::normalize(dir); }
+    glm::vec3 getDirection() const { return data.directionCutoff.xyz; }
+    void setDirection(const glm::vec3& dir) { data.directionCutoff.xyz = glm::normalize(dir); }
 
     // Цвет
-    glm::vec3 getColor() const { return data.color; }
-    void setColor(const glm::vec3& col) { data.color = col; }
+    glm::vec3 getColor() const { return data.colorIntensity.xyz; }
+    void setColor(const glm::vec3& col) { data.colorIntensity.xyz = col; }
 
     // Интенсивность
-    float getIntensity() const { return data.intensity; }
-    void setIntensity(float intensity) { data.intensity = glm::max(0.0f, intensity); }
+    float getIntensity() const { return data.colorIntensity.w; }
+    void setIntensity(float intensity) { data.colorIntensity.w = glm::max(0.0f, intensity); }
 
     // Радиус затухания (для point/spot lights)
-    float getRadius() const { return data.radius; }
-    void setRadius(float radius) { data.radius = glm::max(0.1f, radius); }
+    float getRadius() const { return data.positionRadius.w; }
+    void setRadius(float radius) { data.positionRadius.w = glm::max(0.1f, radius); }
 
     // Углы прожектора (для spot lights)
-    float getSpotInnerCutoff() const { return glm::degrees(glm::acos(data.spotInnerCutoff)); }
-    float getSpotOuterCutoff() const { return glm::degrees(glm::acos(data.spotOuterCutoff)); }
+    float getSpotInnerCutoff() const { return glm::degrees(glm::acos(data.directionCutoff.w)); }
+    float getSpotOuterCutoff() const { return glm::degrees(glm::acos(data.outerEnabled.x)); }
     void setSpotCutoff(float innerDegrees, float outerDegrees);
 
     // Состояние
-    bool isEnabled() const { return data.enabled; }
-    void setEnabled(bool enable) { data.enabled = enable; }
+    bool isEnabled() const { return data.outerEnabled.y > 0.5f; }
+    void setEnabled(bool enable) { data.outerEnabled.y = enable ? 1.0f : 0.0f; }
 
     // Утилиты
     static LightData createDirectional(const glm::vec3& direction, 

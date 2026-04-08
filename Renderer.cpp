@@ -276,17 +276,12 @@ uniform vec3 uSunColor;
 uniform float uSunIntensity;
 uniform float uAmbientStrength;
 
-// Unified light structure for all light types
+// Unified light structure for all light types - matches LightData in C++
 struct Light {
-    vec3 position;        // For directional: direction
-    float radius;
-    vec3 color;
-    float intensity;
-    vec3 direction;       // For spot/directional
-    float spotInnerCutoff; // cos(innerAngle), 0 for non-spot
-    float spotOuterCutoff; // cos(outerAngle)
-    bool enabled;
-    uint lightType;       // 0=Point, 1=Spot, 2=Directional
+    vec4 positionRadius;    // xyz = position, w = radius
+    vec4 colorIntensity;    // xyz = color, w = intensity
+    vec4 directionCutoff;   // xyz = direction, w = inner cutoff (cos)
+    vec4 outerEnabled;      // x = outer cutoff (cos), y = enabled (1.0/0.0), z = lightType, w = padding
 };
 
 #define MAX_LIGHTS 16
@@ -321,38 +316,45 @@ void main() {
     
     // Accumulate dynamic lights
     for (int i = 0; i < uLightCount; i++) {
-        if (!uLights[i].enabled) continue;
+        // Check if enabled (y component of outerEnabled)
+        if (uLights[i].outerEnabled.y < 0.5) continue;
         
-        vec3 lightPos = uLights[i].position;
+        vec3 lightPos = uLights[i].positionRadius.xyz;
+        float radius = uLights[i].positionRadius.w;
         vec3 lightDir = lightPos - fragPos;
         float dist = length(lightDir);
         
         // Skip if outside radius
-        if (dist > uLights[i].radius || dist < 0.001) continue;
+        if (dist > radius || dist < 0.001) continue;
         
         lightDir = normalize(lightDir);
         
+        // Get light type from z component
+        uint lightType = uint(uLights[i].outerEnabled.z);
+        
         // Spot light check
-        if (uLights[i].lightType == 1u) { // Spot
-            float theta = dot(lightDir, normalize(-uLights[i].direction));
-            float epsilon = uLights[i].spotOuterCutoff - uLights[i].spotInnerCutoff;
-            float spotIntensity = clamp((theta - uLights[i].spotOuterCutoff) / epsilon, 0.0, 1.0);
+        if (lightType == 1u) { // Spot
+            float theta = dot(lightDir, normalize(-uLights[i].directionCutoff.xyz));
+            float innerCutoff = uLights[i].directionCutoff.w;
+            float outerCutoff = uLights[i].outerEnabled.x;
+            float epsilon = outerCutoff - innerCutoff;
+            float spotIntensity = clamp((theta - outerCutoff) / epsilon, 0.0, 1.0);
             if (spotIntensity <= 0.0) continue;
             
             float diff = max(dot(normal, lightDir), 0.0);
-            float attenuation = 1.0 - (dist / uLights[i].radius);
+            float attenuation = 1.0 - (dist / radius);
             attenuation = attenuation * attenuation * spotIntensity;
             
-            result += diff * attenuation * uLights[i].color * uLights[i].intensity * albedo.rgb;
+            result += diff * attenuation * uLights[i].colorIntensity.xyz * uLights[i].colorIntensity.w * albedo.rgb;
         }
-        else if (uLights[i].lightType == 0u) { // Point
+        else if (lightType == 0u) { // Point
             float diff = max(dot(normal, lightDir), 0.0);
-            float attenuation = 1.0 - (dist / uLights[i].radius);
+            float attenuation = 1.0 - (dist / radius);
             attenuation = attenuation * attenuation;
             
-            result += diff * attenuation * uLights[i].color * uLights[i].intensity * albedo.rgb;
+            result += diff * attenuation * uLights[i].colorIntensity.xyz * uLights[i].colorIntensity.w * albedo.rgb;
         }
-        // Directional lights handled separately via sun
+        // Directional lights (type 2) handled separately via sun
     }
     
     FragColor = vec4(result, albedo.a);
@@ -691,15 +693,10 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, con
         
         for (int i = 0; i < lightCount; i++) {
             std::string prefix = "uLights[" + std::to_string(i) + "].";
-            lightingShader->setVec3(prefix + "position", lights[i].position);
-            lightingShader->setFloat(prefix + "radius", lights[i].radius);
-            lightingShader->setVec3(prefix + "color", lights[i].color);
-            lightingShader->setFloat(prefix + "intensity", lights[i].intensity);
-            lightingShader->setVec3(prefix + "direction", lights[i].direction);
-            lightingShader->setFloat(prefix + "spotInnerCutoff", lights[i].spotInnerCutoff);
-            lightingShader->setFloat(prefix + "spotOuterCutoff", lights[i].spotOuterCutoff);
-            lightingShader->setBool(prefix + "enabled", lights[i].enabled);
-            lightingShader->setUInt(prefix + "lightType", lights[i].lightType);
+            lightingShader->setVec4(prefix + "positionRadius", lights[i].positionRadius);
+            lightingShader->setVec4(prefix + "colorIntensity", lights[i].colorIntensity);
+            lightingShader->setVec4(prefix + "directionCutoff", lights[i].directionCutoff);
+            lightingShader->setVec4(prefix + "outerEnabled", lights[i].outerEnabled);
         }
     } else {
         lightingShader->setInt("uLightCount", 0);

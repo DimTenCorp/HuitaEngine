@@ -8,13 +8,13 @@
 
 CLight::CLight() 
     : data{} {
-    data.lightType = static_cast<uint8_t>(ELightType::Point);
-    data.position = glm::vec3(0.0f);
-    data.color = glm::vec3(1.0f);
-    data.intensity = 1.0f;
-    data.radius = 10.0f;
-    data.direction = glm::vec3(0.0f, -1.0f, 0.0f);
-    data.enabled = true;
+    setType(ELightType::Point);
+    setPosition(glm::vec3(0.0f));
+    setColor(glm::vec3(1.0f));
+    setIntensity(1.0f);
+    setRadius(10.0f);
+    setDirection(glm::vec3(0.0f, -1.0f, 0.0f));
+    setEnabled(true);
 }
 
 CLight::CLight(ELightType type) 
@@ -26,13 +26,13 @@ CLight::~CLight() = default;
 
 CLight::CLight(CLight&& other) noexcept 
     : data(other.data) {
-    other.data = {};
+    other.data = LightData{};
 }
 
 CLight& CLight::operator=(CLight&& other) noexcept {
     if (this != &other) {
         data = other.data;
-        other.data = {};
+        other.data = LightData{};
     }
     return *this;
 }
@@ -43,40 +43,39 @@ void CLight::Update(float deltaTime) {
 }
 
 void CLight::setType(ELightType type) {
-    data.lightType = static_cast<uint8_t>(type);
+    data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(type));
     
     // Установка значений по умолчанию для разных типов света
     switch (type) {
         case ELightType::Directional:
-            data.radius = 0.0f; // Не используется для directional
+            data.positionRadius.w = 0.0f; // Не используется для directional
             break;
         case ELightType::Point:
-            data.radius = 10.0f;
-            data.spotInnerCutoff = 0.0f;
-            data.spotOuterCutoff = 0.0f;
+            data.positionRadius.w = 10.0f;
+            data.directionCutoff.w = 0.0f;
+            data.outerEnabled.x = 0.0f;
             break;
         case ELightType::Spot:
-            data.radius = 20.0f;
+            data.positionRadius.w = 20.0f;
             setSpotCutoff(12.5f, 17.5f);
             break;
     }
 }
 
 void CLight::setSpotCutoff(float innerDegrees, float outerDegrees) {
-    data.spotInnerCutoff = glm::cos(glm::radians(innerDegrees));
-    data.spotOuterCutoff = glm::cos(glm::radians(outerDegrees));
+    data.directionCutoff.w = glm::cos(glm::radians(innerDegrees));
+    data.outerEnabled.x = glm::cos(glm::radians(outerDegrees));
 }
 
 LightData CLight::createDirectional(const glm::vec3& direction,
                                      const glm::vec3& color,
                                      float intensity) {
     LightData data;
-    data.lightType = static_cast<uint8_t>(ELightType::Directional);
-    data.position = glm::normalize(direction);
-    data.color = color;
-    data.intensity = intensity;
-    data.radius = 0.0f;
-    data.direction = glm::normalize(direction);
+    data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Directional));
+    data.directionCutoff.xyz = glm::normalize(direction);
+    data.colorIntensity.xyz = color;
+    data.colorIntensity.w = intensity;
+    data.positionRadius.w = 0.0f;
     data.enabled = true;
     return data;
 }
@@ -86,13 +85,13 @@ LightData CLight::createPoint(const glm::vec3& position,
                                float intensity,
                                float radius) {
     LightData data;
-    data.lightType = static_cast<uint8_t>(ELightType::Point);
-    data.position = position;
-    data.color = color;
-    data.intensity = intensity;
-    data.radius = radius;
-    data.direction = glm::vec3(0.0f, -1.0f, 0.0f);
-    data.enabled = true;
+    data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Point));
+    data.positionRadius.xyz = position;
+    data.positionRadius.w = radius;
+    data.colorIntensity.xyz = color;
+    data.colorIntensity.w = intensity;
+    data.directionCutoff.xyz = glm::vec3(0.0f, -1.0f, 0.0f);
+    data.outerEnabled.y = 1.0f;
     return data;
 }
 
@@ -104,15 +103,15 @@ LightData CLight::createSpot(const glm::vec3& position,
                               float outerDegrees,
                               float radius) {
     LightData data;
-    data.lightType = static_cast<uint8_t>(ELightType::Spot);
-    data.position = position;
-    data.direction = glm::normalize(direction);
-    data.color = color;
-    data.intensity = intensity;
-    data.radius = radius;
-    data.spotInnerCutoff = glm::cos(glm::radians(innerDegrees));
-    data.spotOuterCutoff = glm::cos(glm::radians(outerDegrees));
-    data.enabled = true;
+    data.outerEnabled.z = static_cast<float>(static_cast<uint8_t>(ELightType::Spot));
+    data.positionRadius.xyz = position;
+    data.positionRadius.w = radius;
+    data.directionCutoff.xyz = glm::normalize(direction);
+    data.colorIntensity.xyz = color;
+    data.colorIntensity.w = intensity;
+    data.directionCutoff.w = glm::cos(glm::radians(innerDegrees));
+    data.outerEnabled.x = glm::cos(glm::radians(outerDegrees));
+    data.outerEnabled.y = 1.0f;
     return data;
 }
 
