@@ -205,34 +205,41 @@ void Renderer::ShadowFBO::destroy() {
 // Shader Sources - вынесены в отдельные статические строки
 // ============================================================================
 
-static const char* s_geometryVert = R"(
+static const char* s_geometryVert = R"glsl(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
+
 void main() {
     vTexCoord = aTexCoord;
-    vNormal = mat3(transpose(inverse(model))) * aNormal;
+    mat3 normalMatrix = mat3(transpose(inverse(model)));
+    vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
     gl_Position = projection * view * model * vec4(aPos, 1.0);
 }
-)";
+)glsl";
 
-static const char* s_geometryFrag = R"(
+static const char* s_geometryFrag = R"glsl(
 #version 330 core
 in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
+
 layout (location = 0) out vec4 FragPosition;
 layout (location = 1) out vec4 FragNormal;
 layout (location = 2) out vec4 FragAlbedo;
+
 uniform sampler2D uTexture;
+
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     if (texColor.a < 0.5) discard;
@@ -240,23 +247,26 @@ void main() {
     FragNormal = vec4(normalize(vNormal), 1.0);
     FragAlbedo = texColor;
 }
-)";
+)glsl";
 
-static const char* s_lightingVert = R"(
+static const char* s_lightingVert = R"glsl(
 #version 330 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aTexCoord;
+
 out vec2 vTexCoord;
+
 void main() {
     vTexCoord = aTexCoord;
     gl_Position = vec4(aPos, 1.0);
 }
-)";
+)glsl";
 
-static const char* s_lightingFrag = R"(
+static const char* s_lightingFrag = R"glsl(
 #version 330 core
 in vec2 vTexCoord;
 out vec4 FragColor;
+
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
@@ -264,6 +274,7 @@ uniform vec3 uViewPos;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uSunIntensity;
+
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
@@ -285,37 +296,43 @@ void main() {
     vec3 result = ambient + diffuse + specular;
     FragColor = vec4(result * albedo.rgb, albedo.a);
 }
-)";
+)glsl";
 
-static const char* s_flashlightVert = R"(
+static const char* s_flashlightVert = R"glsl(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 lightSpaceMatrix;
+
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
 out vec4 vFragPosLightSpace;
+
 void main() {
     vTexCoord = aTexCoord;
-    vNormal = mat3(transpose(inverse(model))) * aNormal;
+    mat3 normalMatrix = mat3(transpose(inverse(model)));
+    vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
     gl_Position = projection * view * model * vec4(aPos, 1.0);
     vFragPosLightSpace = lightSpaceMatrix * model * vec4(aPos, 1.0);
 }
-)";
+)glsl";
 
-static const char* s_flashlightFrag = R"(
+static const char* s_flashlightFrag = R"glsl(
 #version 330 core
 in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
 in vec4 vFragPosLightSpace;
+
 out vec4 FragColor;
+
 uniform sampler2D uTexture;
 uniform sampler2D shadowMap;
 uniform vec3 uLightPos;
@@ -323,6 +340,7 @@ uniform vec3 uLightDir;
 uniform float uCutOffInner;
 uniform float uCutOffOuter;
 uniform float uIntensity;
+
 float calcShadow() {
     vec3 projCoords = vFragPosLightSpace.xyz / vFragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
@@ -333,6 +351,7 @@ float calcShadow() {
     float shadow = currentDepth - bias > closestDepth ? 0.5 : 0.0;
     return shadow;
 }
+
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     if (texColor.a < 0.5) discard;
@@ -349,7 +368,7 @@ void main() {
     
     FragColor = vec4(lighting * texColor.rgb, texColor.a);
 }
-)";
+)glsl";
 
 const char* Renderer::getGeometryVert() { return s_geometryVert; }
 const char* Renderer::getGeometryFrag() { return s_geometryFrag; }
@@ -405,16 +424,16 @@ bool Renderer::init(int width, int height) {
 
     // Create geometry shader
     geometryShader = std::make_unique<Shader>();
-    if (!geometryShader->loadFromStrings(getGeometryVert(), getGeometryFrag())) {
-        std::cerr << "Geometry shader fail: " << geometryShader->getError() << std::endl;
+    if (!geometryShader->compile(getGeometryVert(), getGeometryFrag())) {
+        std::cerr << "Geometry shader fail: " << geometryShader->getLastError() << std::endl;
         geometryShader.reset();
         return false;
     }
 
     // Create lighting shader
     lightingShader = std::make_unique<Shader>();
-    if (!lightingShader->loadFromStrings(getLightingVert(), getLightingFrag())) {
-        std::cerr << "Lighting shader fail: " << lightingShader->getError() << std::endl;
+    if (!lightingShader->compile(getLightingVert(), getLightingFrag())) {
+        std::cerr << "Lighting shader fail: " << lightingShader->getLastError() << std::endl;
         geometryShader.reset();
         lightingShader.reset();
         return false;
@@ -429,8 +448,8 @@ bool Renderer::init(int width, int height) {
 
     // Create flashlight shader
     flashlightShader = std::make_unique<Shader>();
-    if (!flashlightShader->loadFromStrings(getFlashlightVert(), getFlashlightFrag())) {
-        std::cerr << "Flashlight shader fail: " << flashlightShader->getError() << std::endl;
+    if (!flashlightShader->compile(getFlashlightVert(), getFlashlightFrag())) {
+        std::cerr << "Flashlight shader fail: " << flashlightShader->getLastError() << std::endl;
         flashlightShader.reset();
     } else {
         flashlightShader->bind();
@@ -562,13 +581,9 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     glClear(GL_DEPTH_BUFFER_BIT);
 
     geometryShader->bind();
-    GLint modelLoc = geometryShader->getLocation("model");
-    GLint viewLoc = geometryShader->getLocation("view");
-    GLint projLoc = geometryShader->getLocation("projection");
-
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
-    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+    geometryShader->setMat4("model", glm::mat4(1.0f));
+    geometryShader->setMat4("view", view);
+    geometryShader->setMat4("projection", proj);
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
