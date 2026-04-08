@@ -101,11 +101,14 @@ bool initSystems(WADLoader& wadLoader) {
     const auto& vertices = g_bspLoader->getMeshVertices();
     g_meshCollider->buildFromBSP(vertices, g_bspLoader->getMeshIndices());
     std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount() << " triangles" << std::endl;
+    std::cout << "BSP mesh has " << vertices.size() << " vertices and " 
+              << g_bspLoader->getMeshIndices().size() << " indices" << std::endl;
 
     if (!g_renderer->loadWorld(*g_bspLoader)) {
         std::cerr << "Failed to load world into renderer" << std::endl;
         return false;
     }
+    std::cout << "World loaded into renderer successfully" << std::endl;
 
     glm::vec3 spawnPos;
     glm::vec3 spawnAngles;
@@ -208,7 +211,8 @@ int main() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glFrontFace(GL_CW);
+    // BSP files typically use CCW winding for front faces
+    glFrontFace(GL_CCW);
 
     // Проверяем ошибки OpenGL
     GLenum err = glGetError();
@@ -252,6 +256,13 @@ int main() {
         g_player->getViewMatrix(glm::value_ptr(view));
 
         g_renderer->renderWorld(view, g_player->getEyePosition());
+        
+        // Debug: print render stats
+        const auto& stats = g_renderer->getStats();
+        if (stats.drawCalls > 0) {
+            std::cout << "Rendered " << stats.drawCalls << " draw calls, " 
+                      << stats.triangles << " triangles" << std::endl;
+        }
 
         if (g_renderer->getShowHitbox()) {
             glm::mat4 projection = glm::perspective(glm::radians(75.0f),

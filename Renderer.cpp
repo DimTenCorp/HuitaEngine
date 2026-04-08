@@ -126,7 +126,11 @@ BspMesh::~BspMesh() { destroy(); }
 bool BspMesh::buildFromBSP(const std::vector<BSPVertex>& vertices, 
                            const std::vector<unsigned int>& indices) {
     destroy();
-    if (vertices.empty() || indices.empty()) return false;
+    if (vertices.empty() || indices.empty()) {
+        std::cerr << "BspMesh: Empty vertices or indices - vertices: " 
+                  << vertices.size() << ", indices: " << indices.size() << std::endl;
+        return false;
+    }
 
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -153,6 +157,10 @@ bool BspMesh::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
     glBindVertexArray(0);
     indexCount = indices.size();
+    
+    std::cout << "BspMesh: Built mesh with VAO=" << vao << ", VBO=" << vbo 
+              << ", EBO=" << ebo << ", indexCount=" << indexCount << std::endl;
+    
     return true;
 }
 
@@ -497,6 +505,9 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
+    // Setup viewport
+    glViewport(0, 0, width, height);
+
     // Create geometry shader
     geometryShader = std::make_unique<Shader>();
     if (!geometryShader->compile(getGeometryVert(), getGeometryFrag())) {
@@ -556,7 +567,8 @@ bool Renderer::init(int width, int height) {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glFrontFace(GL_CW);
+    // BSP files typically use CCW winding for front faces
+    glFrontFace(GL_CCW);
 
     // Create hitbox mesh
     hitboxMesh.buildFromBSP(
@@ -608,9 +620,19 @@ void Renderer::destroyGBuffer() {
 
 bool Renderer::loadWorld(BSPLoader& bsp) {
     unloadWorld();
-    if (!bsp.isLoaded()) return false;
+    if (!bsp.isLoaded()) {
+        std::cerr << "Renderer: BSP not loaded" << std::endl;
+        return false;
+    }
 
-    if (!worldMesh.buildFromBSP(bsp.getMeshVertices(), bsp.getMeshIndices())) {
+    const auto& vertices = bsp.getMeshVertices();
+    const auto& indices = bsp.getMeshIndices();
+    
+    std::cout << "Renderer: Loading world with " << vertices.size() << " vertices, " 
+              << indices.size() << " indices, " << bsp.getDrawCalls().size() << " draw calls" << std::endl;
+
+    if (!worldMesh.buildFromBSP(vertices, indices)) {
+        std::cerr << "Renderer: Failed to build mesh from BSP" << std::endl;
         return false;
     }
 
@@ -618,6 +640,8 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
+    std::cout << "Renderer: World loaded successfully, " << drawCalls.size() << " draw calls after sort" << std::endl;
+    
     worldLoaded = true;
     return true;
 }
@@ -656,6 +680,9 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, cons
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
     glClear(GL_DEPTH_BUFFER_BIT);
+
+    // Ensure polygon mode is set to fill for world rendering
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
