@@ -743,9 +743,9 @@ void Renderer::renderFlashlight(const glm::mat4& view, const glm::mat4& proj, co
     flashlightShader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
     flashlightShader->setVec3("uLightPos", flashlight.position);
     flashlightShader->setVec3("uLightDir", flashlight.direction);
-    flashlightShader->setFloat("uCutOffInner", glm::cos(glm::radians(flashlight.innerCutoff)));
-    flashlightShader->setFloat("uCutOffOuter", glm::cos(glm::radians(flashlight.outerCutoff)));
-    flashlightShader->setVec3("uIntensity", glm::vec3(1.0f));  // White light with intensity 1.0
+    flashlightShader->setFloat("uCutOffInner", glm::cos(flashlight.cutoffInner));
+    flashlightShader->setFloat("uCutOffOuter", glm::cos(flashlight.cutoffOuter));
+    flashlightShader->setVec3("uIntensity", glm::vec3(flashlight.intensity));
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, shadowFBO.depthMap);
