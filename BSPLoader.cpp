@@ -390,9 +390,6 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
 
         glm::vec3 normal = planes[face.planeNum].normal;
         if (face.side) normal = -normal;
-        
-        // Инвертируем нормали для исправления проблемы с рендерингом
-        normal = -normal;
 
         std::vector<glm::vec3> faceVerts;
         faceVerts.reserve(face.numEdges);
