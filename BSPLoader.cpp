@@ -388,8 +388,7 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         if (face.planeNum >= planes.size()) continue;
         if (face.texInfo >= texInfos.size()) continue;
 
-        glm::vec3 normal = planes[face.planeNum].normal;
-        if (face.side) normal = -normal;
+        glm::vec3 normal = -planes[face.planeNum].normal;
 
         std::vector<glm::vec3> faceVerts;
         faceVerts.reserve(face.numEdges);
