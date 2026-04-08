@@ -668,22 +668,28 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             glm::vec3 angles = entity.angles;
             
             // Конвертируем углы в вектор направления
-            // В GoldSrc/Half-Life углы: pitch (x), yaw (y), roll (z)
-            float pitchRad = glm::radians(angles.x);
+            // В GoldSrc/Half-Life:
+            // - angles.y (yaw): 0 = South, 90 = East, 180 = North, 270 = West
+            // - angles.x (pitch): положительный = вниз, отрицательный = вверх
+            // Солнце светит В направлении, куда смотрят углы
+            
             float yawRad = glm::radians(angles.y);
+            float pitchRad = glm::radians(angles.x);
             
-            // Вычисляем направление света (солнце светит В направлении углов)
-            glm::vec3 sunDir;
-            sunDir.x = cos(pitchRad) * sin(yawRad);
-            sunDir.y = sin(pitchRad);
-            sunDir.z = cos(pitchRad) * cos(yawRad);
-            sunDir = glm::normalize(sunDir);
+            // Вычисляем направление взгляда (куда смотрят углы)
+            glm::vec3 forward;
+            forward.x = sin(yawRad) * cos(pitchRad);
+            forward.y = -sin(pitchRad);  // Инвертируем Y, т.к. положительный pitch = вниз
+            forward.z = cos(yawRad) * cos(pitchRad);
+            forward = glm::normalize(forward);
             
-            // Инвертируем направление, т.к. свет идет ОТ солнца
-            sunDir = -sunDir;
+            // Свет идет ОТ солнца, поэтому инвертируем направление
+            glm::vec3 sunDir = -forward;
             
             std::cout << "[BSP] light_environment angles: (" 
                       << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
+            std::cout << "[BSP] Forward vector: (" 
+                      << forward.x << ", " << forward.y << ", " << forward.z << ")" << std::endl;
             std::cout << "[BSP] Calculated sun direction: (" 
                       << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
             
