@@ -157,7 +157,7 @@ private:
     std::vector<LightData> lightData;
     size_t nextId{0};
     
-    glm::vec3 sunDirection{0.5f, -1.0f, 0.3f};
+    glm::vec3 sunDirection{-0.5f, 1.0f, -0.3f};
     glm::vec3 sunColor{1.0f, 0.95f, 0.8f};
     float sunIntensity{1.0f};
     float ambientStrength{0.1f};
