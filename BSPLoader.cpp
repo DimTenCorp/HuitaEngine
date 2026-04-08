@@ -678,10 +678,11 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             
             // Вычисляем направление взгляда (куда смотрят углы)
             // В системе координат Half-Life: X вперед, Y вправо, Z вверх
+            // Формула для конвертации углов в вектор направления:
             glm::vec3 forward;
             forward.x = cos(pitchRad) * sin(yawRad);
             forward.y = cos(pitchRad) * cos(yawRad);
-            forward.z = -sin(pitchRad);  // Инвертируем Z, т.к. +pitch в HL это вниз, а нам нужно чтобы свет шел сверху
+            forward.z = -sin(pitchRad);  // +pitch в HL это вниз, поэтому инвертируем для Z-up
             forward = glm::normalize(forward);
             
             // Свет идет ОТ солнца к земле, поэтому используем направление forward как есть
@@ -717,10 +718,10 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                         b = static_cast<int>(b * (v / 255.0f));
                     }
                     
-                    // Ограничиваем значения максимум 255
-                    r = std::clamp(r, 0, 255);
-                    g = std::clamp(g, 0, 255);
-                    b = std::clamp(b, 0, 255);
+                    // Ограничиваем значения максимум 255 (используем glm::clamp для совместимости)
+                    r = static_cast<int>(glm::clamp(static_cast<float>(r), 0.0f, 255.0f));
+                    g = static_cast<int>(glm::clamp(static_cast<float>(g), 0.0f, 255.0f));
+                    b = static_cast<int>(glm::clamp(static_cast<float>(b), 0.0f, 255.0f));
                     
                     // Конвертируем в диапазон [0, 1] для шейдера
                     glm::vec3 sunColor(r / 255.0f, g / 255.0f, b / 255.0f);
