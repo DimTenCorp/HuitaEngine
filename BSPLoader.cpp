@@ -12,12 +12,15 @@
 #include "WADLoader.h"
 #include "TriangleCollider.h"
 #include <unordered_set>
+#include <string_view>
 
 static const float BSP_SCALE = 0.025f;
 
 // Быстрый парсинг строки в float массив
-static bool parseVector3(const std::string& str, float& x, float& y, float& z) {
-    return sscanf(str.c_str(), "%f %f %f", &x, &y, &z) == 3;
+static bool parseVector3(std::string_view str, float& x, float& y, float& z) {
+    // Временная строка для sscanf (можно进一步优化 на полностью безстроковой вариант)
+    std::string temp(str);
+    return sscanf(temp.c_str(), "%f %f %f", &x, &y, &z) == 3;
 }
 
 // Проверка является ли класс сущности критическим
@@ -393,13 +396,13 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
                 }
             } else if (keyView == "origin" && !hasOrigin) {
                 float ox, oy, oz;
-                if (parseVector3(std::string(valView), ox, oy, oz)) {
+                if (parseVector3(valView, ox, oy, oz)) {
                     origin = convertPosition(glm::vec3(ox, oy, oz));
                     hasOrigin = true;
                 }
             } else if (keyView == "angles" && !hasAngles) {
                 float ax, ay, az;
-                if (parseVector3(std::string(valView), ax, ay, az)) {
+                if (parseVector3(valView, ax, ay, az)) {
                     angles = glm::vec3(ax, ay, az);
                     hasAngles = true;
                 }
