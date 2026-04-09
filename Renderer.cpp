@@ -413,7 +413,11 @@ const char* Renderer::getLightingFrag() { return s_lightingFrag; }
 Renderer::Renderer() = default;
 
 Renderer::Renderer(Renderer&& other) noexcept
-    : worldMesh(std::move(other.worldMesh)), hitboxMesh(std::move(other.hitboxMesh)),
+    : worldMesh(std::move(other.worldMesh)), 
+    worldRenderer(std::move(other.worldRenderer)),
+    brushRenderer(std::move(other.brushRenderer)),
+    bspLightmap(std::move(other.bspLightmap)),
+    hitboxMesh(std::move(other.hitboxMesh)),
     geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
     flashlightShader(std::move(other.flashlightShader)), gBuffer(std::move(other.gBuffer)),
     shadowFBO(std::move(other.shadowFBO)), stats(other.stats),
@@ -430,6 +434,9 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     if (this != &other) {
         cleanup();
         worldMesh = std::move(other.worldMesh);
+        worldRenderer = std::move(other.worldRenderer);
+        brushRenderer = std::move(other.brushRenderer);
+        bspLightmap = std::move(other.bspLightmap);
         hitboxMesh = std::move(other.hitboxMesh);
         geometryShader = std::move(other.geometryShader);
         lightingShader = std::move(other.lightingShader);
@@ -460,6 +467,11 @@ bool Renderer::init(int width, int height) {
     screenHeight = height;
 
     glViewport(0, 0, width, height);
+
+    // Инициализация новой системы рендеринга
+    worldRenderer = std::make_unique<WorldRenderer>();
+    brushRenderer = std::make_unique<BrushRenderer>();
+    bspLightmap = std::make_unique<BSPLightmap>();
 
     geometryShader = std::make_unique<Shader>();
     if (!geometryShader->compile(getGeometryVert(), getGeometryFrag())) {
@@ -556,6 +568,28 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
 
     std::cout << "Renderer: Loading world with " << vertices.size() << " vertices" << std::endl;
 
+    // === Инициализация новой системы рендеринга ===
+    
+    // 1. Строим лайтмап атлас из данных BSP
+    if (bspLightmap) {
+        bspLightmap->buildFromBSP(bsp);
+        std::cout << "Renderer: Lightmap atlas built, texture array size=" 
+                  << bspLightmap->getTextureArraySize() << std::endl;
+    }
+
+    // 2. Инициализируем WorldRenderer для рендеринга статического мира
+    if (worldRenderer) {
+        worldRenderer->init(bsp);
+        std::cout << "Renderer: WorldRenderer initialized" << std::endl;
+    }
+
+    // 3. Инициализируем BrushRenderer для brush-моделей (двери, лифты и т.д.)
+    if (brushRenderer) {
+        brushRenderer->init(bsp);
+        std::cout << "Renderer: BrushRenderer initialized" << std::endl;
+    }
+
+    // === Старая система (для обратной совместимости) ===
     if (!worldMesh.buildFromBSP(vertices, indices)) {
         std::cerr << "Renderer: Failed to build mesh" << std::endl;
         return false;
@@ -583,6 +617,11 @@ void Renderer::unloadWorld() {
     worldMesh.destroy();
     drawCalls.clear();
     worldLoaded = false;
+    
+    // Очистка новой системы рендеринга
+    if (worldRenderer) worldRenderer->cleanup();
+    if (brushRenderer) brushRenderer->cleanup();
+    if (bspLightmap) bspLightmap->cleanup();
 }
 
 void Renderer::beginFrame(const glm::vec3& clearColor) {
@@ -607,7 +646,47 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, Shad
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f);
 
-    geometryPass(view, projection);
+    // === Новая система рендеринга с использованием WorldRenderer и BSPLightmap ===
+    
+    gBuffer.bindForWriting();
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    // Рендеринг статического мира через WorldRenderer
+    if (worldRenderer && bspLightmap) {
+        geometryShader->bind();
+        geometryShader->setMat4("view", view);
+        geometryShader->setMat4("projection", projection);
+        geometryShader->setBool("uUseLightmap", true);
+        
+        // Передаем параметры солнца
+        geometryShader->setVec3("uSunDir", sunDirection);
+        geometryShader->setVec3("uSunColor", sunColor);
+        geometryShader->setFloat("uSunIntensity", sunIntensity);
+        
+        // Привязываем текстуру лайтмапа из новой системы
+        GLuint lightmapTex = bspLightmap->getTextureArray();
+        if (lightmapTex != 0) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, lightmapTex);
+            geometryShader->setInt("uLightmap", 1);
+        }
+        
+        // Рендерим мир с использованием PVS и батчинга
+        worldRenderer->render(viewPos, view, projection, *geometryShader, *bspLightmap);
+        
+        stats.drawCalls += worldRenderer->getLastDrawCalls();
+        stats.triangles += worldRenderer->getLastTriangles();
+        
+        geometryShader->unbind();
+    }
+
+    // Рендеринг brush-моделей (двери, лифты, вращающиеся объекты)
+    if (brushRenderer) {
+        brushRenderer->render(viewPos, view, projection, *geometryShader, *bspLightmap);
+        stats.drawCalls += brushRenderer->getLastDrawCalls();
+        stats.triangles += brushRenderer->getLastTriangles();
+    }
 
     // Освещение берется из lightmap BSP, динамические источники добавляются отдельно
     lightingPass(view, viewPos, shadowSystem);

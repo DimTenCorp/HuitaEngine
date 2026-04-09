@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include "BSPLoader.h"
 #include "Shader.h"
-#include "Camera.h"
+#include "BSPLightmap.h"
 
 // Структура для хранения поверхности рендеринга
 struct RenderSurface {
@@ -36,14 +36,18 @@ public:
     ~WorldRenderer();
 
     // Инициализация рендерера после загрузки BSP
-    bool initialize(const BSPLoader& bspLoader);
+    bool init(const BSPLoader& bspLoader);
     void cleanup();
 
+    // Основной метод рендеринга мира
+    void render(const glm::vec3& viewPos, const glm::mat4& view, const glm::mat4& projection, 
+                Shader& shader, const BSPLightmap& lightmap);
+
     // Получение видимых поверхностей для камеры
-    void getVisibleSurfaces(const Camera& camera, WorldSurfaceList& surfList);
+    void getVisibleSurfaces(const glm::vec3& viewPos, WorldSurfaceList& surfList);
 
     // Рендеринг мира
-    void drawTexturedWorld(WorldSurfaceList& surfList, const Shader& shader);
+    void drawTexturedWorld(WorldSurfaceList& surfList, const Shader& shader, const BSPLightmap& lightmap);
     void drawSkybox(WorldSurfaceList& surfList, const Shader& shader);
     void drawWireframe(WorldSurfaceList& surfList, const Shader& wireframeShader, bool drawSky);
 
@@ -58,6 +62,10 @@ public:
         void reset() { drawCalls = 0; worldPolys = 0; skyPolys = 0; }
     };
     const Stats& getStats() const { return stats; }
+    
+    // Получение статистики для Renderer
+    unsigned int getLastDrawCalls() const { return lastDrawCalls; }
+    unsigned int getLastTriangles() const { return lastTriangles; }
 
 private:
     // Узлы BSP для рендеринга
@@ -95,9 +103,13 @@ private:
     void createNodes(const BSPLoader& bspLoader);
     void updateNodeParents(int nodeIdx, int parent);
     void createBuffers();
-    void markLeaves(const Camera& camera, WorldSurfaceList& surfList);
-    void recursiveWorldNodesTextured(const Camera& camera, WorldSurfaceList& surfList, int nodeIdx);
+    void markLeaves(const glm::vec3& viewPos, WorldSurfaceList& surfList);
+    void recursiveWorldNodesTextured(const glm::vec3& viewPos, WorldSurfaceList& surfList, int nodeIdx);
 
     Stats stats;
     bool initialized = false;
+    
+    // Статистика для последнего кадра
+    unsigned int lastDrawCalls = 0;
+    unsigned int lastTriangles = 0;
 };

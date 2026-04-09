@@ -7,6 +7,9 @@
 #include "Shader.h"
 #include "Light.h"
 #include "ShadowSystem.h"
+#include "WorldRenderer.h"
+#include "BrushRenderer.h"
+#include "BSPLightmap.h"
 
 struct GBuffer {
     GLuint fbo = 0;
@@ -120,9 +123,15 @@ public:
     void setLightmapTexture(GLuint tex, int size) { lightmapTexture = tex; lightmapSize = size; }
 
 private:
+    // Старая система рендеринга (для обратной совместимости)
     BspMesh worldMesh;
     std::vector<FaceDrawCall> drawCalls;
     bool worldLoaded = false;
+
+    // Новая система рендеринга на основе BSPRenderer
+    std::unique_ptr<WorldRenderer> worldRenderer;
+    std::unique_ptr<BrushRenderer> brushRenderer;
+    std::unique_ptr<BSPLightmap> bspLightmap;
 
     BspMesh hitboxMesh;
     bool showHitbox = true;

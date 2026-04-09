@@ -120,6 +120,12 @@ public:
     const std::vector<BSPEntity>& getEntities() const { return entities; }
     const std::vector<FaceDrawCall>& getDrawCalls() const { return drawCalls; }
     const std::vector<std::string>& getRequiredWADs() const { return requiredWADs; }
+    
+    // Доступ к данным BSP для WorldRenderer и BrushRenderer
+    const std::vector<BSPPlane>& getPlanes() const { return planes; }
+    const std::vector<BSPFace>& getFaces() const { return faces; }
+    const std::vector<BSPModel>& getModels() const { return models; }
+    const std::vector<BSPTexInfo>& getTexInfos() const { return texInfos; }
 
     GLuint getDefaultTextureID() const { return defaultTextureId; }
     void cleanupTextures();

@@ -3,7 +3,7 @@
 #include <vector>
 #include "BSPLoader.h"
 #include "Shader.h"
-#include "Camera.h"
+#include "BSPLightmap.h"
 
 // Класс для рендеринга brush моделей (дверей, лифтов, вращающихся объектов и т.д.)
 class BrushRenderer {
@@ -12,27 +12,32 @@ public:
     ~BrushRenderer();
 
     // Инициализация после загрузки BSP
-    bool initialize(const BSPLoader& bspLoader);
+    bool init(const BSPLoader& bspLoader);
     void cleanup();
 
-    // Начало кадра для рендеринга brush моделей
-    void beginRendering();
+    // Основной метод рендеринга всех brush моделей
+    void render(const glm::vec3& viewPos, const glm::mat4& view, const glm::mat4& projection,
+                Shader& shader, const BSPLightmap& lightmap);
 
     // Рендеринг brush модели без сортировки (для непрозрачных объектов)
-    void drawBrushEntity(const Camera& camera, 
+    void drawBrushEntity(const glm::vec3& viewPos,
+                         const glm::mat4& view, const glm::mat4& projection,
                          const glm::vec3& origin,
                          const glm::vec3& angles,
                          unsigned int firstFace,
                          unsigned int numFaces,
-                         const Shader& shader);
+                         const Shader& shader,
+                         const BSPLightmap& lightmap);
 
     // Рендеринг brush модели с сортировкой поверхностей (для прозрачных объектов)
-    void drawSortedBrushEntity(const Camera& camera,
+    void drawSortedBrushEntity(const glm::vec3& viewPos,
+                               const glm::mat4& view, const glm::mat4& projection,
                                const glm::vec3& origin,
                                const glm::vec3& angles,
                                unsigned int firstFace,
                                unsigned int numFaces,
                                const Shader& shader,
+                               const BSPLightmap& lightmap,
                                float renderFxAmount = 0.0f,
                                const glm::vec3& renderFxColor = glm::vec3(0));
 
@@ -44,6 +49,10 @@ public:
         void reset() { drawCalls = 0; brushEntPolys = 0; eboOverflows = 0; }
     };
     const Stats& getStats() const { return stats; }
+    
+    // Получение статистики для Renderer
+    unsigned int getLastDrawCalls() const { return lastDrawCalls; }
+    unsigned int getLastTriangles() const { return lastTriangles; }
 
 private:
     // Данные о поверхностях для сортировки
@@ -67,13 +76,18 @@ private:
     // Статистика
     Stats stats;
     bool initialized = false;
+    
+    // Статистика для последнего кадра
+    unsigned int lastDrawCalls = 0;
+    unsigned int lastTriangles = 0;
 
     // Методы
     void createBuffers(const BSPLoader& bspLoader);
     
     // Подготовка entity к рендерингу
     // @returns true если entity отсечена frustum'ом
-    bool prepareEntity(const Camera& camera,
+    bool prepareEntity(const glm::vec3& viewPos,
+                       const glm::mat4& view, const glm::mat4& projection,
                        const glm::vec3& origin,
                        const glm::vec3& angles,
                        const glm::vec3& mins,
@@ -81,7 +95,7 @@ private:
                        glm::mat4& outTransform) const;
 
     // Получение матрицы трансформации brush модели
-    glm::mat4 getBrushTransform(const glm::vec3& origin, const glm::vec3& angles) const;
+    glm::mat4 getBrushTransformation(const glm::vec3& origin, const glm::vec3& angles) const;
 
     // Добавление поверхности в текущий батч
     void batchAddSurface(unsigned int vertexOffset, unsigned int vertexCount);
