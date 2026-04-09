@@ -300,9 +300,9 @@ uniform sampler2D uTexture;
 uniform sampler2DArray uLightmap;
 uniform bool uUseLightmap;
 
-// Нормализация яркости как в Quake/Half-Life
-// Lightmap данные хранятся в диапазоне 0-255, делим на 256 для получения [0, 1)
-const float LIGHTMAP_SCALE = 1.0 / 256.0;
+// Гамма-коррекция как в Quake/Half-Life (гамма ~2.2)
+const float GAMMA = 2.2;
+const float INV_GAMMA = 1.0 / 2.2;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
@@ -310,18 +310,21 @@ void main() {
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
+    gAlbedo = texColor;
     
     if (uUseLightmap && length(vLightmapUV) > 0.001) {
         // Читаем запечённый свет из BSP lightmap
+        // В Half-Life lightmap значения уже в диапазоне 0-255 и представляют освещённость
         vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-        // Нормализуем яркость как в GoldSrc: делим на 256 для корректного диапазона
-        lightmapColor = lightmapColor * LIGHTMAP_SCALE;
+        // Конвертируем из [0,255] в [0,1] с учётом того что максимальная яркость может быть > 255
+        // В Half-Life максимальное значение 255 = белый свет полной яркости
+        lightmapColor = lightmapColor / 255.0;
+        // Применяем гамма-коррекцию для правильного отображения
+        lightmapColor = pow(lightmapColor, vec3(GAMMA));
         gLighting = vec4(lightmapColor, 1.0);
     } else {
         gLighting = vec4(1.0, 1.0, 1.0, 1.0);
     }
-    
-    gAlbedo = texColor;
 }
 )glsl";
 
@@ -354,6 +357,10 @@ uniform vec3 uSunColor;
 uniform float uSunIntensity;
 uniform float uAmbient;
 
+// Гамма-коррекция как в Quake/Half-Life
+const float GAMMA = 2.2;
+const float INV_GAMMA = 1.0 / 2.2;
+
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
@@ -366,12 +373,15 @@ void main() {
     }
     
     // Используем только запечённое освещение из lightmap BSP
-    // Свет уже нормализован в geometry pass (делён на 256)
+    // Свет уже прошёл гамма-коррекцию в geometry pass
+    // Умножаем на albedo для получения финального цвета
     vec3 result = lightmap.rgb * albedo.rgb;
     
-    // Добавляем солнце для внешнего освещения (как в Half-Life)
-    float sunDiff = max(dot(normal, -uSunDir), 0.0);
-    result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
+    // Добавляем минимальное ambient освещение для теней (как в Half-Life)
+    result += vec3(uAmbient) * albedo.rgb;
+    
+    // Применяем обратную гамма-коррекцию перед выводом (tonemap)
+    result = pow(result, vec3(INV_GAMMA));
     
     FragColor = vec4(result, albedo.a);
 }
