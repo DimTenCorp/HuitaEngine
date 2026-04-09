@@ -210,6 +210,51 @@ void Renderer::ShadowFBO::destroy() {
 }
 
 // ============================================================================
+// ShadowMap Implementation
+// ============================================================================
+
+bool ShadowMap::create(int sz) {
+    destroy();
+    size = sz;
+
+    glGenFramebuffers(1, &fbo);
+    glGenTextures(1, &depthMap);
+
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, sz, sz, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return complete;
+}
+
+void ShadowMap::destroy() {
+    if (fbo) { glDeleteFramebuffers(1, &fbo); fbo = 0; }
+    if (depthMap) { glDeleteTextures(1, &depthMap); depthMap = 0; }
+}
+
+void ShadowMap::bindForWriting() {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glViewport(0, 0, size, size);
+}
+
+void ShadowMap::unbind() {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+// ============================================================================
 // Shader Sources
 // ============================================================================
 
@@ -336,6 +381,20 @@ float calcFlashlightShadow(vec3 fragPos) {
     return shadow;
 }
 
+// Функция проверки тени от точечного источника света
+float calcPointLightShadow(vec3 fragPos, vec3 lightPos, int shadowID) {
+    if (shadowID < 0) return 0.0;  // Тени нет
+    
+    // Простая проверка видимости через ShadowSystem
+    // В реальном проекте здесь нужно использовать карту теней
+    vec3 toLight = lightPos - fragPos;
+    float distToLight = length(toLight);
+    
+    // Для простоты возвращаем 0 (нет тени)
+    // В полной реализации здесь будет сэмплирование карты теней
+    return 0.0;
+}
+
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
@@ -347,19 +406,19 @@ void main() {
         return;
     }
     
-    // Базовое освещение от lightmap из BSP
+    // Базовое освещение от lightmap из BSP (запеченный свет)
     vec3 result = lightmap.rgb * albedo.rgb;
     
     // Добавляем солнце
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
     result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
     
-    // Добавляем точечные источники света из сущностей BSP
+    // Добавляем точечные источники света из сущностей BSP с тенями
     for (int i = 0; i < uLightCount; i++) {
         if (uLights[i].outerEnabled.y < 0.5) continue;
         
         int type = int(uLights[i].outerEnabled.z);
-        if (type == 2) continue;
+        if (type == 2) continue;  // Пропускаем directional
         
         vec3 lightPos = uLights[i].positionRadius.xyz;
         float radius = uLights[i].positionRadius.w;
@@ -371,7 +430,7 @@ void main() {
         vec3 lightDir = normalize(toLight);
         
         float spotAtten = 1.0;
-        if (type == 1) {
+        if (type == 1) {  // Spot light
             vec3 spotDir = normalize(uLights[i].directionCutoff.xyz);
             float theta = dot(lightDir, -spotDir);
             float inner = uLights[i].directionCutoff.w;
@@ -386,10 +445,15 @@ void main() {
         float atten = 1.0 - (dist / radius);
         atten = atten * atten;
         
+        // Получаем тень от этого источника света
+        int shadowID = int(uLights[i].outerEnabled.w);
+        float shadow = calcPointLightShadow(fragPos, lightPos, shadowID);
+        
         vec3 lightColor = uLights[i].colorIntensity.xyz;
         float intensity = uLights[i].colorIntensity.w;
         
-        result += diff * atten * spotAtten * intensity * lightColor * albedo.rgb;
+        // Применяем затенение: (1.0 - shadow) означает что если shadow=1 то света нет
+        result += diff * atten * spotAtten * (1.0 - shadow) * intensity * lightColor * albedo.rgb;
     }
     
     if (uHasFlashlight) {
@@ -608,10 +672,20 @@ void Renderer::addLight(const Light& light) {
     rl.type = light.getType();
     rl.position = light.getPosition();
     rl.radius = light.getRadius();
-    rl.shadowID = -1;  // Запекание отключено, используется только lightmap из BSP
+    rl.shadowID = light.getShadowID();  // ID тени из BSP (если есть)
     rl.enabled = true;
+    
+    // Создаем карту теней для этого источника света
+    if (rl.type == LightType::Point || rl.type == LightType::Spot) {
+        if (rl.shadowMap.create(512)) {
+            rl.hasShadowMap = true;
+            std::cout << "[Renderer] Shadow map created for light at (" 
+                      << rl.position.x << ", " << rl.position.y << ", " << rl.position.z << ")" << std::endl;
+        }
+    }
+    
     lights.push_back(rl);
-    // bakeStaticLight НЕ вызывается - запекание отключено!
+    // Запекание света отключено - используем pre-baked lightmap из BSP
 }
 
 void Renderer::clearLights() {

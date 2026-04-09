@@ -61,6 +61,18 @@ struct BspMesh {
     static void unbind();
 };
 
+struct ShadowMap {
+    GLuint fbo = 0;
+    GLuint depthMap = 0;
+    int size = 512;
+    glm::mat4 lightSpaceMatrix;
+    
+    bool create(int sz);
+    void destroy();
+    void bindForWriting();
+    static void unbind();
+};
+
 struct RenderLight {
     LightShaderData data;
     LightType type;
@@ -68,6 +80,8 @@ struct RenderLight {
     float radius;
     int shadowID;
     bool enabled;
+    ShadowMap shadowMap;  // Карта теней для этого источника
+    bool hasShadowMap = false;
 };
 
 class Renderer {
