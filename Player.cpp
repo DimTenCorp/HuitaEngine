@@ -144,13 +144,12 @@ int Player::flyMove(float deltaTime) {
     int numplanes = 0;
     glm::vec3 planes[MAX_CLIP_PLANES];
     glm::vec3 primalVelocity = velocity;
-    glm::vec3 originalVelocity = velocity;
     float timeLeft = deltaTime;
     int blocked = 0;
     
     for (bumpcount = 0; bumpcount < NUM_MOVE_BUMPS; bumpcount++) {
         // Если скорость нулевая, выходим
-        if (velocity.x == 0.0f && velocity.y == 0.0f && velocity.z == 0.0f) {
+        if (glm::length(velocity) < 0.001f) {
             break;
         }
         
@@ -161,18 +160,19 @@ int Player::flyMove(float deltaTime) {
         bool collision = checkCollisionMesh(end);
         
         if (collision) {
-            // Столкнулись - нужно определить нормаль плоскости
-            // Для простоты используем эвристику: определяем ось наибольшего проникновения
+            // Столкнулись - определяем нормаль плоскости по оси наибольшего проникновения
             glm::vec3 penetration = end - position;
             glm::vec3 normal(0.0f);
             
-            AABB playerBox = getPlayerAABB(end);
+            // Определяем ось с наибольшим проникновением
+            float absX = std::abs(penetration.x);
+            float absY = std::abs(penetration.y);
+            float absZ = std::abs(penetration.z);
             
-            // Проверяем каждую ось для определения нормали
-            if (std::abs(penetration.x) > std::abs(penetration.y) && 
-                std::abs(penetration.x) > std::abs(penetration.z)) {
+            if (absX > absY && absX > absZ) {
                 normal.x = (penetration.x > 0) ? -1.0f : 1.0f;
-            } else if (std::abs(penetration.y) > std::abs(penetration.z)) {
+                blocked |= 2;  // стена
+            } else if (absY > absZ) {
                 normal.y = (penetration.y > 0) ? -1.0f : 1.0f;
                 if (normal.y > 0.7f) blocked |= 1;  // пол
             } else {
@@ -182,7 +182,7 @@ int Player::flyMove(float deltaTime) {
             
             // Скользим вдоль плоскости
             glm::vec3 newVelocity;
-            clipVelocity(originalVelocity, normal, newVelocity, 1.0f);
+            clipVelocity(velocity, normal, newVelocity, 1.0f);
             
             // Проверяем все накопленные плоскости
             for (int i = 0; i < numplanes; i++) {
@@ -214,7 +214,7 @@ int Player::flyMove(float deltaTime) {
             break;
         }
         
-        timeLeft -= deltaTime * (1.0f - static_cast<float>(bumpcount) / NUM_MOVE_BUMPS);
+        timeLeft *= 0.5f;  // Уменьшаем оставшееся время для следующей итерации
     }
     
     return blocked;
@@ -251,8 +251,9 @@ void Player::walkMove(float deltaTime) {
     
     // Возвращаемся назад и пробуем лестницу
     position = oldOrg;
+    velocity = oldVel;
     
-    // Двигаемся вверх
+    // Двигаемся вверх на шаг лестницы
     position.y += STEPSIZE;
     
     // Двигаемся вперёд с горизонтальной скоростью
@@ -261,22 +262,19 @@ void Player::walkMove(float deltaTime) {
     
     clip = flyMove(deltaTime);
     
-    // Проверяем, продвинулись ли мы
-    if (clip != 0) {
-        if (std::abs(oldOrg.x - position.x) < 0.03125f && 
-            std::abs(oldOrg.z - position.z) < 0.03125f) {
-            // Не продвинулись - отменяем
-            position = noStepOrg;
-            velocity = noStepVel;
-            return;
-        }
+    // Проверяем, продвинулись ли мы достаточно
+    float movedDist = std::abs(oldOrg.x - position.x) + std::abs(oldOrg.z - position.z);
+    if (movedDist < 0.03125f) {
+        // Не продвинулись - отменяем
+        position = noStepOrg;
+        velocity = noStepVel;
+        return;
     }
     
     // Двигаемся вниз
-    glm::vec3 downMove(0.0f, -STEPSIZE + oldVel.y * deltaTime, 0.0f);
-    position += downMove;
+    position.y -= STEPSIZE;
     
-    // Проверяем, приземлились ли хорошо
+    // Проверяем, приземлились ли хорошо (не слишком низко и не в воздухе)
     if (checkOnGround()) {
         onGround = true;
         velocity.y = 0.0f;
@@ -367,6 +365,18 @@ void Player::moveWithCollision(float deltaTime) {
     // 1. Гравитация (используем гравитацию из членов класса)
     if (!onGround) {
         velocity.y -= gravity * deltaTime;
+    } else {
+        // На земле - применяем трение
+        float currentSpeed = glm::length(glm::vec3(velocity.x, 0, velocity.z));
+        if (currentSpeed > 0.001f) {
+            float drop = currentSpeed * friction * deltaTime;
+            float newSpeed = currentSpeed - drop;
+            if (newSpeed < 0) newSpeed = 0;
+            
+            glm::vec3 horizontalVel = glm::normalize(glm::vec3(velocity.x, 0, velocity.z)) * newSpeed;
+            velocity.x = horizontalVel.x;
+            velocity.z = horizontalVel.z;
+        }
     }
     
     // 2. Используем wishDir из handleInput
@@ -376,25 +386,12 @@ void Player::moveWithCollision(float deltaTime) {
         wishSpeed = maxSpeed;
     }
     
-    // 3. Трение и ускорение
-    float currentSpeed = glm::length(glm::vec3(velocity.x, 0, velocity.z));
-    float accel = onGround ? accelRate : airAccelRate;
-    
-    if (onGround && wishSpeed == 0) {
-        // Трение когда стоим
-        float drop = currentSpeed * friction * deltaTime;
-        float newSpeed = currentSpeed - drop;
-        if (newSpeed < 0) newSpeed = 0;
-        
-        if (currentSpeed > 0.001f) {
-            glm::vec3 horizontalVel = glm::vec3(velocity.x, 0, velocity.z);
-            horizontalVel = glm::normalize(horizontalVel) * newSpeed;
-            velocity.x = horizontalVel.x;
-            velocity.z = horizontalVel.z;
-        }
-    } else if (wishSpeed > 0) {
-        // Ускорение при движении
+    // 3. Ускорение при движении
+    if (wishSpeed > 0) {
+        float accel = onGround ? accelRate : airAccelRate;
+        float currentSpeed = glm::length(glm::vec3(velocity.x, 0, velocity.z));
         float addSpeed = wishSpeed - currentSpeed;
+        
         if (addSpeed > 0) {
             float currentSpeedInWishDir = glm::dot(glm::vec3(velocity.x, 0, velocity.z), wishDir);
             float accelSpeed = accel * wishSpeed * deltaTime;
@@ -405,7 +402,7 @@ void Player::moveWithCollision(float deltaTime) {
         }
     }
     
-    // 4. Движение с коллизиями через flyMove (Quake-style)
+    // 4. Движение с коллизиями через flyMove/walkMove (Quake-style)
     walkMove(deltaTime);
     
     // 5. Проверка земли после движения
@@ -444,10 +441,6 @@ bool Player::checkOnGround() const {
     glm::vec3 testPos = position;
     testPos.y -= 0.1f;  // Увеличенный отступ для лучшей проверки земли
     return checkCollisionMesh(testPos);
-}
-
-void Player::resolveCollisionAxis(float deltaTime, int axis) {
-    // Эта функция больше не используется - удалена в пользу flyMove/walkMove
 }
 
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
