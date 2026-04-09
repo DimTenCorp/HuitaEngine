@@ -52,6 +52,8 @@ Player::Player() {
     jumpForce = 350.0f;    // jump force
     stepUpSpeed = 100.0f;  // step up speed
     stepHeight = 0.45f;    // 18 units in meters (Quake step height)
+    jumpKeyWasHeld = false;
+    gravity = 9.81f * 80.0f;  // Quake-style gravity (scaled)
     
     meshCollider = nullptr;
     groundNormal = glm::vec3(0.0f, 1.0f, 0.0f);

@@ -97,7 +97,9 @@ private:
     float noclipSpeed;
     float jumpForce;
     float stepUpSpeed;
-    float stepHeight;  // Add this missing variable
+    float stepHeight;
+    bool jumpKeyWasHeld;  // For jump key state tracking
+    float gravity;        // Gravity constant
     
     const MeshCollider* meshCollider;
     
