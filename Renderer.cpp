@@ -608,10 +608,10 @@ void Renderer::addLight(const Light& light) {
     rl.type = light.getType();
     rl.position = light.getPosition();
     rl.radius = light.getRadius();
-    rl.shadowID = light.getShadowID();  // Будет -1 для всех BSP lights
+    rl.shadowID = -1;  // Запекание отключено, используется только lightmap из BSP
     rl.enabled = true;
     lights.push_back(rl);
-    // bakeStaticLight НЕ вызывается!
+    // bakeStaticLight НЕ вызывается - запекание отключено!
 }
 
 void Renderer::clearLights() {

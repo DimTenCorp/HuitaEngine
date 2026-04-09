@@ -134,53 +134,7 @@ bool ShadowSystem::rayBlocked(const glm::vec3& from, const glm::vec3& to) const 
     return false;
 }
 
-int ShadowSystem::bakeStaticLight(const glm::vec3& pos, float radius, const AABB& worldBounds) {
-    StaticShadow shadow;
-    shadow.position = pos;
-    shadow.radius = radius;
-
-    glm::vec3 extent = glm::vec3(radius * 1.2f);
-    shadow.bounds.min = glm::max(worldBounds.min, pos - extent);
-    shadow.bounds.max = glm::min(worldBounds.max, pos + extent);
-    shadow.bounds.validate();
-
-    int gridSize = shadow.gridResolution * shadow.gridResolution * shadow.gridResolution;
-    shadow.visibilityGrid.resize(gridSize);
-
-    std::cout << "[Shadow] Baking light at (" << pos.x << "," << pos.y << "," << pos.z
-        << ") radius=" << radius << std::endl;
-
-    int visibleCount = 0;
-
-    for (int z = 0; z < shadow.gridResolution; z++) {
-        for (int y = 0; y < shadow.gridResolution; y++) {
-            for (int x = 0; x < shadow.gridResolution; x++) {
-                float fx = (x + 0.5f) / shadow.gridResolution;
-                float fy = (y + 0.5f) / shadow.gridResolution;
-                float fz = (z + 0.5f) / shadow.gridResolution;
-
-                glm::vec3 point(
-                    shadow.bounds.min.x + fx * (shadow.bounds.max.x - shadow.bounds.min.x),
-                    shadow.bounds.min.y + fy * (shadow.bounds.max.y - shadow.bounds.min.y),
-                    shadow.bounds.min.z + fz * (shadow.bounds.max.z - shadow.bounds.min.z)
-                );
-
-                float dist = glm::distance(pos, point);
-                bool visible = (dist <= radius) && !rayBlocked(pos, point);
-
-                int idx = x + y * shadow.gridResolution + z * shadow.gridResolution * shadow.gridResolution;
-                shadow.visibilityGrid[idx] = visible;
-                if (visible) visibleCount++;
-            }
-        }
-    }
-
-    std::cout << "[Shadow] Visible: " << visibleCount << "/" << gridSize << std::endl;
-
-    staticLights.push_back(std::move(shadow));
-    return (int)staticLights.size() - 1;
-}
-
+// Запекание света отключено - используется только pre-baked lightmap из BSP
 void ShadowSystem::clearStaticLights() {
     staticLights.clear();
 }
