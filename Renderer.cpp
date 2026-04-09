@@ -573,6 +573,9 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
         std::cout << "Renderer: Lightmap texture set, size=" << lightmapSize << std::endl;
     }
 
+    // Настраиваем солнце из light_environment в BSP (как в Quake/Half-Life)
+    bsp.setupSunFromBSP(*this);
+
     std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 
     worldLoaded = true;

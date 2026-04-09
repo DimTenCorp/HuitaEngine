@@ -901,11 +901,9 @@ void BSPLoader::debugPrintEntities() const {
     }
 }
 
-// Адаптированный код освещения из GoldSrc для HuitaEngine
-// Оригинал: lights.cpp из Half-Life SDK
-
-// Парсинг сущности light_environment из BSP и настройка освещения
-void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
+// Парсинг сущности light_environment из BSP и настройка солнца
+// Возвращает true если light_environment был найден и обработан
+bool BSPLoader::setupSunFromBSP(Renderer& renderer) const {
     for (const auto& entity : entities) {
         if (entity.classname == "light_environment") {
             std::cout << "[BSP] Processing light_environment entity" << std::endl;
@@ -942,6 +940,7 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
             std::cout << "[BSP] Calculated sun direction: (" 
                       << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
             
+            renderer.setSunDirection(sunDir);
             
             // Извлекаем цвет и интенсивность из свойства "_light"
             auto it = entity.properties.find("_light");
@@ -963,7 +962,7 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                         b = static_cast<int>(b * (v / 255.0f));
                     }
                     
-                    // Ограничиваем значения максимум 255 (используем glm::clamp для совместимости)
+                    // Ограничиваем значения максимум 255
                     r = static_cast<int>(glm::clamp(static_cast<float>(r), 0.0f, 255.0f));
                     g = static_cast<int>(glm::clamp(static_cast<float>(g), 0.0f, 255.0f));
                     b = static_cast<int>(glm::clamp(static_cast<float>(b), 0.0f, 255.0f));
@@ -973,13 +972,20 @@ void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
                     
                     std::cout << "[BSP] light_environment color: (" 
                               << r << ", " << g << ", " << b << ")" << std::endl;
-                   
+                    
+                    renderer.setSunColor(sunColor);
+                    renderer.setSunIntensity(1.0f);
                 }
+            } else {
+                // Цвет по умолчанию как в Half-Life (теплый белый)
+                renderer.setSunColor(glm::vec3(1.0f, 0.95f, 0.8f));
+                renderer.setSunIntensity(1.0f);
             }
             
-            return; // Обрабатываем только первый light_environment
+            return true; // Обрабатываем только первый light_environment
         }
     }
     
     std::cout << "[BSP] No light_environment found, using default sun settings" << std::endl;
+    return false;
 }

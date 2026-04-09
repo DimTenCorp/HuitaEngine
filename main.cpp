@@ -117,8 +117,7 @@ bool initSystems(WADLoader& wadLoader) {
     g_shadowSystem = new ShadowSystem();
     g_shadowSystem->init(g_meshCollider);
 
-    // Источники света из BSP не добавляются - используется только запечённый свет из lightmap
-    std::cout << "[Init] Light system initialized - using only baked lightmap from BSP" << std::endl;
+    std::cout << "[Init] Light system initialized - using baked lightmap + sun from BSP" << std::endl;
     // ===========================
 
     glm::vec3 spawnPos;
