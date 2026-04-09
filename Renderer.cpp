@@ -210,6 +210,51 @@ void Renderer::ShadowFBO::destroy() {
 }
 
 // ============================================================================
+// ShadowMap Implementation
+// ============================================================================
+
+bool ShadowMap::create(int sz) {
+    destroy();
+    size = sz;
+
+    glGenFramebuffers(1, &fbo);
+    glGenTextures(1, &depthMap);
+
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, sz, sz, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return complete;
+}
+
+void ShadowMap::destroy() {
+    if (fbo) { glDeleteFramebuffers(1, &fbo); fbo = 0; }
+    if (depthMap) { glDeleteTextures(1, &depthMap); depthMap = 0; }
+}
+
+void ShadowMap::bindForWriting() {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glViewport(0, 0, size, size);
+}
+
+void ShadowMap::unbind() {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+// ============================================================================
 // Shader Sources
 // ============================================================================
 
@@ -223,11 +268,13 @@ layout (location = 3) in vec3 aLightmapUV;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform vec3 uSunDir;
 
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
 out vec3 vLightmapUV;
+out vec3 vLightDir;
 
 void main() {
     vTexCoord = aTexCoord;
@@ -236,6 +283,7 @@ void main() {
     vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
     gl_Position = projection * view * model * vec4(aPos, 1.0);
+    vLightDir = uSunDir;
 }
 )glsl";
 
@@ -245,6 +293,7 @@ in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
 in vec3 vLightmapUV;
+in vec3 vLightDir;
 
 layout (location = 0) out vec4 gPosition;
 layout (location = 1) out vec4 gNormal;
@@ -254,6 +303,13 @@ layout (location = 3) out vec4 gLighting;
 uniform sampler2D uTexture;
 uniform sampler2DArray uLightmap;
 uniform bool uUseLightmap;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform float uSunIntensity;
+
+// Гамма-коррекция как в Quake/Half-Life (гамма ~2.2)
+const float GAMMA = 2.2;
+const float INV_GAMMA = 1.0 / 2.2;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
@@ -261,15 +317,31 @@ void main() {
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
-    
-if (uUseLightmap && length(vLightmapUV) > 0.001) {
-    vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-    gLighting = vec4(lightmapColor, 1.0);  // Записываем pre-baked свет из BSP в GBuffer
-} else {
-    gLighting = vec4(1.0, 1.0, 1.0, 1.0);
-}
-    
     gAlbedo = texColor;
+    
+    vec3 bakedLight = vec3(0.0);
+    
+    if (uUseLightmap && length(vLightmapUV) > 0.001) {
+        // Читаем запечённый свет из BSP lightmap
+        vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
+        // Конвертируем из [0,255] в [0,1] 
+        lightmapColor = lightmapColor / 255.0;
+        // Применяем гамма-коррекцию для правильного отображения
+        bakedLight = pow(lightmapColor, vec3(GAMMA));
+    }
+    
+    // Добавляем солнце с простыми тенями (как в Half-Life - без карт теней для солнца)
+    // Тени в Half-Life создаются за счёт того что свет не проходит через стены
+    // Это эмулируется тем что в помещениях доминирует lightmap, а на улице - солнце
+    vec3 lightDir = normalize(uSunDir);
+    float diff = max(dot(normalize(vNormal), lightDir), 0.0);
+    vec3 sunContribution = uSunColor * diff * uSunIntensity;
+    
+    // Смешиваем: если есть lightmap - используем его, иначе солнце
+    // Это создаёт эффект "тени" - в помещении темно (только lightmap), на улице светло (солнце)
+    vec3 finalLight = bakedLight + sunContribution;
+    
+    gLighting = vec4(finalLight, 1.0);
 }
 )glsl";
 
@@ -295,117 +367,35 @@ uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
 uniform sampler2D gLighting;
-uniform sampler2D gShadowMap;
 
 uniform vec3 uViewPos;
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform float uSunIntensity;
 uniform float uAmbient;
 
-struct Light {
-    vec4 positionRadius;
-    vec4 colorIntensity;
-    vec4 directionCutoff;
-    vec4 outerEnabled;
-};
-
-#define MAX_LIGHTS 32
-uniform Light uLights[MAX_LIGHTS];
-uniform int uLightCount;
-
-uniform bool uHasFlashlight;
-uniform mat4 uFlashlightMatrix;
-uniform vec3 uFlashlightPos;
-uniform vec3 uFlashlightDir;
-uniform float uFlashlightCutoff;
-
-float calcFlashlightShadow(vec3 fragPos) {
-    vec4 fragPosLightSpace = uFlashlightMatrix * vec4(fragPos, 1.0);
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
-    
-    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 
-        || projCoords.y < 0.0 || projCoords.y > 1.0) return 0.0;
-    
-    float closestDepth = texture(gShadowMap, projCoords.xy).r;
-    float currentDepth = projCoords.z;
-    float bias = 0.005;
-    
-    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
-    return shadow;
-}
+// Гамма-коррекция как в Quake/Half-Life
+const float GAMMA = 2.2;
+const float INV_GAMMA = 1.0 / 2.2;
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
-    vec4 lightmap = texture(gLighting, vTexCoord);
+    vec4 bakedLight = texture(gLighting, vTexCoord);
     
     if (length(fragPos) < 0.001) {
         FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    // Базовое освещение от lightmap из BSP
-    vec3 result = lightmap.rgb * albedo.rgb;
+    // Используем запечённое освещение из lightmap BSP + солнце
+    // Свет уже прошёл гамма-коррекцию в geometry pass
+    // Умножаем на albedo для получения финального цвета
+    vec3 result = bakedLight.rgb * albedo.rgb;
     
-    // Добавляем солнце
-    float sunDiff = max(dot(normal, -uSunDir), 0.0);
-    result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
+    // Добавляем минимальное ambient освещение для совсем тёмных зон
+    result += vec3(uAmbient) * albedo.rgb;
     
-    // Добавляем точечные источники света из сущностей BSP
-    for (int i = 0; i < uLightCount; i++) {
-        if (uLights[i].outerEnabled.y < 0.5) continue;
-        
-        int type = int(uLights[i].outerEnabled.z);
-        if (type == 2) continue;
-        
-        vec3 lightPos = uLights[i].positionRadius.xyz;
-        float radius = uLights[i].positionRadius.w;
-        vec3 toLight = lightPos - fragPos;
-        float dist = length(toLight);
-        
-        if (dist > radius || dist < 0.001) continue;
-        
-        vec3 lightDir = normalize(toLight);
-        
-        float spotAtten = 1.0;
-        if (type == 1) {
-            vec3 spotDir = normalize(uLights[i].directionCutoff.xyz);
-            float theta = dot(lightDir, -spotDir);
-            float inner = uLights[i].directionCutoff.w;
-            float outer = uLights[i].outerEnabled.x;
-            
-            if (theta < outer) continue;
-            spotAtten = (theta - outer) / max(inner - outer, 0.001);
-            spotAtten = clamp(spotAtten, 0.0, 1.0);
-        }
-        
-        float diff = max(dot(normal, lightDir), 0.0);
-        float atten = 1.0 - (dist / radius);
-        atten = atten * atten;
-        
-        vec3 lightColor = uLights[i].colorIntensity.xyz;
-        float intensity = uLights[i].colorIntensity.w;
-        
-        result += diff * atten * spotAtten * intensity * lightColor * albedo.rgb;
-    }
-    
-    if (uHasFlashlight) {
-        vec3 toFlashlight = normalize(uFlashlightPos - fragPos);
-        float theta = dot(toFlashlight, -uFlashlightDir);
-        
-        if (theta > uFlashlightCutoff) {
-            float shadow = calcFlashlightShadow(fragPos);
-            float flashDiff = max(dot(normal, toFlashlight), 0.0);
-            
-            float coneAtten = (theta - uFlashlightCutoff) / 0.1;
-            coneAtten = clamp(coneAtten, 0.0, 1.0);
-            
-            result += (1.0 - shadow) * flashDiff * coneAtten * vec3(3.0) * albedo.rgb;
-        }
-    }
+    // Применяем обратную гамма-коррекцию перед выводом (tonemap)
+    result = pow(result, vec3(INV_GAMMA));
     
     FragColor = vec4(result, albedo.a);
 }
@@ -603,15 +593,8 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
 }
 
 void Renderer::addLight(const Light& light) {
-    RenderLight rl;
-    rl.data = light.getShaderData();
-    rl.type = light.getType();
-    rl.position = light.getPosition();
-    rl.radius = light.getRadius();
-    rl.shadowID = -1;  // Запекание отключено, используется только lightmap из BSP
-    rl.enabled = true;
-    lights.push_back(rl);
-    // bakeStaticLight НЕ вызывается - запекание отключено!
+    // Динамическое освещение отключено - используем только запечённый свет из BSP
+    // Функция оставлена для совместимости, но не добавляет источники света
 }
 
 void Renderer::clearLights() {
@@ -640,6 +623,11 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
     geometryShader->setBool("uUseLightmap", true);
+    
+    // Передаем параметры солнца в геометрию для смешивания с lightmap
+    geometryShader->setVec3("uSunDir", sunDirection);
+    geometryShader->setVec3("uSunColor", sunColor);
+    geometryShader->setFloat("uSunIntensity", sunIntensity);
 
     // Привязываем lightmap текстуру из BSP
     if (lightmapTexture != 0) {
@@ -676,38 +664,10 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     lightingShader->setInt("gLighting", 3);
 
     lightingShader->setVec3("uViewPos", viewPos);
-    lightingShader->setVec3("uSunDir", sunDirection);
-    lightingShader->setVec3("uSunColor", sunColor);
-    lightingShader->setFloat("uSunIntensity", sunIntensity);
     lightingShader->setFloat("uAmbient", ambientStrength);
 
-    // Фонарик отключен - используем только свет из BSP
-    lightingShader->setBool("uHasFlashlight", false);
-
-    // Динамические источники света из сущностей BSP добавляются поверх lightmap
-    std::vector<LightShaderData> visibleLights;
-    visibleLights.reserve(lights.size());
-
-    for (const auto& light : lights) {
-        if (!light.enabled) continue;
-        if (light.type == LightType::Directional) continue;
-
-        float distToCamera = glm::distance(light.position, viewPos);
-        if (distToCamera > light.radius * 1.5f) continue;
-
-        visibleLights.push_back(light.data);
-    }
-
-    int lightCount = std::min((int)visibleLights.size(), MAX_LIGHTS);
-    lightingShader->setInt("uLightCount", lightCount);
-
-    for (int i = 0; i < lightCount; i++) {
-        std::string prefix = "uLights[" + std::to_string(i) + "].";
-        lightingShader->setVec4(prefix + "positionRadius", visibleLights[i].positionRadius);
-        lightingShader->setVec4(prefix + "colorIntensity", visibleLights[i].colorIntensity);
-        lightingShader->setVec4(prefix + "directionCutoff", visibleLights[i].directionCutoff);
-        lightingShader->setVec4(prefix + "outerEnabled", visibleLights[i].outerEnabled);
-    }
+    // Используем только запечённое освещение из BSP - динамические источники отключены
+    lightingShader->setInt("uLightCount", 0);
 
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);

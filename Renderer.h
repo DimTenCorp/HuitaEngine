@@ -61,13 +61,21 @@ struct BspMesh {
     static void unbind();
 };
 
+struct ShadowMap {
+    GLuint fbo = 0;
+    GLuint depthMap = 0;
+    int size = 512;
+    glm::mat4 lightSpaceMatrix;
+    
+    bool create(int sz);
+    void destroy();
+    void bindForWriting();
+    static void unbind();
+};
+
 struct RenderLight {
-    LightShaderData data;
-    LightType type;
-    glm::vec3 position;
-    float radius;
-    int shadowID;
-    bool enabled;
+    // Структура больше не используется - динамическое освещение отключено
+    // Оставлена для обратной совместимости
 };
 
 class Renderer {
@@ -137,7 +145,7 @@ private:
     int screenWidth = 1280, screenHeight = 720;
     Flashlight flashlight;
 
-    std::vector<RenderLight> lights;
+    std::vector<RenderLight> lights;  // Не используется - динамическое освещение отключено
 
     glm::vec3 sunDirection{ 0.5f, -1.0f, 0.3f };
     glm::vec3 sunColor{ 1.0f, 0.95f, 0.8f };
