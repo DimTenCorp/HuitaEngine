@@ -8,19 +8,17 @@
 #include <cctype>
 #include <fstream>
 #include <cfloat>
+#include <string>
 #include <glm/gtc/type_ptr.hpp>
 #include "WADLoader.h"
 #include "TriangleCollider.h"
 #include <unordered_set>
-#include <string_view>
 
 static const float BSP_SCALE = 0.025f;
 
 // Быстрый парсинг строки в float массив
-static bool parseVector3(std::string_view str, float& x, float& y, float& z) {
-    // Временная строка для sscanf (можно进一步优化 на полностью безстроковой вариант)
-    std::string temp(str);
-    return sscanf(temp.c_str(), "%f %f %f", &x, &y, &z) == 3;
+static bool parseVector3(const std::string& str, float& x, float& y, float& z) {
+    return sscanf(str.c_str(), "%f %f %f", &x, &y, &z) == 3;
 }
 
 // Проверка является ли класс сущности игнорируемым (ненужные источники света)
@@ -378,7 +376,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             size_t keyStart = pos;
             while (pos < len && buffer[pos] != '"') pos++;
             if (pos >= len) break;
-            std::string_view keyView(buffer.data() + keyStart, pos - keyStart);
+            std::string key(buffer.data() + keyStart, pos - keyStart);
             pos++;
             
             // Пропускаем пробелы
@@ -390,30 +388,30 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             size_t valStart = pos;
             while (pos < len && buffer[pos] != '"') pos++;
             if (pos >= len) break;
-            std::string_view valView(buffer.data() + valStart, pos - valStart);
+            std::string val(buffer.data() + valStart, pos - valStart);
             pos++;
             
             // Обрабатываем только ключевые поля
-            if (keyView == "classname") {
-                classname = std::string(valView);
+            if (key == "classname") {
+                classname = val;
                 // Если это игнорируемая сущность (ненужный свет), помечаем на пропуск
                 if (isIgnoredEntityClass(classname)) {
                     skipEntity = true;
                 }
-            } else if (keyView == "origin" && !hasOrigin) {
+            } else if (key == "origin" && !hasOrigin) {
                 float ox, oy, oz;
-                if (parseVector3(valView, ox, oy, oz)) {
+                if (parseVector3(val, ox, oy, oz)) {
                     origin = convertPosition(glm::vec3(ox, oy, oz));
                     hasOrigin = true;
                 }
-            } else if (keyView == "angles" && !hasAngles) {
+            } else if (key == "angles" && !hasAngles) {
                 float ax, ay, az;
-                if (parseVector3(valView, ax, ay, az)) {
+                if (parseVector3(val, ax, ay, az)) {
                     angles = glm::vec3(ax, ay, az);
                     hasAngles = true;
                 }
-            } else if (keyView == "model") {
-                model = std::string(valView);
+            } else if (key == "model") {
+                model = val;
             }
         }
         
