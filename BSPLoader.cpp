@@ -14,6 +14,7 @@
 #include "WADLoader.h"
 #include "TriangleCollider.h"
 #include <unordered_set>
+#include <limits>
 
 static const float BSP_SCALE = 0.025f;
 
@@ -545,8 +546,9 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         texCoords.reserve(faceVerts.size());
 
         // Вычисляем lightmap UV для этой грани если есть освещение
-        glm::vec3 lightmapUV(0.0f, 0.0f, 0.0f);
         bool hasLightmap = false;
+        float minS = 0.0f, maxS = 0.0f, minT = 0.0f, maxT = 0.0f;
+        int pageIndex = 0;
         
         if (face.lightOffset >= 0 && !lightmapData.empty()) {
             // Читаем размеры lightmap сетки из данных освещения
@@ -557,11 +559,11 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
                 if (lmWidth >= 2 && lmHeight >= 2) {
                     // Вычисляем номер страницы (слоя) в texture array
                     int pageStride = lightmapSize * lightmapSize * 3;
-                    int pageIndex = face.lightOffset / pageStride;
+                    pageIndex = face.lightOffset / pageStride;
                     
                     // Находим мин/макс S,T координаты для нормализации UV
-                    float minS = FLT_MAX, maxS = FLT_MIN;
-                    float minT = FLT_MAX, maxT = FLT_MIN;
+                    minS = FLT_MAX; maxS = FLT_MIN;
+                    minT = FLT_MAX; maxT = FLT_MIN;
                     
                     for (const auto& vertPos : faceVerts) {
                         glm::vec3 originalBSPPos(
@@ -584,7 +586,6 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
                     
                     // Сохраняем параметры для вычисления UV каждой вершины
                     hasLightmap = true;
-                    lightmapUV.z = (float)pageIndex;
                     
                     // Для каждой вершины вычислим UV ниже
                 }
@@ -608,26 +609,30 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
 
             texCoords.push_back(glm::vec2(u, v));
             
-            BSPVertex v;
-            v.position = pos;
-            v.normal = normal;
-            v.texCoord = texCoords[j];
-            
             // Вычисляем lightmap UV если грань имеет освещение
+            glm::vec3 lightmapUVCoord(0.0f, 0.0f, (float)pageIndex);
             if (hasLightmap) {
+                float sRange = maxS - minS;
+                float tRange = maxT - minT;
+                
+                // Вычисляем UV для текущей вершины
                 float s = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
                 float t = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
                 
                 // Нормализуем в пределах [0, 1] для этой грани
-                float lmU = (s - minS) / sRange;
-                float lmV = (t - minT) / tRange;
+                float lmU = (sRange > 0.001f) ? (s - minS) / sRange : 0.0f;
+                float lmV = (tRange > 0.001f) ? (t - minT) / tRange : 0.0f;
                 
-                v.lightmapUV = glm::vec3(lmU, lmV, lightmapUV.z);
-            } else {
-                v.lightmapUV = glm::vec3(0.0f, 0.0f, 0.0f);
+                lightmapUVCoord = glm::vec3(lmU, lmV, (float)pageIndex);
             }
             
-            meshVertices.push_back(v);
+            BSPVertex vertex;
+            vertex.position = pos;
+            vertex.normal = normal;
+            vertex.texCoord = texCoords[j];
+            vertex.lightmapUV = lightmapUVCoord;
+            
+            meshVertices.push_back(vertex);
         }
 
         unsigned int faceStartVertex = baseVertex;
