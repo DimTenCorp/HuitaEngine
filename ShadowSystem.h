@@ -36,12 +36,11 @@ public:
 
     void init(const MeshCollider* worldCollider);
 
-    // ????????? ????
-    int bakeStaticLight(const glm::vec3& pos, float radius, const AABB& worldBounds);
+    // Запекание света отключено - используется только lightmap из BSP
     void clearStaticLights();
     bool canSeeLight(int lightID, const glm::vec3& point) const;
 
-    // ?????????? ????
+    // Динамические тени отключены
     bool createDynamicShadow(const glm::vec3& pos, const glm::vec3& dir, float fov, float range);
     void updateDynamicShadow(const glm::vec3& pos, const glm::vec3& dir);
     void bindDynamicShadowForWriting();
@@ -50,7 +49,7 @@ public:
     const glm::mat4& getDynamicLightSpaceMatrix() const;
     GLuint getDynamicDepthMap() const;
 
-    // ???????
+    // Проверка блокировки луча - используется только для внутреннего тестирования
     bool rayBlocked(const glm::vec3& from, const glm::vec3& to) const;
 
     const std::vector<StaticShadow>& getStaticLights() const { return staticLights; }
