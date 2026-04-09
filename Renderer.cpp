@@ -340,60 +340,12 @@ uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
 uniform sampler2D gLighting;
-uniform sampler2D gShadowMap;
 
 uniform vec3 uViewPos;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uSunIntensity;
 uniform float uAmbient;
-
-struct Light {
-    vec4 positionRadius;
-    vec4 colorIntensity;
-    vec4 directionCutoff;
-    vec4 outerEnabled;
-};
-
-#define MAX_LIGHTS 32
-uniform Light uLights[MAX_LIGHTS];
-uniform int uLightCount;
-
-uniform bool uHasFlashlight;
-uniform mat4 uFlashlightMatrix;
-uniform vec3 uFlashlightPos;
-uniform vec3 uFlashlightDir;
-uniform float uFlashlightCutoff;
-
-float calcFlashlightShadow(vec3 fragPos) {
-    vec4 fragPosLightSpace = uFlashlightMatrix * vec4(fragPos, 1.0);
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
-    
-    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 
-        || projCoords.y < 0.0 || projCoords.y > 1.0) return 0.0;
-    
-    float closestDepth = texture(gShadowMap, projCoords.xy).r;
-    float currentDepth = projCoords.z;
-    float bias = 0.005;
-    
-    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
-    return shadow;
-}
-
-// Функция проверки тени от точечного источника света
-float calcPointLightShadow(vec3 fragPos, vec3 lightPos, int shadowID) {
-    if (shadowID < 0) return 0.0;  // Тени нет
-    
-    // Простая проверка видимости через ShadowSystem
-    // В реальном проекте здесь нужно использовать карту теней
-    vec3 toLight = lightPos - fragPos;
-    float distToLight = length(toLight);
-    
-    // Для простоты возвращаем 0 (нет тени)
-    // В полной реализации здесь будет сэмплирование карты теней
-    return 0.0;
-}
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
@@ -406,70 +358,12 @@ void main() {
         return;
     }
     
-    // Базовое освещение от lightmap из BSP (запеченный свет)
+    // Используем только запечённое освещение из lightmap BSP
     vec3 result = lightmap.rgb * albedo.rgb;
     
-    // Добавляем солнце
+    // Добавляем солнце (опционально, можно отключить если не нужно)
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
     result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
-    
-    // Добавляем точечные источники света из сущностей BSP с тенями
-    for (int i = 0; i < uLightCount; i++) {
-        if (uLights[i].outerEnabled.y < 0.5) continue;
-        
-        int type = int(uLights[i].outerEnabled.z);
-        if (type == 2) continue;  // Пропускаем directional
-        
-        vec3 lightPos = uLights[i].positionRadius.xyz;
-        float radius = uLights[i].positionRadius.w;
-        vec3 toLight = lightPos - fragPos;
-        float dist = length(toLight);
-        
-        if (dist > radius || dist < 0.001) continue;
-        
-        vec3 lightDir = normalize(toLight);
-        
-        float spotAtten = 1.0;
-        if (type == 1) {  // Spot light
-            vec3 spotDir = normalize(uLights[i].directionCutoff.xyz);
-            float theta = dot(lightDir, -spotDir);
-            float inner = uLights[i].directionCutoff.w;
-            float outer = uLights[i].outerEnabled.x;
-            
-            if (theta < outer) continue;
-            spotAtten = (theta - outer) / max(inner - outer, 0.001);
-            spotAtten = clamp(spotAtten, 0.0, 1.0);
-        }
-        
-        float diff = max(dot(normal, lightDir), 0.0);
-        float atten = 1.0 - (dist / radius);
-        atten = atten * atten;
-        
-        // Получаем тень от этого источника света
-        int shadowID = int(uLights[i].outerEnabled.w);
-        float shadow = calcPointLightShadow(fragPos, lightPos, shadowID);
-        
-        vec3 lightColor = uLights[i].colorIntensity.xyz;
-        float intensity = uLights[i].colorIntensity.w;
-        
-        // Применяем затенение: (1.0 - shadow) означает что если shadow=1 то света нет
-        result += diff * atten * spotAtten * (1.0 - shadow) * intensity * lightColor * albedo.rgb;
-    }
-    
-    if (uHasFlashlight) {
-        vec3 toFlashlight = normalize(uFlashlightPos - fragPos);
-        float theta = dot(toFlashlight, -uFlashlightDir);
-        
-        if (theta > uFlashlightCutoff) {
-            float shadow = calcFlashlightShadow(fragPos);
-            float flashDiff = max(dot(normal, toFlashlight), 0.0);
-            
-            float coneAtten = (theta - uFlashlightCutoff) / 0.1;
-            coneAtten = clamp(coneAtten, 0.0, 1.0);
-            
-            result += (1.0 - shadow) * flashDiff * coneAtten * vec3(3.0) * albedo.rgb;
-        }
-    }
     
     FragColor = vec4(result, albedo.a);
 }
@@ -667,25 +561,8 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
 }
 
 void Renderer::addLight(const Light& light) {
-    RenderLight rl;
-    rl.data = light.getShaderData();
-    rl.type = light.getType();
-    rl.position = light.getPosition();
-    rl.radius = light.getRadius();
-    rl.shadowID = light.getShadowID();  // ID тени из BSP (если есть)
-    rl.enabled = true;
-    
-    // Создаем карту теней для этого источника света
-    if (rl.type == LightType::Point || rl.type == LightType::Spot) {
-        if (rl.shadowMap.create(512)) {
-            rl.hasShadowMap = true;
-            std::cout << "[Renderer] Shadow map created for light at (" 
-                      << rl.position.x << ", " << rl.position.y << ", " << rl.position.z << ")" << std::endl;
-        }
-    }
-    
-    lights.push_back(rl);
-    // Запекание света отключено - используем pre-baked lightmap из BSP
+    // Динамическое освещение отключено - используем только запечённый свет из BSP
+    // Функция оставлена для совместимости, но не добавляет источники света
 }
 
 void Renderer::clearLights() {
@@ -755,33 +632,8 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     lightingShader->setFloat("uSunIntensity", sunIntensity);
     lightingShader->setFloat("uAmbient", ambientStrength);
 
-    // Фонарик отключен - используем только свет из BSP
-    lightingShader->setBool("uHasFlashlight", false);
-
-    // Динамические источники света из сущностей BSP добавляются поверх lightmap
-    std::vector<LightShaderData> visibleLights;
-    visibleLights.reserve(lights.size());
-
-    for (const auto& light : lights) {
-        if (!light.enabled) continue;
-        if (light.type == LightType::Directional) continue;
-
-        float distToCamera = glm::distance(light.position, viewPos);
-        if (distToCamera > light.radius * 1.5f) continue;
-
-        visibleLights.push_back(light.data);
-    }
-
-    int lightCount = std::min((int)visibleLights.size(), MAX_LIGHTS);
-    lightingShader->setInt("uLightCount", lightCount);
-
-    for (int i = 0; i < lightCount; i++) {
-        std::string prefix = "uLights[" + std::to_string(i) + "].";
-        lightingShader->setVec4(prefix + "positionRadius", visibleLights[i].positionRadius);
-        lightingShader->setVec4(prefix + "colorIntensity", visibleLights[i].colorIntensity);
-        lightingShader->setVec4(prefix + "directionCutoff", visibleLights[i].directionCutoff);
-        lightingShader->setVec4(prefix + "outerEnabled", visibleLights[i].outerEnabled);
-    }
+    // Используем только запечённое освещение из BSP - динамические источники отключены
+    lightingShader->setInt("uLightCount", 0);
 
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);

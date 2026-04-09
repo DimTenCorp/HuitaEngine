@@ -113,18 +113,12 @@ bool initSystems(WADLoader& wadLoader) {
     }
 
     // === СИСТЕМА СВЕТА ===
-    // Используем pre-baked lightmap из BSP + динамические источники света с тенями
+    // Используем только pre-baked lightmap из BSP - динамическое освещение отключено
     g_shadowSystem = new ShadowSystem();
     g_shadowSystem->init(g_meshCollider);
 
-    // Извлекаем источники света из BSP сущностей
-    auto lights = g_bspLoader->extractLights();
-    for (auto& light : lights) {
-        g_renderer->addLight(light);
-    }
-
-    std::cout << "[Init] Light system initialized with " << lights.size()
-        << " lights from BSP (using BSP lightmaps + dynamic shadows)" << std::endl;
+    // Источники света из BSP не добавляются - используется только запечённый свет из lightmap
+    std::cout << "[Init] Light system initialized - using only baked lightmap from BSP" << std::endl;
     // ===========================
 
     glm::vec3 spawnPos;

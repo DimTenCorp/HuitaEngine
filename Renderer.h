@@ -74,14 +74,8 @@ struct ShadowMap {
 };
 
 struct RenderLight {
-    LightShaderData data;
-    LightType type;
-    glm::vec3 position;
-    float radius;
-    int shadowID;
-    bool enabled;
-    ShadowMap shadowMap;  // Карта теней для этого источника
-    bool hasShadowMap = false;
+    // Структура больше не используется - динамическое освещение отключено
+    // Оставлена для обратной совместимости
 };
 
 class Renderer {
@@ -151,7 +145,7 @@ private:
     int screenWidth = 1280, screenHeight = 720;
     Flashlight flashlight;
 
-    std::vector<RenderLight> lights;
+    std::vector<RenderLight> lights;  // Не используется - динамическое освещение отключено
 
     glm::vec3 sunDirection{ 0.5f, -1.0f, 0.3f };
     glm::vec3 sunColor{ 1.0f, 0.95f, 0.8f };
