@@ -104,6 +104,9 @@ private:
     bool loadRequiredWADsFromEntities();
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel);
+    
+    // Доступ к сырым данным освещения для BSPLightmap
+    const std::vector<unsigned char>& getLightmapData() const { return lightmapData; }
 
 public:
     BSPLoader();
