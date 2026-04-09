@@ -46,6 +46,13 @@ Player::Player() {
     waterJumpTime = 0.0f;
     jumpSecs = 0.0f;
     
+    // Initialize legacy movement variables
+    speed = 250.0f;        // default walking speed
+    noclipSpeed = 500.0f;  // noclip speed
+    jumpForce = 350.0f;    // jump force
+    stepUpSpeed = 100.0f;  // step up speed
+    stepHeight = 0.45f;    // 18 units in meters (Quake step height)
+    
     meshCollider = nullptr;
     groundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
     groundKnown = false;

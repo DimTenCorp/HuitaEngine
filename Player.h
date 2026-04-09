@@ -92,6 +92,13 @@ private:
     float waterJumpTime;
     float jumpSecs;
     
+    // Legacy movement variables for compatibility
+    float speed;
+    float noclipSpeed;
+    float jumpForce;
+    float stepUpSpeed;
+    float stepHeight;  // Add this missing variable
+    
     const MeshCollider* meshCollider;
     
     // Quake-style movement vars
