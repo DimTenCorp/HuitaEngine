@@ -41,6 +41,7 @@ namespace {
     bool g_f1Pressed = false, g_f2Pressed = false, g_f3Pressed = false,
         g_f4Pressed = true, g_noclipPressed = false;
     bool g_f5Pressed = false, g_f6Pressed = false;
+    static bool g_bhopPressed = false;
 
     BSPLoader* g_bspLoader = nullptr;
     MeshCollider* g_meshCollider = nullptr;
@@ -93,6 +94,13 @@ void processInput(GLFWwindow* window, HUD& hud) {
         g_noclipPressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE) g_noclipPressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && !g_bhopPressed) {
+        g_player->EnableAutoJump(!g_player->IsAutoJumpEnabled());
+        std::cout << "Autohop: " << (g_player->IsAutoJumpEnabled() ? "ON" : "OFF") << std::endl;
+        g_bhopPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_B) == GLFW_RELEASE) g_bhopPressed = false;
 
     // ============ НОВОЕ: Управление светом ============
 

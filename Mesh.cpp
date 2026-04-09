@@ -1,15 +1,8 @@
 #include "Mesh.h"
 #include <glad/glad.h>
-#include <iostream>
 
 Mesh::Mesh(float* vertices, int vertexCount, unsigned int* indices, int indexCount) {
     this->indexCount = indexCount;
-
-    // Проверка валидности входных данных
-    if (!vertices || vertexCount <= 0 || !indices || indexCount <= 0) {
-        std::cerr << "[Mesh] Invalid mesh data!\n";
-        return;
-    }
 
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);

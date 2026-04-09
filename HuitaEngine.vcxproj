@@ -147,6 +147,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(VcpkgRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -162,6 +163,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>E:\Dev\vcpkg\installed\x64-windows\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -224,6 +226,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>E:\Dev\vcpkg\installed\x64-windows\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -254,7 +257,6 @@
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="Entity.cpp" />
     <ClCompile Include="HUD.cpp" />
-    <ClCompile Include="Light.cpp" />
     <ClCompile Include="LightmapManager.cpp" />
     <ClCompile Include="LightmappedRenderer.cpp" />
     <ClCompile Include="main.cpp" />
@@ -262,7 +264,6 @@
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Shader.cpp" />
-    <ClCompile Include="ShadowSystem.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
   </ItemGroup>
@@ -273,14 +274,12 @@
     <ClInclude Include="Camera.h" />
     <ClInclude Include="Entity.h" />
     <ClInclude Include="HUD.h" />
-    <ClInclude Include="Light.h" />
     <ClInclude Include="LightmapManager.h" />
     <ClInclude Include="LightmappedRenderer.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="Shader.h" />
-    <ClInclude Include="ShadowSystem.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
   </ItemGroup>
@@ -290,6 +289,9 @@
       <Command>
       </Command>
     </PostBuildEvent>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
