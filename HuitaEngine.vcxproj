@@ -255,6 +255,8 @@
     <ClCompile Include="Entity.cpp" />
     <ClCompile Include="HUD.cpp" />
     <ClCompile Include="Light.cpp" />
+    <ClCompile Include="LightmapManager.cpp" />
+    <ClCompile Include="LightmappedRenderer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Player.cpp" />
@@ -272,6 +274,8 @@
     <ClInclude Include="Entity.h" />
     <ClInclude Include="HUD.h" />
     <ClInclude Include="Light.h" />
+    <ClInclude Include="LightmapManager.h" />
+    <ClInclude Include="LightmappedRenderer.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Renderer.h" />

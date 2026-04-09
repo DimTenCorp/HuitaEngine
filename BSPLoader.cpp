@@ -1,6 +1,5 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include "BSPLoader.h"
-#include "Light.h"
 #include <iostream>
 #include <cstdio>
 #include <cstring>
@@ -8,31 +7,11 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
-#include <cfloat>
-#include <string>
 #include <glm/gtc/type_ptr.hpp>
 #include "WADLoader.h"
 #include "TriangleCollider.h"
-#include <unordered_set>
-#include <limits>
 
 static const float BSP_SCALE = 0.025f;
-
-// Быстрый парсинг строки в float массив
-static bool parseVector3(const std::string& str, float& x, float& y, float& z) {
-    return sscanf(str.c_str(), "%f %f %f", &x, &y, &z) == 3;
-}
-
-// Проверка является ли класс сущности игнорируемым (ненужные источники света)
-static inline bool isIgnoredEntityClass(const std::string& classname) {
-    static const std::unordered_set<std::string> IGNORED_CLASSES = {
-        "light_spot",
-        "light_ambient", 
-        "light_glow",
-        "env_light"
-    };
-    return IGNORED_CLASSES.find(classname) != IGNORED_CLASSES.end();
-}
 
 static glm::vec3 convertPosition(const glm::vec3& bspPos) {
     return glm::vec3(-bspPos.x * BSP_SCALE, bspPos.z * BSP_SCALE, bspPos.y * BSP_SCALE);
@@ -66,18 +45,25 @@ BSPLoader::~BSPLoader() {
     cleanupTextures();
 }
 
+// ИСПРАВЛЕНО: загружаем И оригинальные, И конвертированные вершины
 bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_VERTICES];
     if (lump.length == 0) return false;
     size_t count = lump.length / (3 * sizeof(float));
+
     vertices.resize(count);
+    originalVertices.resize(count);  // <-- НОВОЕ
+
     fseek(file, lump.offset, SEEK_SET);
     for (size_t i = 0; i < count; i++) {
         float x, y, z;
         fread(&x, sizeof(float), 1, file);
         fread(&y, sizeof(float), 1, file);
         fread(&z, sizeof(float), 1, file);
-        vertices[i] = convertPosition(glm::vec3(x, y, z));
+
+        glm::vec3 original(x, y, z);           // Оригинальная BSP позиция
+        originalVertices[i] = original;         // Сохраняем для lightmap
+        vertices[i] = convertPosition(original); // Конвертируем для рендера
     }
     return true;
 }
@@ -222,12 +208,93 @@ bool BSPLoader::loadRequiredWADsFromEntities() {
     return !requiredWADs.empty();
 }
 
+// ИСПРАВЛЕНО: используем originalVertices для правильного расчёта
+void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, float& minS, float& minT) const {
+    // Проверка валидности face индекса
+    if (faceIndex < 0 || faceIndex >= (int)faces.size()) {
+        width = 1;
+        height = 1;
+        minS = minT = 0.0f;
+        return;
+    }
+
+    const BSPFace& face = faces[faceIndex];
+
+    // Проверка валидности texInfo
+    if (face.texInfo < 0 || face.texInfo >= (int)texInfos.size()) {
+        width = 1;
+        height = 1;
+        minS = minT = 0.0f;
+        return;
+    }
+
+    const BSPTexInfo& tex = texInfos[face.texInfo];
+
+    float sMin = 1000000.0f, sMax = -1000000.0f;
+    float tMin = 1000000.0f, tMax = -1000000.0f;
+
+    for (int i = 0; i < face.numEdges; i++) {
+        int edgeIndex = face.firstEdge + i;
+
+        // Проверка индекса surfEdge
+        if (edgeIndex < 0 || edgeIndex >= (int)surfEdges.size()) {
+            continue;
+        }
+
+        int surfEdge = surfEdges[edgeIndex];
+        int vIndex;
+
+        if (surfEdge >= 0) {
+            if (surfEdge >= (int)edges.size()) {
+                continue;
+            }
+            vIndex = edges[surfEdge].v[0];
+        }
+        else {
+            int negEdge = -surfEdge;
+            if (negEdge < 0 || negEdge >= (int)edges.size()) {
+                continue;
+            }
+            vIndex = edges[negEdge].v[1];
+        }
+
+        // Проверка индекса вершины
+        if (vIndex < 0 || vIndex >= (int)originalVertices.size()) {
+            continue;
+        }
+
+        // Используем оригинальную вершину для правильного расчёта
+        const glm::vec3& v = originalVertices[vIndex];
+
+        glm::vec3 sAxis(tex.s[0], tex.s[1], tex.s[2]);
+        glm::vec3 tAxis(tex.t[0], tex.t[1], tex.t[2]);
+
+        float s = glm::dot(v, sAxis) + tex.s[3];
+        float t = glm::dot(v, tAxis) + tex.t[3];
+
+        sMin = std::min(sMin, s);
+        sMax = std::max(sMax, s);
+        tMin = std::min(tMin, t);
+        tMax = std::max(tMax, t);
+    }
+
+    minS = sMin;
+    minT = tMin;
+
+    // Формула HL1: ceil(max/16) - floor(min/16) + 1
+    width = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
+    height = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
+
+    // Ограничиваем разумными значениями
+    width = std::max(1, std::min(width, 512));
+    height = std::max(1, std::min(height, 512));
+}
+
 bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wadLoader) {
     const BSPLump& lump = header.lumps[LUMP_TEXTURES];
     if (lump.length == 0) return false;
 
-    // Проверка на разумный размер lump для предотвращения переполнения памяти
-    const size_t MAX_TEXTURE_LUMP_SIZE = 64 * 1024 * 1024; // 64 MB
+    const size_t MAX_TEXTURE_LUMP_SIZE = 64 * 1024 * 1024;
     if (lump.length > MAX_TEXTURE_LUMP_SIZE) {
         std::cerr << "[BSP] Texture lump too large: " << lump.length << " bytes\n";
         return false;
@@ -240,12 +307,11 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         return false;
     }
 
-    // Безопасное чтение количества текстур с проверкой выравнивания
     if (lumpData.size() < sizeof(int)) {
         std::cerr << "[BSP] Texture lump data too small.\n";
         return false;
     }
-    
+
     int numTextures = 0;
     memcpy(&numTextures, lumpData.data(), sizeof(int));
     if (numTextures <= 0 || numTextures > 100000) {
@@ -253,7 +319,6 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         return false;
     }
 
-    // Проверка что offsets массив помещается в lumpData
     size_t offsetsSize = numTextures * sizeof(int);
     if (sizeof(int) + offsetsSize > lumpData.size()) {
         std::cerr << "[BSP] Texture offsets array out of bounds.\n";
@@ -279,6 +344,14 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         const uint8_t* texPtr = lumpData.data() + offsets[i];
 
+        // Проверка на достаточный размер данных для имени текстуры
+        if (texPtr + 16 > lumpData.data() + lumpData.size()) {
+            glTextureIds.push_back(defaultTextureId);
+            textureDimensions.push_back({ 16, 16 });
+            notFoundCount++;
+            continue;
+        }
+
         char rawName[17] = { 0 };
         memcpy(rawName, texPtr, 16);
 
@@ -297,11 +370,11 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
             continue;
         }
 
-        // Безопасное чтение ширины и высоты с проверкой границ
         uint32_t width = 256;
         uint32_t height = 256;
         size_t texDataSize = lumpData.size() - offsets[i];
-        if (texDataSize >= 24) { // 16 bytes name + 4 bytes width + 4 bytes height
+
+        if (texDataSize >= 24) {
             memcpy(&width, texPtr + 16, sizeof(uint32_t));
             memcpy(&height, texPtr + 20, sizeof(uint32_t));
         }
@@ -338,131 +411,66 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_ENTITIES];
     if (lump.length == 0) return false;
-    
-    // Читаем весь lump в буфер
     std::string buffer;
     buffer.resize(lump.length);
     fseek(file, lump.offset, SEEK_SET);
     fread(&buffer[0], 1, lump.length, file);
 
-    // Оптимизированный парсер: пропускаем ненужные сущности
     size_t pos = 0;
-    const size_t len = buffer.size();
-    
-    while (pos < len) {
-        // Пропускаем пробелы
-        while (pos < len && (buffer[pos] <= 32)) pos++;
-        if (pos >= len || buffer[pos] != '{') break;
+    while (pos < buffer.size()) {
+        while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
+        if (pos >= buffer.size() || buffer[pos] != '{') break;
         pos++;
 
-        // Сначала собираем classname чтобы решить сохранять ли сущность
-        std::string classname;
-        std::string model;
-        glm::vec3 origin(0);
-        glm::vec3 angles(0);
-        bool hasOrigin = false;
-        bool hasAngles = false;
-        
-        // Быстрый проход для извлечения ключевых полей
-        size_t entityStart = pos;
-        bool skipEntity = false;
-        
-        while (pos < len) {
-            // Пропускаем пробелы
-            while (pos < len && (buffer[pos] <= 32)) pos++;
+        BSPEntity entity;
+        while (pos < buffer.size()) {
+            while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
             if (buffer[pos] == '}') { pos++; break; }
             if (buffer[pos] != '"') { pos++; continue; }
             pos++;
-            
-            // Ключ
             size_t keyStart = pos;
-            while (pos < len && buffer[pos] != '"') pos++;
-            if (pos >= len) break;
-            std::string key(buffer.data() + keyStart, pos - keyStart);
+            while (pos < buffer.size() && buffer[pos] != '"') pos++;
+            std::string key = buffer.substr(keyStart, pos - keyStart);
             pos++;
-            
-            // Пропускаем пробелы
-            while (pos < len && (buffer[pos] <= 32)) pos++;
-            if (pos >= len || buffer[pos] != '"') { pos++; continue; }
+
+            while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
+            if (buffer[pos] != '"') { pos++; continue; }
             pos++;
-            
-            // Значение
             size_t valStart = pos;
-            while (pos < len && buffer[pos] != '"') pos++;
-            if (pos >= len) break;
-            std::string val(buffer.data() + valStart, pos - valStart);
+            while (pos < buffer.size() && buffer[pos] != '"') pos++;
+            std::string value = buffer.substr(valStart, pos - valStart);
             pos++;
-            
-            // Обрабатываем только ключевые поля
-            if (key == "classname") {
-                classname = val;
-                // Если это игнорируемая сущность (ненужный свет), помечаем на пропуск
-                if (isIgnoredEntityClass(classname)) {
-                    skipEntity = true;
+
+            entity.properties[key] = value;
+            if (key == "classname") entity.classname = value;
+            if (key == "model") entity.model = value;
+
+            if (key == "origin") {
+                float ox = 0, oy = 0, oz = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
+                if (parsed != 3) {
+                    std::cerr << "[BSP] Failed to parse origin: \"" << value << "\"\n";
+                    entity.origin = glm::vec3(0);
                 }
-            } else if (key == "origin" && !hasOrigin) {
-                float ox, oy, oz;
-                if (parseVector3(val, ox, oy, oz)) {
-                    origin = convertPosition(glm::vec3(ox, oy, oz));
-                    hasOrigin = true;
+                else {
+                    entity.origin = convertPosition(glm::vec3(ox, oy, oz));
                 }
-            } else if (key == "angles" && !hasAngles) {
-                float ax, ay, az;
-                if (parseVector3(val, ax, ay, az)) {
-                    angles = glm::vec3(ax, ay, az);
-                    hasAngles = true;
+            }
+
+            if (key == "angles") {
+                float ax = 0, ay = 0, az = 0;
+                int parsed = sscanf(value.c_str(), "%f %f %f", &ax, &ay, &az);
+                if (parsed != 3) {
+                    std::cerr << "[BSP] Failed to parse angles: \"" << value << "\"\n";
+                    entity.angles = glm::vec3(0);
                 }
-            } else if (key == "model") {
-                model = val;
+                else {
+                    entity.angles = glm::vec3(ax, ay, az);
+                }
             }
         }
-        
-        // Сохраняем все сущности кроме игнорируемых (ненужных источников света)
-        if (!skipEntity && !classname.empty()) {
-            BSPEntity entity;
-            entity.classname = classname;
-            entity.model = model;
-            entity.origin = origin;
-            entity.angles = angles;
-            
-            // Для light_environment сохраняем все свойства
-            if (classname == "light_environment") {
-                // Перепарсиваем для сохранения всех свойств
-                pos = entityStart;
-                while (pos < len) {
-                    while (pos < len && (buffer[pos] <= 32)) pos++;
-                    if (buffer[pos] == '}') break;
-                    if (buffer[pos] != '"') { pos++; continue; }
-                    pos++;
-                    
-                    size_t keyStart = pos;
-                    while (pos < len && buffer[pos] != '"') pos++;
-                    if (pos >= len) break;
-                    std::string key = buffer.substr(keyStart, pos - keyStart);
-                    pos++;
-                    
-                    while (pos < len && (buffer[pos] <= 32)) pos++;
-                    if (pos >= len || buffer[pos] != '"') { pos++; continue; }
-                    pos++;
-                    
-                    size_t valStart = pos;
-                    while (pos < len && buffer[pos] != '"') pos++;
-                    if (pos >= len) break;
-                    std::string value = buffer.substr(valStart, pos - valStart);
-                    pos++;
-                    
-                    entity.properties[key] = value;
-                }
-                // Пропускаем закрывающую скобку
-                while (pos < len && (buffer[pos] <= 32)) pos++;
-                if (pos < len && buffer[pos] == '}') pos++;
-            }
-            
-            entities.push_back(std::move(entity));
-        }
+        entities.push_back(entity);
     }
-    
-    std::cout << "[BSP] Parsed " << entities.size() << " entities (optimized, ignored only unnecessary lights)" << std::endl;
     return true;
 }
 
@@ -470,15 +478,25 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
     unsigned int baseVertex = (unsigned int)meshVertices.size();
 
     for (int i = 0; i < subModel.numFaces; i++) {
-        const BSPFace& face = faces[subModel.firstFace + i];
+        int faceIdx = subModel.firstFace + i;
+        if (faceIdx < 0 || faceIdx >= (int)faces.size()) {
+            std::cerr << "[BSP] Invalid face index: " << faceIdx << std::endl;
+            continue;
+        }
+
+        const BSPFace& face = faces[faceIdx];
         if (face.numEdges < 3) continue;
 
-        if (face.planeNum >= planes.size()) continue;
-        if (face.texInfo >= texInfos.size()) continue;
+        if (face.planeNum >= planes.size()) {
+            std::cerr << "[BSP] Plane index out of range: " << face.planeNum << std::endl;
+            continue;
+        }
 
-        // Для GoldSrc BSP сторона плоскости определяет направление нормали
-        // side == 0: нормаль направлена в положительную сторону
-        // side == 1: нормаль направлена в отрицательную сторону
+        if (face.texInfo >= texInfos.size()) {
+            std::cerr << "[BSP] TexInfo index out of range: " << face.texInfo << std::endl;
+            continue;
+        }
+
         glm::vec3 normal = planes[face.planeNum].normal;
         if (face.side != 0) {
             normal = -normal;
@@ -489,24 +507,39 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
 
         for (int j = 0; j < face.numEdges; j++) {
             int edgeIdx = face.firstEdge + j;
-            if (edgeIdx >= (int)surfEdges.size()) break;
+            if (edgeIdx < 0 || edgeIdx >= (int)surfEdges.size()) {
+                std::cerr << "[BSP] Invalid surfEdge index: " << edgeIdx << std::endl;
+                break;
+            }
 
             int surfEdge = surfEdges[edgeIdx];
             unsigned short vindex;
 
             if (surfEdge >= 0) {
-                if (surfEdge >= (int)edges.size()) break;
+                if (surfEdge >= (int)edges.size()) {
+                    std::cerr << "[BSP] Edge index out of range: " << surfEdge
+                        << " (max: " << edges.size() << ")" << std::endl;
+                    break;
+                }
                 vindex = edges[surfEdge].v[0];
             }
             else {
                 int negEdge = -surfEdge;
-                if (negEdge >= (int)edges.size()) break;
+                if (negEdge < 0 || negEdge >= (int)edges.size()) {
+                    std::cerr << "[BSP] Negative edge index out of range: " << negEdge
+                        << " (max: " << edges.size() << ")" << std::endl;
+                    break;
+                }
                 vindex = edges[negEdge].v[1];
             }
 
-            if (vindex < vertices.size()) {
-                faceVerts.push_back(vertices[vindex]);
+            if (vindex >= vertices.size()) {
+                std::cerr << "[BSP] Vertex index out of range: " << vindex
+                    << " (max: " << vertices.size() << ")" << std::endl;
+                continue;
             }
+
+            faceVerts.push_back(vertices[vindex]);
         }
 
         if (faceVerts.size() < 3) continue;
@@ -545,56 +578,9 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         std::vector<glm::vec2> texCoords;
         texCoords.reserve(faceVerts.size());
 
-        // Вычисляем lightmap UV для этой грани если есть освещение
-        bool hasLightmap = false;
-        float minS = 0.0f, maxS = 0.0f, minT = 0.0f, maxT = 0.0f;
-        int pageIndex = 0;
-        
-        if (face.lightOffset >= 0 && !lightmapData.empty()) {
-            // Читаем размеры lightmap сетки из данных освещения
-            if (face.lightOffset + 4 <= (int)lightmapData.size()) {
-                uint8_t lmWidth = lightmapData[face.lightOffset];
-                uint8_t lmHeight = lightmapData[face.lightOffset + 1];
-                
-                if (lmWidth >= 2 && lmHeight >= 2) {
-                    // Вычисляем номер страницы (слоя) в texture array
-                    int pageStride = lightmapSize * lightmapSize * 3;
-                    pageIndex = face.lightOffset / pageStride;
-                    
-                    // Находим мин/макс S,T координаты для нормализации UV
-                    minS = FLT_MAX; maxS = FLT_MIN;
-                    minT = FLT_MAX; maxT = FLT_MIN;
-                    
-                    for (const auto& vertPos : faceVerts) {
-                        glm::vec3 originalBSPPos(
-                            -vertPos.x / BSP_SCALE,
-                            vertPos.z / BSP_SCALE,
-                            vertPos.y / BSP_SCALE
-                        );
-                        float s = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
-                        float t = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
-                        minS = std::min(minS, s);
-                        maxS = std::max(maxS, s);
-                        minT = std::min(minT, t);
-                        maxT = std::max(maxT, t);
-                    }
-                    
-                    float sRange = maxS - minS;
-                    float tRange = maxT - minT;
-                    if (sRange < 0.001f) sRange = 0.001f;
-                    if (tRange < 0.001f) tRange = 0.001f;
-                    
-                    // Сохраняем параметры для вычисления UV каждой вершины
-                    hasLightmap = true;
-                    
-                    // Для каждой вершины вычислим UV ниже
-                }
-            }
-        }
-
-        for (size_t j = 0; j < faceVerts.size(); j++) {
-            const auto& pos = faceVerts[j];
-            
+        for (const auto& pos : faceVerts) {
+            // Для текстурных координат нужна обратная конвертация
+            // т.к. texInfo.s/t работают в оригинальном BSP пространстве
             glm::vec3 originalBSPPos(
                 -pos.x / BSP_SCALE,
                 pos.z / BSP_SCALE,
@@ -608,34 +594,18 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             v = v / (float)texHeight;
 
             texCoords.push_back(glm::vec2(u, v));
-            
-            // Вычисляем lightmap UV если грань имеет освещение
-            glm::vec3 lightmapUVCoord(0.0f, 0.0f, (float)pageIndex);
-            if (hasLightmap) {
-                float sRange = maxS - minS;
-                float tRange = maxT - minT;
-                
-                // Вычисляем UV для текущей вершины
-                float s = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
-                float t = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
-                
-                // Нормализуем в пределах [0, 1] для этой грани
-                float lmU = (sRange > 0.001f) ? (s - minS) / sRange : 0.0f;
-                float lmV = (tRange > 0.001f) ? (t - minT) / tRange : 0.0f;
-                
-                lightmapUVCoord = glm::vec3(lmU, lmV, (float)pageIndex);
-            }
-            
-            BSPVertex vertex;
-            vertex.position = pos;
-            vertex.normal = normal;
-            vertex.texCoord = texCoords[j];
-            vertex.lightmapUV = lightmapUVCoord;
-            
-            meshVertices.push_back(vertex);
         }
 
         unsigned int faceStartVertex = baseVertex;
+
+        for (size_t j = 0; j < faceVerts.size(); j++) {
+            BSPVertex v;
+            v.position = faceVerts[j];
+            v.normal = normal;
+            v.texCoord = texCoords[j];
+            meshVertices.push_back(v);
+        }
+
         unsigned int startIdxOffset = (unsigned int)meshIndices.size();
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
             meshIndices.push_back(faceStartVertex);
@@ -662,9 +632,8 @@ void BSPLoader::buildMesh() {
         if (entity.classname.find("func_") == std::string::npos &&
             entity.classname.find("brush") == std::string::npos) continue;
 
-        // Безопасный парсинг индекса модели
         if (entity.model.length() < 2 || entity.model[0] != '*') continue;
-        
+
         int modelIndex = 0;
         try {
             modelIndex = std::stoi(entity.model.substr(1));
@@ -673,7 +642,7 @@ void BSPLoader::buildMesh() {
             std::cerr << "[BSP] Failed to parse model index from \"" << entity.model << "\": " << e.what() << std::endl;
             continue;
         }
-        
+
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
         buildSubmodelMesh(models[modelIndex]);
     }
@@ -703,7 +672,7 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
     loadModels(file, header);
     loadTexInfo(file, header);
     parseEntities(file, header);
-    loadLighting(file, header);  // Загружаем данные освещения из BSP
+    loadLighting(file, header);
 
     loadRequiredWADsFromEntities();
 
@@ -714,7 +683,6 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 
     fclose(file);
     buildMesh();
-    buildLightmapUVs();  // Строим UV координаты для световой карты
     printStats();
     return !meshVertices.empty();
 }
@@ -732,109 +700,30 @@ void BSPLoader::cleanupTextures() {
     textureDimensions.clear();
     drawCalls.clear();
     defaultTextureId = 0;
-    
-    // Очищаем текстуру световой карты
-    if (lightmapTexture) {
-        glDeleteTextures(1, &lightmapTexture);
-        lightmapTexture = 0;
-    }
-    lightmapData.clear();
-}
-
-// Загрузка данных освещения из BSP (LUMP_LIGHTING)
-bool BSPLoader::loadLighting(FILE* file, const BSPHeader& header) {
-    const BSPLump& lump = header.lumps[LUMP_LIGHTING];
-    if (lump.length == 0) {
-        std::cout << "[BSP] No lighting data found" << std::endl;
-        return false;
-    }
-    
-    // Проверка на разумный размер
-    const size_t MAX_LIGHTING_SIZE = 64 * 1024 * 1024; // 64 MB
-    if (lump.length > MAX_LIGHTING_SIZE) {
-        std::cerr << "[BSP] Lighting lump too large: " << lump.length << " bytes" << std::endl;
-        return false;
-    }
-    
-    lightmapData.resize(lump.length);
-    fseek(file, lump.offset, SEEK_SET);
-    if (fread(lightmapData.data(), 1, lump.length, file) != static_cast<size_t>(lump.length)) {
-        std::cerr << "[BSP] Failed to read lighting data" << std::endl;
-        lightmapData.clear();
-        return false;
-    }
-    
-    std::cout << "[BSP] Loaded " << lump.length << " bytes of lighting data" << std::endl;
-    
-    // Создаем OpenGL текстуру для световой карты
-    glGenTextures(1, &lightmapTexture);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, lightmapTexture);
-    
-    // GoldSrc использует 128x128 страницы световых карт
-    // Формат данных: RGB по 1 байту на канал (3 байта на пиксель)
-    // Каждая грань ссылается на определенную страницу и UV координаты в ней
-    
-    // Для простоты создаем одну большую текстуру-атлас
-    // В идеале нужно правильно упаковывать все страницы
-    int numLightmaps = lump.length / (lightmapSize * lightmapSize * 3);
-    if (numLightmaps == 0) numLightmaps = 1;
-    
-    std::cout << "[BSP] Creating lightmap atlas with " << numLightmaps << " pages" << std::endl;
-    
-    // Используем GL_TEXTURE_2D_ARRAY для хранения всех страниц
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, lightmapSize, lightmapSize, numLightmaps, 
-                 0, GL_RGB, GL_UNSIGNED_BYTE, lightmapData.data());
-    
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    
-    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
-    
-    return true;
-}
-
-// Построение UV координат световой карты для каждой вершины
-// Теперь эта функция не нужна - lightmap UV вычисляются прямо в buildSubmodelMesh
-void BSPLoader::buildLightmapUVs() {
-    // Lightmap UV уже были вычислены при построении меша в buildSubmodelMesh
-    // Эта функция оставлена для совместимости
-    
-    int validUVCount = 0;
-    for (const auto& v : meshVertices) {
-        if (glm::length(v.lightmapUV) > 0.001f) {
-            validUVCount++;
-        }
-    }
-    
-    std::cout << "[BSP] " << validUVCount << " / " << meshVertices.size() 
-              << " vertices have valid lightmap UVs" << std::endl;
-}
-
-std::vector<Light> BSPLoader::extractLights() const {
-    std::vector<Light> result;
-
-    for (const auto& entity : entities) {
-        if (entity.classname.find("light") == 0 ||
-            entity.classname.find("light_") != std::string::npos) {
-            result.push_back(Light::fromBSPEntity(entity));
-        }
-    }
-
-    std::cout << "[BSP] Extracted " << result.size() << " lights" << std::endl;
-    return result;
 }
 
 void BSPLoader::printStats() const {
     std::cout << "=== BSP Loaded ===\n";
     std::cout << "Vertices: " << vertices.size() << "\n";
+    std::cout << "Original Vertices: " << originalVertices.size() << "\n";
     std::cout << "Faces: " << faces.size() << "\n";
     std::cout << "Textures: " << glTextureIds.size() << "\n";
     std::cout << "Draw Calls: " << drawCalls.size() << "\n";
     std::cout << "Required WADs: " << requiredWADs.size() << "\n";
     std::cout << "Entities: " << entities.size() << "\n";
     std::cout << "==================\n";
+}
+
+bool BSPLoader::loadLighting(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_LIGHTING];
+    if (lump.length == 0) return false;
+
+    lightingData.resize(lump.length);
+    fseek(file, lump.offset, SEEK_SET);
+    fread(lightingData.data(), 1, lump.length, file);
+
+    std::cout << "[BSP] Loaded lighting: " << lump.length << " bytes" << std::endl;
+    return true;
 }
 
 bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const {
@@ -861,14 +750,6 @@ bool BSPLoader::findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) co
                     << std::endl;
                 return true;
             }
-        }
-    }
-
-    // Also try light_environment for sun direction
-    for (const auto& entity : entities) {
-        if (entity.classname == "light_environment") {
-            std::cout << "[BSP] Found light_environment" << std::endl;
-            // Can be used to extract _light and angles for sun direction
         }
     }
 
@@ -899,87 +780,4 @@ void BSPLoader::debugPrintEntities() const {
         }
         std::cout << std::endl;
     }
-}
-
-// Адаптированный код освещения из GoldSrc для HuitaEngine
-// Оригинал: lights.cpp из Half-Life SDK
-
-// Парсинг сущности light_environment из BSP и настройка освещения
-void BSPLoader::setupLightEnvironment(LightManager& lightManager) const {
-    for (const auto& entity : entities) {
-        if (entity.classname == "light_environment") {
-            std::cout << "[BSP] Processing light_environment entity" << std::endl;
-            
-            // Извлекаем углы для направления солнца
-            glm::vec3 angles = entity.angles;
-            
-            // Конвертируем углы в вектор направления
-            // В GoldSrc/Half-Life:
-            // - angles.y (yaw): 0 = South, 90 = East, 180 = North, 270 = West
-            // - angles.x (pitch): положительный = вниз, отрицательный = вверх
-            // Солнце светит В направлении, куда смотрят углы
-            
-            float yawRad = glm::radians(angles.y);
-            float pitchRad = glm::radians(angles.x);
-            
-            // Вычисляем направление взгляда (куда смотрят углы)
-            // В системе координат Half-Life: X вперед, Y вправо, Z вверх
-            // Формула для конвертации углов в вектор направления:
-            glm::vec3 forward;
-            forward.x = cos(pitchRad) * sin(yawRad);
-            forward.y = cos(pitchRad) * cos(yawRad);
-            forward.z = -sin(pitchRad);  // +pitch в HL это вниз, поэтому инвертируем для Z-up
-            forward = glm::normalize(forward);
-            
-            // Свет идет ОТ солнца к земле, поэтому используем направление forward как есть
-            // Если сущность смотрит вниз (+pitch), forward.z будет отрицательным (свет сверху вниз)
-            glm::vec3 sunDir = forward;
-            
-            std::cout << "[BSP] light_environment angles: (" 
-                      << angles.x << ", " << angles.y << ", " << angles.z << ")" << std::endl;
-            std::cout << "[BSP] Forward vector: (" 
-                      << forward.x << ", " << forward.y << ", " << forward.z << ")" << std::endl;
-            std::cout << "[BSP] Calculated sun direction: (" 
-                      << sunDir.x << ", " << sunDir.y << ", " << sunDir.z << ")" << std::endl;
-            
-            
-            // Извлекаем цвет и интенсивность из свойства "_light"
-            auto it = entity.properties.find("_light");
-            if (it != entity.properties.end()) {
-                const std::string& lightValue = it->second;
-                int r, g, b, v;
-                int parsed = sscanf(lightValue.c_str(), "%d %d %d %d", &r, &g, &b, &v);
-                
-                if (parsed >= 1) {
-                    if (parsed == 1) {
-                        // Только одно значение - используем как яркость для всех каналов
-                        g = b = r;
-                    }
-                    
-                    if (parsed >= 4) {
-                        // Применяем множитель интенсивности
-                        r = static_cast<int>(r * (v / 255.0f));
-                        g = static_cast<int>(g * (v / 255.0f));
-                        b = static_cast<int>(b * (v / 255.0f));
-                    }
-                    
-                    // Ограничиваем значения максимум 255 (используем glm::clamp для совместимости)
-                    r = static_cast<int>(glm::clamp(static_cast<float>(r), 0.0f, 255.0f));
-                    g = static_cast<int>(glm::clamp(static_cast<float>(g), 0.0f, 255.0f));
-                    b = static_cast<int>(glm::clamp(static_cast<float>(b), 0.0f, 255.0f));
-                    
-                    // Конвертируем в диапазон [0, 1] для шейдера
-                    glm::vec3 sunColor(r / 255.0f, g / 255.0f, b / 255.0f);
-                    
-                    std::cout << "[BSP] light_environment color: (" 
-                              << r << ", " << g << ", " << b << ")" << std::endl;
-                   
-                }
-            }
-            
-            return; // Обрабатываем только первый light_environment
-        }
-    }
-    
-    std::cout << "[BSP] No light_environment found, using default sun settings" << std::endl;
 }

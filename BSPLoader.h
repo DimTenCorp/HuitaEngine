@@ -2,18 +2,10 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <unordered_map>
-#include <unordered_set>
 #include <string>
-#include <string_view>
 #include <glad/glad.h>
-#include "Light.h"
 
-// Forward declaration only for WADLoader
 class WADLoader;
-// Forward declaration for LightManager to avoid circular dependency
-class LightManager;
-
-// Include AABB definition - moved to separate header to avoid circular dependency
 #include "AABB.h"
 
 #pragma pack(push, 1)
@@ -37,7 +29,18 @@ struct BSPHeader { int version; BSPLump lumps[15]; };
 #define LUMP_MODELS       14
 
 struct BSPPlane { glm::vec3 normal; float dist; int type; };
-struct BSPFace { unsigned short planeNum; unsigned short side; int firstEdge; unsigned short numEdges; unsigned short texInfo; unsigned char styles[4]; int lightOffset; };
+
+// ИСПРАВЛЕНО: lightOffset -> lightofs (как в оригинальном BSP)
+struct BSPFace {
+    unsigned short planeNum;
+    unsigned short side;
+    int firstEdge;
+    unsigned short numEdges;
+    unsigned short texInfo;
+    unsigned char styles[4];
+    int lightofs;  // <-- ИСПРАВЛЕНО!
+};
+
 struct BSPEdge { unsigned short v[2]; };
 struct BSPModel { float min[3]; float max[3]; float origin[3]; int headNode[4]; int visLeafs; int firstFace; int numFaces; };
 struct BSPTexInfo { float s[4]; float t[4]; int textureIndex; int flags; };
@@ -47,7 +50,6 @@ struct BSPVertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 texCoord;
-    glm::vec3 lightmapUV;  // UV координаты для световой карты
 };
 
 struct BSPEntity {
@@ -66,7 +68,8 @@ struct FaceDrawCall {
 
 class BSPLoader {
 private:
-    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> vertices;        // Конвертированные вершины (для рендера)
+    std::vector<glm::vec3> originalVertices; // Оригинальные BSP вершины (для lightmap)
     std::vector<BSPEdge> edges;
     std::vector<int> surfEdges;
     std::vector<BSPFace> faces;
@@ -87,11 +90,6 @@ private:
     std::vector<BSPEntity> entities;
     std::vector<std::string> requiredWADs;
 
-    // Lightmap data
-    std::vector<unsigned char> lightmapData;  // Сырые данные освещения из BSP
-    GLuint lightmapTexture = 0;
-    int lightmapSize = 128;  // Стандартный размер lightmap страницы в GoldSrc
-
     bool loadVertices(FILE* file, const BSPHeader& header);
     bool loadEdges(FILE* file, const BSPHeader& header);
     bool loadSurfEdges(FILE* file, const BSPHeader& header);
@@ -104,6 +102,7 @@ private:
     bool loadRequiredWADsFromEntities();
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel);
+    bool loadLighting(FILE* file, const BSPHeader& header);
 
 public:
     BSPLoader();
@@ -127,17 +126,46 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
-    
-    // Setup lighting from light_environment entity
-    void setupLightEnvironment(LightManager& lightManager) const;
 
-    std::vector<Light> extractLights() const;
+    std::vector<uint8_t> lightingData;
 
-    // Lightmap data
-    GLuint getLightmapTexture() const { return lightmapTexture; }
-    int getLightmapSize() const { return lightmapSize; }
-    
-private:
-    bool loadLighting(FILE* file, const BSPHeader& header);
-    void buildLightmapUVs();
+    // ИСПРАВЛЕНО: используем lightofs
+    int getFaceLightOffset(int faceIndex) const {
+        if (faceIndex >= 0 && faceIndex < static_cast<int>(faces.size())) {
+            return faces[faceIndex].lightofs;
+        }
+        return -1;
+    }
+
+    void getFaceLightStyles(int faceIndex, unsigned char styles[4]) const {
+        if (faceIndex >= 0 && faceIndex < static_cast<int>(faces.size())) {
+            memcpy(styles, faces[faceIndex].styles, 4);
+        }
+    }
+
+    const std::vector<BSPFace>& getFaces() const { return faces; }
+    const std::vector<BSPTexInfo>& getTexInfos() const { return texInfos; }
+    const std::vector<int>& getSurfEdges() const { return surfEdges; }
+    const std::vector<BSPEdge>& getEdges() const { return edges; }
+
+    // НОВОЕ: доступ к оригинальным вершинам и плоскостям
+    const std::vector<glm::vec3>& getOriginalVertices() const { return originalVertices; }
+    const std::vector<glm::vec3>& getVertices() const { return vertices; }
+    const std::vector<BSPPlane>& getPlanes() const { return planes; }  // <-- ДОБАВЛЕНО!
+
+    void getFaceLightmapDims(int faceIndex, int& width, int& height, float& minS, float& minT) const;
+
+    GLuint getTextureID(int index) const {
+        if (index >= 0 && index < static_cast<int>(glTextureIds.size())) {
+            return glTextureIds[index];
+        }
+        return defaultTextureId;
+    }
+
+    glm::uvec2 getTextureDimensions(int index) const {
+        if (index >= 0 && index < static_cast<int>(textureDimensions.size())) {
+            return textureDimensions[index];
+        }
+        return glm::uvec2(256, 256);
+    }
 };

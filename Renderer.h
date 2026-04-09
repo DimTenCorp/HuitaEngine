@@ -5,15 +5,12 @@
 #include <memory>
 #include "BSPLoader.h"
 #include "Shader.h"
-#include "Light.h"
-#include "ShadowSystem.h"
 
 struct GBuffer {
     GLuint fbo = 0;
     GLuint positionTex = 0;
     GLuint normalTex = 0;
     GLuint albedoTex = 0;
-    GLuint lightingTex = 0;  // Текстура для освещения из lightmap
     GLuint depthTex = 0;
     int width = 1280;
     int height = 720;
@@ -28,17 +25,8 @@ struct GBuffer {
     bool create(int w, int h);
     void destroy();
     void bindForWriting() const;
-    void bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo, GLuint texUnitLighting) const;
+    void bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const;
     static void unbind();
-};
-
-struct Flashlight {
-    bool enabled = false;
-    glm::vec3 position{ 0.0f };
-    glm::vec3 direction{ 0.0f, 0.0f, -1.0f };
-    float cutoffInner = glm::radians(12.5f);
-    float cutoffOuter = glm::radians(17.5f);
-    float intensity = 3.0f;
 };
 
 struct BspMesh {
@@ -59,23 +47,6 @@ struct BspMesh {
     void destroy();
     void bind() const;
     static void unbind();
-};
-
-struct ShadowMap {
-    GLuint fbo = 0;
-    GLuint depthMap = 0;
-    int size = 512;
-    glm::mat4 lightSpaceMatrix;
-    
-    bool create(int sz);
-    void destroy();
-    void bindForWriting();
-    static void unbind();
-};
-
-struct RenderLight {
-    // Структура больше не используется - динамическое освещение отключено
-    // Оставлена для обратной совместимости
 };
 
 class Renderer {
@@ -100,24 +71,13 @@ public:
     void unloadWorld();
 
     void beginFrame(const glm::vec3& clearColor);
-    void renderWorld(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem);
+    void renderWorld(const glm::mat4& view, const glm::vec3& viewPos);
     void renderHitbox(const glm::mat4& view, const glm::mat4& projection,
         const glm::vec3& position, bool visible);
 
     void setShowHitbox(bool show) { showHitbox = show; }
     bool getShowHitbox() const { return showHitbox; }
     const RenderStats& getStats() const { return stats; }
-
-    void setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool enabled);
-    void addLight(const Light& light);
-    void clearLights();
-
-    void setSunDirection(const glm::vec3& dir) { sunDirection = glm::normalize(dir); }
-    void setSunColor(const glm::vec3& color) { sunColor = color; }
-    void setSunIntensity(float intensity) { sunIntensity = glm::max(0.0f, intensity); }
-    void setAmbientStrength(float strength) { ambientStrength = glm::clamp(strength, 0.0f, 1.0f); }
-    
-    void setLightmapTexture(GLuint tex, int size) { lightmapTexture = tex; lightmapSize = size; }
 
 private:
     BspMesh worldMesh;
@@ -129,33 +89,11 @@ private:
 
     std::unique_ptr<Shader> geometryShader;
     std::unique_ptr<Shader> lightingShader;
-    std::unique_ptr<Shader> flashlightShader;
 
     GBuffer gBuffer;
 
-    struct ShadowFBO {
-        GLuint fbo = 0;
-        GLuint depthMap = 0;
-        int size = 1024;
-        bool create(int sz);
-        void destroy();
-    } shadowFBO;
-
     RenderStats stats;
     int screenWidth = 1280, screenHeight = 720;
-    Flashlight flashlight;
-
-    std::vector<RenderLight> lights;  // Не используется - динамическое освещение отключено
-
-    glm::vec3 sunDirection{ 0.5f, -1.0f, 0.3f };
-    glm::vec3 sunColor{ 1.0f, 0.95f, 0.8f };
-    float sunIntensity{ 1.0f };
-    float ambientStrength{ 0.1f };
-
-    GLuint lightmapTexture = 0;
-    int lightmapSize = 128;
-
-    static constexpr int MAX_LIGHTS = 32;
 
     GLuint quadVAO = 0;
     GLuint quadVBO = 0;
@@ -165,8 +103,7 @@ private:
     bool createGBuffer(int w, int h);
     void destroyGBuffer();
     void geometryPass(const glm::mat4& view, const glm::mat4& proj);
-    void lightingPass(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem);
-    void renderShadowPass(const glm::mat4& lightSpaceMatrix);
+    void lightingPass(const glm::vec3& viewPos);
 
     static const char* getGeometryVert();
     static const char* getGeometryFrag();

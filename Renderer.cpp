@@ -60,20 +60,13 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, albedoTex, 0);
 
-    glGenTextures(1, &lightingTex);
-    glBindTexture(GL_TEXTURE_2D, lightingTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, lightingTex, 0);
-
     glGenTextures(1, &depthTex);
     glBindTexture(GL_TEXTURE_2D, depthTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
-    unsigned int attachments[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
-    glDrawBuffers(4, attachments);
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
 
     bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     if (!complete) std::cerr << "G-Buffer incomplete!" << std::endl;
@@ -87,7 +80,6 @@ void GBuffer::destroy() {
     if (positionTex) { glDeleteTextures(1, &positionTex); positionTex = 0; }
     if (normalTex) { glDeleteTextures(1, &normalTex); normalTex = 0; }
     if (albedoTex) { glDeleteTextures(1, &albedoTex); albedoTex = 0; }
-    if (lightingTex) { glDeleteTextures(1, &lightingTex); lightingTex = 0; }
     if (depthTex) { glDeleteTextures(1, &depthTex); depthTex = 0; }
 }
 
@@ -95,15 +87,13 @@ void GBuffer::bindForWriting() const {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 }
 
-void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo, GLuint texUnitLighting) const {
+void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const {
     glActiveTexture(texUnitPosition);
     glBindTexture(GL_TEXTURE_2D, positionTex);
     glActiveTexture(texUnitNormal);
     glBindTexture(GL_TEXTURE_2D, normalTex);
     glActiveTexture(texUnitAlbedo);
     glBindTexture(GL_TEXTURE_2D, albedoTex);
-    glActiveTexture(texUnitLighting);
-    glBindTexture(GL_TEXTURE_2D, lightingTex);
 }
 
 void GBuffer::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
@@ -175,87 +165,7 @@ void BspMesh::bind() const { glBindVertexArray(vao); }
 void BspMesh::unbind() { glBindVertexArray(0); }
 
 // ============================================================================
-// ShadowFBO Implementation
-// ============================================================================
-
-bool Renderer::ShadowFBO::create(int sz) {
-    destroy();
-    size = sz;
-
-    glGenFramebuffers(1, &fbo);
-    glGenTextures(1, &depthMap);
-
-    glBindTexture(GL_TEXTURE_2D, depthMap);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, sz, sz, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-
-    bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return complete;
-}
-
-void Renderer::ShadowFBO::destroy() {
-    if (fbo) { glDeleteFramebuffers(1, &fbo); fbo = 0; }
-    if (depthMap) { glDeleteTextures(1, &depthMap); depthMap = 0; }
-}
-
-// ============================================================================
-// ShadowMap Implementation
-// ============================================================================
-
-bool ShadowMap::create(int sz) {
-    destroy();
-    size = sz;
-
-    glGenFramebuffers(1, &fbo);
-    glGenTextures(1, &depthMap);
-
-    glBindTexture(GL_TEXTURE_2D, depthMap);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, sz, sz, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-
-    bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return complete;
-}
-
-void ShadowMap::destroy() {
-    if (fbo) { glDeleteFramebuffers(1, &fbo); fbo = 0; }
-    if (depthMap) { glDeleteTextures(1, &depthMap); depthMap = 0; }
-}
-
-void ShadowMap::bindForWriting() {
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    glViewport(0, 0, size, size);
-}
-
-void ShadowMap::unbind() {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-// ============================================================================
-// Shader Sources
+// Shader Sources - SIMPLIFIED (no lighting)
 // ============================================================================
 
 static const char* s_geometryVert = R"glsl(
@@ -263,53 +173,32 @@ static const char* s_geometryVert = R"glsl(
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
-layout (location = 3) in vec3 aLightmapUV;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-uniform vec3 uSunDir;
-
-out vec2 vTexCoord;
-out vec3 vNormal;
 out vec3 vFragPos;
-out vec3 vLightmapUV;
-out vec3 vLightDir;
+out vec3 vNormal;
+out vec2 vTexCoord;
+
+uniform mat4 model, view, projection;
 
 void main() {
-    vTexCoord = aTexCoord;
-    vLightmapUV = aLightmapUV;
-    mat3 normalMatrix = mat3(transpose(inverse(model)));
-    vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    vLightDir = uSunDir;
+    vNormal = mat3(transpose(inverse(model))) * aNormal;
+    vTexCoord = aTexCoord;
+    gl_Position = projection * view * vec4(vFragPos, 1.0);
 }
 )glsl";
 
 static const char* s_geometryFrag = R"glsl(
 #version 330 core
-in vec2 vTexCoord;
-in vec3 vNormal;
 in vec3 vFragPos;
-in vec3 vLightmapUV;
-in vec3 vLightDir;
+in vec3 vNormal;
+in vec2 vTexCoord;
 
 layout (location = 0) out vec4 gPosition;
 layout (location = 1) out vec4 gNormal;
 layout (location = 2) out vec4 gAlbedo;
-layout (location = 3) out vec4 gLighting;
 
 uniform sampler2D uTexture;
-uniform sampler2DArray uLightmap;
-uniform bool uUseLightmap;
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform float uSunIntensity;
-
-// Гамма-коррекция как в Quake/Half-Life (гамма ~2.2)
-const float GAMMA = 2.2;
-const float INV_GAMMA = 1.0 / 2.2;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
@@ -318,30 +207,6 @@ void main() {
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
     gAlbedo = texColor;
-    
-    vec3 bakedLight = vec3(0.0);
-    
-    if (uUseLightmap && length(vLightmapUV) > 0.001) {
-        // Читаем запечённый свет из BSP lightmap
-        vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-        // Конвертируем из [0,255] в [0,1] 
-        lightmapColor = lightmapColor / 255.0;
-        // Применяем гамма-коррекцию для правильного отображения
-        bakedLight = pow(lightmapColor, vec3(GAMMA));
-    }
-    
-    // Добавляем солнце с простыми тенями (как в Half-Life - без карт теней для солнца)
-    // Тени в Half-Life создаются за счёт того что свет не проходит через стены
-    // Это эмулируется тем что в помещениях доминирует lightmap, а на улице - солнце
-    vec3 lightDir = normalize(uSunDir);
-    float diff = max(dot(normalize(vNormal), lightDir), 0.0);
-    vec3 sunContribution = uSunColor * diff * uSunIntensity;
-    
-    // Смешиваем: если есть lightmap - используем его, иначе солнце
-    // Это создаёт эффект "тени" - в помещении темно (только lightmap), на улице светло (солнце)
-    vec3 finalLight = bakedLight + sunContribution;
-    
-    gLighting = vec4(finalLight, 1.0);
 }
 )glsl";
 
@@ -366,38 +231,21 @@ out vec4 FragColor;
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
-uniform sampler2D gLighting;
-
-uniform vec3 uViewPos;
-uniform float uAmbient;
-
-// Гамма-коррекция как в Quake/Half-Life
-const float GAMMA = 2.2;
-const float INV_GAMMA = 1.0 / 2.2;
 
 void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
-    vec4 bakedLight = texture(gLighting, vTexCoord);
     
     if (length(fragPos) < 0.001) {
         FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    // Используем запечённое освещение из lightmap BSP + солнце
-    // Свет уже прошёл гамма-коррекцию в geometry pass
-    // Умножаем на albedo для получения финального цвета
-    vec3 result = bakedLight.rgb * albedo.rgb;
+    // Simple ambient lighting only - no dynamic lights
+    vec3 ambient = vec3(0.3) * albedo.rgb;
     
-    // Добавляем минимальное ambient освещение для совсем тёмных зон
-    result += vec3(uAmbient) * albedo.rgb;
-    
-    // Применяем обратную гамма-коррекцию перед выводом (tonemap)
-    result = pow(result, vec3(INV_GAMMA));
-    
-    FragColor = vec4(result, albedo.a);
+    FragColor = vec4(ambient, albedo.a);
 }
 )glsl";
 
@@ -415,13 +263,9 @@ Renderer::Renderer() = default;
 Renderer::Renderer(Renderer&& other) noexcept
     : worldMesh(std::move(other.worldMesh)), hitboxMesh(std::move(other.hitboxMesh)),
     geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
-    flashlightShader(std::move(other.flashlightShader)), gBuffer(std::move(other.gBuffer)),
-    shadowFBO(std::move(other.shadowFBO)), stats(other.stats),
+    gBuffer(std::move(other.gBuffer)), stats(other.stats),
     screenWidth(other.screenWidth), screenHeight(other.screenHeight),
-    flashlight(other.flashlight), quadVAO(other.quadVAO), quadVBO(other.quadVBO),
-    lights(std::move(other.lights)), sunDirection(other.sunDirection),
-    sunColor(other.sunColor), sunIntensity(other.sunIntensity),
-    ambientStrength(other.ambientStrength) {
+    quadVAO(other.quadVAO), quadVBO(other.quadVBO) {
     other.quadVAO = 0; other.quadVBO = 0;
     other.screenWidth = 1280; other.screenHeight = 720;
 }
@@ -433,20 +277,12 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
         hitboxMesh = std::move(other.hitboxMesh);
         geometryShader = std::move(other.geometryShader);
         lightingShader = std::move(other.lightingShader);
-        flashlightShader = std::move(other.flashlightShader);
         gBuffer = std::move(other.gBuffer);
-        shadowFBO = std::move(other.shadowFBO);
         stats = other.stats;
         screenWidth = other.screenWidth;
         screenHeight = other.screenHeight;
-        flashlight = other.flashlight;
         quadVAO = other.quadVAO;
         quadVBO = other.quadVBO;
-        lights = std::move(other.lights);
-        sunDirection = other.sunDirection;
-        sunColor = other.sunColor;
-        sunIntensity = other.sunIntensity;
-        ambientStrength = other.ambientStrength;
         other.quadVAO = 0; other.quadVBO = 0;
         other.screenWidth = 1280; other.screenHeight = 720;
     }
@@ -480,8 +316,6 @@ bool Renderer::init(int width, int height) {
     lightingShader->setInt("gPosition", 0);
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
-    lightingShader->setInt("gLighting", 3);
-    lightingShader->setInt("gShadowMap", 4);
     lightingShader->unbind();
 
     if (!createGBuffer(width, height)) {
@@ -565,14 +399,6 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
-    // Устанавливаем текстуру lightmap из BSP
-    GLuint lightmapTex = bsp.getLightmapTexture();
-    int lightmapSize = bsp.getLightmapSize();
-    if (lightmapTex != 0 && lightmapSize > 0) {
-        setLightmapTexture(lightmapTex, lightmapSize);
-        std::cout << "Renderer: Lightmap texture set, size=" << lightmapSize << std::endl;
-    }
-
     std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 
     worldLoaded = true;
@@ -592,49 +418,25 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::addLight(const Light& light) {
-    // Динамическое освещение отключено - используем только запечённый свет из BSP
-    // Функция оставлена для совместимости, но не добавляет источники света
-}
-
-void Renderer::clearLights() {
-    lights.clear();
-}
-
-void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem) {
+void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     if (!worldLoaded) return;
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f);
 
     geometryPass(view, projection);
-
-    // Освещение берется из lightmap BSP, динамические источники добавляются отдельно
-    lightingPass(view, viewPos, shadowSystem);
+    lightingPass(viewPos);
 }
 
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_DEPTH_BUFFER_BIT);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
-    geometryShader->setBool("uUseLightmap", true);
-    
-    // Передаем параметры солнца в геометрию для смешивания с lightmap
-    geometryShader->setVec3("uSunDir", sunDirection);
-    geometryShader->setVec3("uSunColor", sunColor);
-    geometryShader->setFloat("uSunIntensity", sunIntensity);
-
-    // Привязываем lightmap текстуру из BSP
-    if (lightmapTexture != 0) {
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, lightmapTexture);
-        geometryShader->setInt("uLightmap", 1);
-    }
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
@@ -651,47 +453,19 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     geometryShader->unbind();
 }
 
-void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, ShadowSystem* shadowSystem) {
+void Renderer::lightingPass(const glm::vec3& viewPos) {
+    (void)viewPos; // Unused in simplified version
+
     GBuffer::unbind();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     lightingShader->bind();
-    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2, GL_TEXTURE3);
-
-    lightingShader->setInt("gPosition", 0);
-    lightingShader->setInt("gNormal", 1);
-    lightingShader->setInt("gAlbedo", 2);
-    lightingShader->setInt("gLighting", 3);
-
-    lightingShader->setVec3("uViewPos", viewPos);
-    lightingShader->setFloat("uAmbient", ambientStrength);
-
-    // Используем только запечённое освещение из BSP - динамические источники отключены
-    lightingShader->setInt("uLightCount", 0);
+    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
 
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     lightingShader->unbind();
-}
-
-void Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) {
-    if (!geometryShader) return;
-
-    geometryShader->bind();
-    geometryShader->setMat4("model", glm::mat4(1.0f));
-    geometryShader->setMat4("view", lightSpaceMatrix);
-    geometryShader->setMat4("projection", glm::mat4(1.0f));
-
-    worldMesh.bind();
-
-    for (const auto& dc : drawCalls) {
-        glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
-            (void*)(dc.indexOffset * sizeof(unsigned int)));
-    }
-
-    BspMesh::unbind();
-    geometryShader->unbind();
 }
 
 void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
@@ -711,14 +485,6 @@ void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
     glEnable(GL_CULL_FACE);
 }
 
-void Renderer::setFlashlight(const glm::vec3& pos, const glm::vec3& dir, bool enabled) {
-    flashlight.enabled = enabled;
-    if (enabled) {
-        flashlight.position = pos;
-        flashlight.direction = dir;
-    }
-}
-
 void Renderer::setViewport(int width, int height) {
     screenWidth = width;
     screenHeight = height;
@@ -728,13 +494,11 @@ void Renderer::setViewport(int width, int height) {
 
 void Renderer::cleanup() {
     destroyGBuffer();
-    shadowFBO.destroy();
     worldMesh.destroy();
     hitboxMesh.destroy();
 
     geometryShader.reset();
     lightingShader.reset();
-    flashlightShader.reset();
 
     if (quadVAO) { glDeleteVertexArrays(1, &quadVAO); quadVAO = 0; }
     if (quadVBO) { glDeleteBuffers(1, &quadVBO); quadVBO = 0; }
