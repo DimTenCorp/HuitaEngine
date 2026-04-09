@@ -112,28 +112,19 @@ bool initSystems(WADLoader& wadLoader) {
         return false;
     }
 
-    // === НОВАЯ СИСТЕМА СВЕТА ===
+    // === СИСТЕМА СВЕТА ===
+    // Используем только pre-baked lightmap из BSP, без генерации теней
     g_shadowSystem = new ShadowSystem();
     g_shadowSystem->init(g_meshCollider);
 
     auto lights = g_bspLoader->extractLights();
     for (auto& light : lights) {
-        if (light.getType() != LightType::Directional) {
-            int shadowID = g_shadowSystem->bakeStaticLight(
-                light.getPosition(),
-                light.getRadius(),
-                g_bspLoader->getWorldBounds()
-            );
-            light.setShadowID(shadowID);
-        }
+        // Не выпекаем тени, используем только свет из lightmap BSP
         g_renderer->addLight(light);
     }
 
-    g_shadowSystem->createDynamicShadow(
-        glm::vec3(0), glm::vec3(0, 0, -1), 60.0f, 30.0f
-    );
     std::cout << "[Init] Light system initialized with " << lights.size()
-        << " lights" << std::endl;
+        << " lights (using BSP lightmaps)" << std::endl;
     // ===========================
 
     glm::vec3 spawnPos;

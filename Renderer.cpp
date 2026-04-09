@@ -60,13 +60,20 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, albedoTex, 0);
 
+    glGenTextures(1, &lightingTex);
+    glBindTexture(GL_TEXTURE_2D, lightingTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, lightingTex, 0);
+
     glGenTextures(1, &depthTex);
     glBindTexture(GL_TEXTURE_2D, depthTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
-    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-    glDrawBuffers(3, attachments);
+    unsigned int attachments[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
+    glDrawBuffers(4, attachments);
 
     bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     if (!complete) std::cerr << "G-Buffer incomplete!" << std::endl;
@@ -80,6 +87,7 @@ void GBuffer::destroy() {
     if (positionTex) { glDeleteTextures(1, &positionTex); positionTex = 0; }
     if (normalTex) { glDeleteTextures(1, &normalTex); normalTex = 0; }
     if (albedoTex) { glDeleteTextures(1, &albedoTex); albedoTex = 0; }
+    if (lightingTex) { glDeleteTextures(1, &lightingTex); lightingTex = 0; }
     if (depthTex) { glDeleteTextures(1, &depthTex); depthTex = 0; }
 }
 
@@ -87,13 +95,15 @@ void GBuffer::bindForWriting() const {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 }
 
-void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const {
+void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo, GLuint texUnitLighting) const {
     glActiveTexture(texUnitPosition);
     glBindTexture(GL_TEXTURE_2D, positionTex);
     glActiveTexture(texUnitNormal);
     glBindTexture(GL_TEXTURE_2D, normalTex);
     glActiveTexture(texUnitAlbedo);
     glBindTexture(GL_TEXTURE_2D, albedoTex);
+    glActiveTexture(texUnitLighting);
+    glBindTexture(GL_TEXTURE_2D, lightingTex);
 }
 
 void GBuffer::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
@@ -208,6 +218,7 @@ static const char* s_geometryVert = R"glsl(
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
+layout (location = 3) in vec3 aLightmapUV;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -216,9 +227,11 @@ uniform mat4 projection;
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
+out vec3 vLightmapUV;
 
 void main() {
     vTexCoord = aTexCoord;
+    vLightmapUV = aLightmapUV;
     mat3 normalMatrix = mat3(transpose(inverse(model)));
     vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
@@ -231,12 +244,16 @@ static const char* s_geometryFrag = R"glsl(
 in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
+in vec3 vLightmapUV;
 
 layout (location = 0) out vec4 gPosition;
 layout (location = 1) out vec4 gNormal;
 layout (location = 2) out vec4 gAlbedo;
+layout (location = 3) out vec4 gLighting;
 
 uniform sampler2D uTexture;
+uniform sampler2DArray uLightmap;
+uniform bool uUseLightmap;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
@@ -244,6 +261,14 @@ void main() {
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
+    
+if (uUseLightmap && length(vLightmapUV) > 0.001) {
+    vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
+    gLighting = vec4(lightmapColor, 1.0);  // Записываем pre-baked свет из BSP в GBuffer
+} else {
+    gLighting = vec4(1.0, 1.0, 1.0, 1.0);
+}
+    
     gAlbedo = texColor;
 }
 )glsl";
@@ -269,6 +294,7 @@ out vec4 FragColor;
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
+uniform sampler2D gLighting;
 uniform sampler2D gShadowMap;
 
 uniform vec3 uViewPos;
@@ -314,17 +340,21 @@ void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
+    vec4 lightmap = texture(gLighting, vTexCoord);
     
     if (length(fragPos) < 0.001) {
         FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    vec3 result = uAmbient * albedo.rgb;
+    // Базовое освещение от lightmap из BSP
+    vec3 result = lightmap.rgb * albedo.rgb;
     
+    // Добавляем солнце
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
     result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
     
+    // Добавляем точечные источники света из сущностей BSP
     for (int i = 0; i < uLightCount; i++) {
         if (uLights[i].outerEnabled.y < 0.5) continue;
         
@@ -460,7 +490,8 @@ bool Renderer::init(int width, int height) {
     lightingShader->setInt("gPosition", 0);
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
-    lightingShader->setInt("gShadowMap", 3);
+    lightingShader->setInt("gLighting", 3);
+    lightingShader->setInt("gShadowMap", 4);
     lightingShader->unbind();
 
     if (!createGBuffer(width, height)) {
@@ -544,6 +575,14 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
+    // Устанавливаем текстуру lightmap из BSP
+    GLuint lightmapTex = bsp.getLightmapTexture();
+    int lightmapSize = bsp.getLightmapSize();
+    if (lightmapTex != 0 && lightmapSize > 0) {
+        setLightmapTexture(lightmapTex, lightmapSize);
+        std::cout << "Renderer: Lightmap texture set, size=" << lightmapSize << std::endl;
+    }
+
     std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 
     worldLoaded = true;
@@ -569,9 +608,10 @@ void Renderer::addLight(const Light& light) {
     rl.type = light.getType();
     rl.position = light.getPosition();
     rl.radius = light.getRadius();
-    rl.shadowID = light.getShadowID();
+    rl.shadowID = light.getShadowID();  // Будет -1 для всех BSP lights
     rl.enabled = true;
     lights.push_back(rl);
+    // bakeStaticLight НЕ вызывается!
 }
 
 void Renderer::clearLights() {
@@ -586,24 +626,27 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, Shad
 
     geometryPass(view, projection);
 
-    if (flashlight.enabled && shadowSystem) {
-        shadowSystem->bindDynamicShadowForWriting();
-        renderShadowPass(shadowSystem->getDynamicLightSpaceMatrix());
-        shadowSystem->unbindDynamicShadow(screenWidth, screenHeight);
-    }
-
+    // Освещение берется из lightmap BSP, динамические источники добавляются отдельно
     lightingPass(view, viewPos, shadowSystem);
 }
 
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
+    geometryShader->setBool("uUseLightmap", true);
+
+    // Привязываем lightmap текстуру из BSP
+    if (lightmapTexture != 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, lightmapTexture);
+        geometryShader->setInt("uLightmap", 1);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
@@ -625,7 +668,12 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     lightingShader->bind();
-    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
+    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2, GL_TEXTURE3);
+
+    lightingShader->setInt("gPosition", 0);
+    lightingShader->setInt("gNormal", 1);
+    lightingShader->setInt("gAlbedo", 2);
+    lightingShader->setInt("gLighting", 3);
 
     lightingShader->setVec3("uViewPos", viewPos);
     lightingShader->setVec3("uSunDir", sunDirection);
@@ -633,22 +681,10 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     lightingShader->setFloat("uSunIntensity", sunIntensity);
     lightingShader->setFloat("uAmbient", ambientStrength);
 
-    bool hasFlashlight = (flashlight.enabled && shadowSystem);
-    lightingShader->setBool("uHasFlashlight", hasFlashlight);
+    // Фонарик отключен - используем только свет из BSP
+    lightingShader->setBool("uHasFlashlight", false);
 
-    if (hasFlashlight) {
-        shadowSystem->updateDynamicShadow(flashlight.position, flashlight.direction);
-
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, shadowSystem->getDynamicDepthMap());
-        lightingShader->setInt("gShadowMap", 3);
-
-        lightingShader->setMat4("uFlashlightMatrix", shadowSystem->getDynamicLightSpaceMatrix());
-        lightingShader->setVec3("uFlashlightPos", flashlight.position);
-        lightingShader->setVec3("uFlashlightDir", flashlight.direction);
-        lightingShader->setFloat("uFlashlightCutoff", glm::cos(flashlight.cutoffOuter));
-    }
-
+    // Динамические источники света из сущностей BSP добавляются поверх lightmap
     std::vector<LightShaderData> visibleLights;
     visibleLights.reserve(lights.size());
 
@@ -658,12 +694,6 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
 
         float distToCamera = glm::distance(light.position, viewPos);
         if (distToCamera > light.radius * 1.5f) continue;
-
-        if (light.shadowID >= 0 && shadowSystem) {
-            if (!shadowSystem->canSeeLight(light.shadowID, viewPos)) {
-                if (distToCamera > light.radius) continue;
-            }
-        }
 
         visibleLights.push_back(light.data);
     }
