@@ -1,6 +1,7 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include "BSPLoader.h"
 #include "Light.h"
+#include "LightSystem.h"
 #include <iostream>
 #include <cstdio>
 #include <cstring>
@@ -656,6 +657,24 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
+    // Setup light styles from BSP faces
+    // Each face has 4 light style indices that reference animated patterns
+    for (size_t i = 0; i < faces.size() && i < 256; ++i) {
+        const BSPFace& face = faces[i];
+        for (int s = 0; s < 4; ++s) {
+            unsigned char styleIdx = face.styles[s];
+            if (styleIdx != 255 && styleIdx < MAX_LIGHTSTYLES) {
+                // Default to 'm' (medium brightness) if no pattern is set
+                // Real implementation would read light style strings from entities
+                static bool initialized[256] = {false};
+                if (!initialized[styleIdx]) {
+                    g_lightSystem.setLightStyle(styleIdx, "m");
+                    initialized[styleIdx] = true;
+                }
+            }
+        }
+    }
+
     buildSubmodelMesh(models[0]);
 
     for (const auto& entity : entities) {
@@ -768,6 +787,9 @@ bool BSPLoader::loadLighting(FILE* file, const BSPHeader& header) {
     }
     
     std::cout << "[BSP] Loaded " << lump.length << " bytes of lighting data" << std::endl;
+    
+    // Pass lightmap data to LightSystem for legacy sampling
+    g_lightSystem.setWorldLightData(lightmapData.data(), lightmapData.size());
     
     // Создаем OpenGL текстуру для световой карты
     glGenTextures(1, &lightmapTexture);

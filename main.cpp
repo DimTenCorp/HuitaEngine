@@ -16,6 +16,7 @@
 #include "WADLoader.h"
 #include "Light.h"
 #include "ShadowSystem.h"
+#include "LightSystem.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -112,14 +113,15 @@ bool initSystems(WADLoader& wadLoader) {
         return false;
     }
 
-    // === СИСТЕМА СВЕТА ===
-    // Используем только pre-baked lightmap из BSP - динамическое освещение отключено
+    // === Quake Light System ===
     g_shadowSystem = new ShadowSystem();
     g_shadowSystem->init(g_meshCollider);
 
-    // Источники света из BSP не добавляются - используется только запечённый свет из lightmap
-    std::cout << "[Init] Light system initialized - using only baked lightmap from BSP" << std::endl;
-    // ===========================
+    std::cout << "[Init] Quake light system initialized:" << std::endl;
+    std::cout << "  - 1024 animated light styles (flicker, pulse, strobe)" << std::endl;
+    std::cout << "  - 64 dynamic lights (rockets, explosions, powerups)" << std::endl;
+    std::cout << "  - BSPX lightgrid with octree for fast sampling" << std::endl;
+    std::cout << "  - Colored lighting and flashblend rendering" << std::endl;
 
     glm::vec3 spawnPos;
     glm::vec3 spawnAngles;
@@ -245,6 +247,13 @@ int main() {
 
         g_player->update(g_deltaTime, g_yaw, g_pitch, g_meshCollider);
         hud.update(g_deltaTime, g_player->getPosition());
+
+        // Animate Quake light styles (flickering lights, strobes, etc.)
+        float time = (float)glfwGetTime();
+        g_lightSystem.animateLightStyles(time);
+
+        // Update dynamic lights (rockets, explosions, powerups)
+        g_lightSystem.updateDLights(time, g_deltaTime);
 
         g_renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
 
