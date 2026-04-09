@@ -60,13 +60,20 @@ bool GBuffer::create(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, albedoTex, 0);
 
+    glGenTextures(1, &lightingTex);
+    glBindTexture(GL_TEXTURE_2D, lightingTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, lightingTex, 0);
+
     glGenTextures(1, &depthTex);
     glBindTexture(GL_TEXTURE_2D, depthTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
-    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-    glDrawBuffers(3, attachments);
+    unsigned int attachments[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
+    glDrawBuffers(4, attachments);
 
     bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     if (!complete) std::cerr << "G-Buffer incomplete!" << std::endl;
@@ -80,6 +87,7 @@ void GBuffer::destroy() {
     if (positionTex) { glDeleteTextures(1, &positionTex); positionTex = 0; }
     if (normalTex) { glDeleteTextures(1, &normalTex); normalTex = 0; }
     if (albedoTex) { glDeleteTextures(1, &albedoTex); albedoTex = 0; }
+    if (lightingTex) { glDeleteTextures(1, &lightingTex); lightingTex = 0; }
     if (depthTex) { glDeleteTextures(1, &depthTex); depthTex = 0; }
 }
 
@@ -87,13 +95,15 @@ void GBuffer::bindForWriting() const {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 }
 
-void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const {
+void GBuffer::bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo, GLuint texUnitLighting) const {
     glActiveTexture(texUnitPosition);
     glBindTexture(GL_TEXTURE_2D, positionTex);
     glActiveTexture(texUnitNormal);
     glBindTexture(GL_TEXTURE_2D, normalTex);
     glActiveTexture(texUnitAlbedo);
     glBindTexture(GL_TEXTURE_2D, albedoTex);
+    glActiveTexture(texUnitLighting);
+    glBindTexture(GL_TEXTURE_2D, lightingTex);
 }
 
 void GBuffer::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
@@ -480,7 +490,8 @@ bool Renderer::init(int width, int height) {
     lightingShader->setInt("gPosition", 0);
     lightingShader->setInt("gNormal", 1);
     lightingShader->setInt("gAlbedo", 2);
-    lightingShader->setInt("gShadowMap", 3);
+    lightingShader->setInt("gLighting", 3);
+    lightingShader->setInt("gShadowMap", 4);
     lightingShader->unbind();
 
     if (!createGBuffer(width, height)) {
@@ -564,6 +575,14 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::sort(drawCalls.begin(), drawCalls.end(),
         [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
 
+    // Устанавливаем текстуру lightmap из BSP
+    GLuint lightmapTex = bsp.getLightmapTexture();
+    int lightmapSize = bsp.getLightmapSize();
+    if (lightmapTex != 0 && lightmapSize > 0) {
+        setLightmapTexture(lightmapTex, lightmapSize);
+        std::cout << "Renderer: Lightmap texture set, size=" << lightmapSize << std::endl;
+    }
+
     std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 
     worldLoaded = true;
@@ -617,13 +636,14 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, Shad
 
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
+    geometryShader->setBool("uUseLightmap", true);
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
@@ -645,7 +665,12 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     lightingShader->bind();
-    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
+    gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2, GL_TEXTURE3);
+
+    lightingShader->setInt("gPosition", 0);
+    lightingShader->setInt("gNormal", 1);
+    lightingShader->setInt("gAlbedo", 2);
+    lightingShader->setInt("gLighting", 3);
 
     lightingShader->setVec3("uViewPos", viewPos);
     lightingShader->setVec3("uSunDir", sunDirection);
@@ -659,9 +684,9 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     if (hasFlashlight) {
         shadowSystem->updateDynamicShadow(flashlight.position, flashlight.direction);
 
-        glActiveTexture(GL_TEXTURE3);
+        glActiveTexture(GL_TEXTURE4);
         glBindTexture(GL_TEXTURE_2D, shadowSystem->getDynamicDepthMap());
-        lightingShader->setInt("gShadowMap", 3);
+        lightingShader->setInt("gShadowMap", 4);
 
         lightingShader->setMat4("uFlashlightMatrix", shadowSystem->getDynamicLightSpaceMatrix());
         lightingShader->setVec3("uFlashlightPos", flashlight.position);
