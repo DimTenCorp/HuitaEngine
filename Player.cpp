@@ -2,26 +2,228 @@
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/normalize_dot.hpp>
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include "TriangleCollider.h"
+
+// Trace result structure for collision detection
+struct TraceResult {
+    float fraction;
+    glm::vec3 endpos;
+    glm::vec3 normal;
+    int entnum;
+    bool startsolid;
+    bool allsolid;
+    bool inwater;
+    
+    TraceResult() : fraction(1.0f), endpos(0.0f), normal(0.0f), entnum(0), 
+                    startsolid(false), allsolid(false), inwater(false) {}
+};
 
 Player::Player() {
     position = glm::vec3(0.0f, 2.0f, 0.0f);
     velocity = glm::vec3(0.0f);
     size = glm::vec3(0.3f, 0.9f, 0.3f);
+    
+    // Quake-style player bounding box (16x16x36 units, halfed for mins/maxs from center)
+    mins = glm::vec3(-16.0f * 0.0254f, -16.0f * 0.0254f, 0.0f);  // Convert from inches to meters
+    maxs = glm::vec3(16.0f * 0.0254f, 16.0f * 0.0254f, 36.0f * 0.0254f);
 
     onGround = false;
-    speed = 6.0f;
-    jumpForce = 8.0f;
-    gravity = 25.0f;
-    friction = 0.5f;
-
+    onLadder = false;
+    waterLevel = 0;
+    
+    pmType = PM_NORMAL;
     noclipMode = false;
-    noclipSpeed = 12.0f;
 
     yaw = -90.0f;
     pitch = 0.0f;
+    
+    jumpKeyHeld = false;
+    waterJumpTime = 0.0f;
+    jumpSecs = 0.0f;
+    
+    meshCollider = nullptr;
+    groundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+    groundKnown = false;
+    
+    numTouch = 0;
+}
+
+// Utility function to get vector length
+static float VectorLength(const glm::vec3& v) {
+    return glm::length(v);
+}
+
+// Utility function to normalize vector and return original length
+static float VectorNormalize(glm::vec3& v) {
+    float len = glm::length(v);
+    if (len > 0.0f) {
+        v = glm::normalize(v);
+    }
+    return len;
+}
+
+// Utility function for dot product
+static float DotProduct(const glm::vec3& a, const glm::vec3& b) {
+    return glm::dot(a, b);
+}
+
+// Utility function to scale vector
+static void VectorScale(glm::vec3& out, const glm::vec3& in, float scale) {
+    out = in * scale;
+}
+
+// Add entity to touch list, discarding duplicates
+void Player::AddTouchedEnt(int num) {
+    if (numTouch >= 64)
+        return;
+    
+    if (numTouch > 0) {
+        if (touchIndex[numTouch - 1] == num)
+            return;  // already added
+    }
+    
+    touchIndex[numTouch] = num;
+    touchVel[numTouch] = velocity;
+    numTouch++;
+}
+
+// Clip velocity when hitting a surface
+void Player::ClipVelocity(glm::vec3& in, const glm::vec3& normal, glm::vec3& out, float overbounce) {
+    float backoff = DotProduct(in, normal) * overbounce;
+    
+    for (int i = 0; i < 3; i++) {
+        float change = normal[i] * backoff;
+        out[i] = in[i] - change;
+        if (out[i] > -STOP_EPSILON && out[i] < STOP_EPSILON)
+            out[i] = 0.0f;
+    }
+}
+
+// Get point contents using hull testing
+int Player::HullPointContents(const glm::vec3& p) {
+    if (!meshCollider)
+        return 0;  // CONTENTS_EMPTY
+    
+    AABB testBox;
+    testBox.min = p + mins;
+    testBox.max = p + maxs;
+    
+    if (meshCollider->intersectAABB(testBox))
+        return 1;  // CONTENTS_SOLID
+    
+    return 0;  // CONTENTS_EMPTY
+}
+
+// Test if player position is valid (not in solid)
+bool Player::TestPlayerPosition(const glm::vec3& point) {
+    return !checkCollisionMesh(point);
+}
+
+// Perform a player trace (box trace)
+TraceResult Player::PM_PlayerTrace(const glm::vec3& start, const glm::vec3& end, unsigned int solidMask) {
+    TraceResult result;
+    
+    if (!meshCollider) {
+        result.fraction = 1.0f;
+        result.endpos = end;
+        return result;
+    }
+    
+    // Simple box trace implementation
+    glm::vec3 dir = end - start;
+    float dist = VectorLength(dir);
+    
+    if (dist < 0.001f) {
+        result.startsolid = checkCollisionMesh(start);
+        result.fraction = result.startsolid ? 0.0f : 1.0f;
+        result.endpos = start;
+        return result;
+    }
+    
+    glm::vec3 normalizedDir = glm::normalize(dir);
+    
+    // Step through the trace in small increments
+    int steps = static_cast<int>(dist * 100.0f) + 1;
+    float stepSize = dist / steps;
+    
+    glm::vec3 currentPos = start;
+    glm::vec3 prevPos = start;
+    
+    for (int i = 0; i <= steps; i++) {
+        currentPos = start + normalizedDir * (i * stepSize);
+        
+        if (checkCollisionMesh(currentPos)) {
+            // Found collision, interpolate to find exact hit point
+            float t = 0.5f;
+            for (int j = 0; j < 8; j++) {
+                glm::vec3 testPos = prevPos + (currentPos - prevPos) * t;
+                if (checkCollisionMesh(testPos)) {
+                    currentPos = testPos;
+                    t *= 0.5f;
+                } else {
+                    prevPos = testPos;
+                    t += t * 0.5f;
+                }
+            }
+            
+            result.fraction = glm::distance(start, prevPos) / dist;
+            result.endpos = prevPos;
+            result.normal = normalizedDir;  // Simplified normal
+            result.startsolid = (i == 0);
+            return result;
+        }
+        
+        prevPos = currentPos;
+    }
+    
+    result.fraction = 1.0f;
+    result.endpos = end;
+    return result;
+}
+
+// Get ground height at position
+glm::vec3 Player::GetGroundHeight(const glm::vec3& pos) {
+    glm::vec3 testPos = pos;
+    testPos.y -= 1.0f;  // Test below player
+    
+    TraceResult tr = PM_PlayerTrace(pos, testPos, 1);
+    
+    if (tr.fraction < 1.0f && !tr.startsolid) {
+        return tr.endpos;
+    }
+    
+    return pos;
+}
+
+// Categorize player position (on ground, in water, etc.)
+void Player::CategorizePosition() {
+    glm::vec3 testPoint = position;
+    testPoint.y += mins.y - 2.0f * 0.0254f;  // Test below feet
+    
+    int pointContents = HullPointContents(testPoint);
+    
+    // Check if on ground
+    if (pmType != PM_FLY && pmType != PM_SPECTATOR && pmType != PM_NONE) {
+        glm::vec3 downTest = position;
+        downTest.y -= 2.0f * 0.0254f;  // Small offset
+        
+        if (!TestPlayerPosition(downTest)) {
+            onGround = true;
+            groundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+            groundKnown = true;
+        } else {
+            onGround = false;
+            groundKnown = false;
+        }
+    }
+    
+    // Water level detection (simplified)
+    waterLevel = 0;
+    onLadder = false;
 }
 
 void Player::handleInput(float deltaTime) {
