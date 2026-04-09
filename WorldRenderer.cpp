@@ -111,7 +111,7 @@ void WorldRenderer::drawTexturedWorld(WorldSurfaceList& surfList, const Shader& 
         // В оригинальном коде: mat->activateTextures()
         // Здесь нужна интеграция с вашей системой материалов
         
-        shader.use();
+        shader.bind();
         // shader.setUniform(...); // Настройка шейдера
 
         // Заполняем EBO
@@ -174,7 +174,7 @@ void WorldRenderer::drawSkybox(WorldSurfaceList& surfList, const Shader& shader)
     glDepthFunc(GL_LEQUAL);
 
     // Биндим скайбокс материал
-    shader.use();
+    shader.bind();
     // shader.setUniform(...);
 
     // Заполняем EBO
@@ -288,7 +288,7 @@ void WorldRenderer::drawWireframe(WorldSurfaceList& surfList, const Shader& wire
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, worldEBO);
 
     // Включаем шейдер wireframe
-    wireframeShader.use();
+    wireframeShader.bind();
     // shader.setUniform("color", glm::vec3(0.8f));
 
     // Убираем последний PRIMITIVE_RESTART_IDX
@@ -376,7 +376,10 @@ void WorldRenderer::markLeaves(const Camera& camera, WorldSurfaceList& surfList)
     // PVS (Potentially Visible Set) логика
     // В оригинале используется ConVar r_lockpvs и r_novis
     
-    glm::vec3 viewOrigin = camera.getPosition();
+    // Получаем позицию камеры через существующий API
+    float camX, camY, camZ;
+    camera.getPosition(&camX, &camY, &camZ);
+    glm::vec3 viewOrigin(camX, camY, camZ);
     
     // Находим лист, в котором находится камера
     // int viewleaf = bspLoader.pointInLeaf(viewOrigin);
@@ -478,7 +481,9 @@ void WorldRenderer::recursiveWorldNodesTextured(const Camera& camera,
     const Node& node = nodes[nodeIdx];
 
     // Вычисляем сторону относительно плоскости
-    glm::vec3 viewOrigin = camera.getPosition();
+    float camX, camY, camZ;
+    camera.getPosition(&camX, &camY, &camZ);
+    glm::vec3 viewOrigin(camX, camY, camZ);
     float dot = glm::dot(viewOrigin, node.plane ? node.plane->normal : glm::vec3(1,0,0)) 
                 - (node.plane ? node.plane->dist : 0);
     int side = (dot >= 0.0f) ? 0 : 1;

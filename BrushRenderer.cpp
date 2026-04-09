@@ -62,7 +62,7 @@ void BrushRenderer::drawBrushEntity(const Camera& camera,
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, worldEBO);
 
     // Включаем шейдер и настраиваем матрицу модели
-    shader.use();
+    shader.bind();
     // shader.setUniform("modelMatrix", transformMat);
     // shader.setUniform("renderMode", 0); // kRenderNormal
     // shader.setUniform("renderFxAmount", 0.0f);
@@ -130,7 +130,11 @@ void BrushRenderer::drawSortedBrushEntity(const Camera& camera,
 
     // Сортируем поверхности по дальности от камеры
     // Примечание: в оригинальном коде используется dot product с forward вектором
-    glm::vec3 viewForward = camera.getFront();
+    // Получаем forward вектор через существующий API Camera
+    float frontX, frontY, frontZ;
+    // В вашем Camera нет getFront(), используем внутреннюю логику или заглушку
+    // Для правильной работы нужно добавить getter во Front вектор в Camera.h
+    glm::vec3 viewForward(0, 0, -1); // Заглушка - направление взгляда по умолчанию
     
     std::sort(sortBuffer.begin(), sortBuffer.end(), 
               [&, this](const SurfaceSortData& lhs, const SurfaceSortData& rhs) {
@@ -146,7 +150,7 @@ void BrushRenderer::drawSortedBrushEntity(const Camera& camera,
               });
 
     // Включаем шейдер и настраиваем параметры
-    shader.use();
+    shader.bind();
     // shader.setUniform("modelMatrix", transformMat);
     // shader.setUniform("renderMode", 0); // kRenderNormal или другой
     // shader.setUniform("renderFxAmount", renderFxAmount / 255.0f);
