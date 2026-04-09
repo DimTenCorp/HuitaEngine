@@ -1,6 +1,7 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
 #include "BSPLoader.h"
 #include "Light.h"
+#include "Renderer.h"
 #include <iostream>
 #include <cstdio>
 #include <cstring>

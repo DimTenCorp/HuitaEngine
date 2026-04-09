@@ -8,8 +8,9 @@
 #include <glad/glad.h>
 #include "Light.h"
 
-// Forward declaration only for WADLoader
+// Forward declarations
 class WADLoader;
+class Renderer;
 
 // Include AABB definition - moved to separate header to avoid circular dependency
 #include "AABB.h"
