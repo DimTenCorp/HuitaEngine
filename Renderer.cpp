@@ -262,12 +262,12 @@ void main() {
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
     
-    if (uUseLightmap && length(vLightmapUV) > 0.001) {
-        vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-        gLighting = vec4(lightmapColor, 1.0);
-    } else {
-        gLighting = vec4(1.0, 1.0, 1.0, 1.0);
-    }
+if (uUseLightmap && length(vLightmapUV) > 0.001) {
+    vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
+    gLighting = vec4(lightmapColor, 1.0);  // Записываем pre-baked свет из BSP в GBuffer
+} else {
+    gLighting = vec4(1.0, 1.0, 1.0, 1.0);
+}
     
     gAlbedo = texColor;
 }
@@ -608,9 +608,10 @@ void Renderer::addLight(const Light& light) {
     rl.type = light.getType();
     rl.position = light.getPosition();
     rl.radius = light.getRadius();
-    rl.shadowID = light.getShadowID();
+    rl.shadowID = light.getShadowID();  // Будет -1 для всех BSP lights
     rl.enabled = true;
     lights.push_back(rl);
+    // bakeStaticLight НЕ вызывается!
 }
 
 void Renderer::clearLights() {
