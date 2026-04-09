@@ -109,6 +109,7 @@ public:
     void setLightStyle(int index, const std::string& pattern);
     void animateLightStyles(float time);
     const std::array<int, MAX_LIGHTSTYLES>& getLightStyleValues() const { return d_lightstylevalue; }
+    int getLightStyleValue(int index) const { return d_lightstylevalue[index]; }
     
     // Dynamic lights management
     DLight* allocDLight(int key);
@@ -154,6 +155,7 @@ private:
     // Internal helpers
     int parseLightStyleValue(const LightStyle& style, float time) const;
     glm::vec3 recursiveLightPoint(const glm::vec3& point, float maxDist) const;
+    bool sampleLightGridSingleValue(const LightGrid& grid, int x, int y, int z, glm::vec3& result) const;
 };
 
 // Global light system instance
