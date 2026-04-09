@@ -51,8 +51,6 @@ private:
     void applyAcceleration(float wishspeed, const glm::vec3& wishdir);
     void applyAirAcceleration(float wishspeed, const glm::vec3& wishveloc);
     void userFriction();
-    
-    void resolveCollisionAxis(float deltaTime, int axis);
 
 public:
     Player();

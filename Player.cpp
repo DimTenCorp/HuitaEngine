@@ -177,7 +177,7 @@ int Player::flyMove(float deltaTime) {
                 if (normal.y > 0.7f) blocked |= 1;  // пол
             } else {
                 normal.z = (penetration.z > 0) ? -1.0f : 1.0f;
-                if (normal.z == 0.0f) blocked |= 2;  // стена
+                blocked |= 2;  // стена
             }
             
             // Скользим вдоль плоскости
@@ -227,18 +227,21 @@ void Player::walkMove(float deltaTime) {
     glm::vec3 oldOrg = position;
     glm::vec3 oldVel = velocity;
     
-    onGround = false;
-    
     // Пробуем обычное движение
     int clip = flyMove(deltaTime);
     
-    // Если не столкнулись со стеной/ступенькой, выходим
+    // Если не столкнулись со стеной, выходим
     if (!(clip & 2)) {
         return;
     }
     
-    // Если не были на земле и не в воде, не идём по лестнице
-    if (!onGround) {
+    // Проверяем, были ли на земле перед движением
+    glm::vec3 groundTest = oldOrg;
+    groundTest.y -= 0.1f;
+    bool wasOnGround = checkCollisionMesh(groundTest);
+    
+    // Если не были на земле, не идём по лестнице
+    if (!wasOnGround) {
         return;
     }
     
@@ -361,40 +364,21 @@ void Player::moveNoclip(float deltaTime) {
 // MOVE WITH COLLISION - основное движение с коллизиями (Quake-style)
 // ============================================================================
 void Player::moveWithCollision(float deltaTime) {
-    const float gravity = 800.0f;
-    const float maxSpeed = 8.0f;
-    const float accelerate = 10.0f;
-    const float airAccel = 1.0f;
-    const float friction = 4.0f;
-    const float stepHeight = 0.5f;
-    
-    // 1. Гравитация
+    // 1. Гравитация (используем гравитацию из членов класса)
     if (!onGround) {
         velocity.y -= gravity * deltaTime;
     }
     
-    // 2. Получаем направление ввода
-    glm::vec3 forward = glm::vec3(camera->Front.x, 0.0f, camera->Front.z);
-    glm::vec3 right = glm::vec3(camera->Right.x, 0.0f, camera->Right.z);
-    
-    if (glm::length(forward) > 0.001f) forward = glm::normalize(forward);
-    if (glm::length(right) > 0.001f) right = glm::normalize(right);
-    
-    glm::vec3 wishDir = glm::vec3(0.0f);
-    if (keys[GLFW_KEY_W]) wishDir += forward;
-    if (keys[GLFW_KEY_S]) wishDir -= forward;
-    if (keys[GLFW_KEY_D]) wishDir += right;
-    if (keys[GLFW_KEY_A]) wishDir -= right;
-    
+    // 2. Используем wishDir из handleInput
+    glm::vec3 wishDir = this->wishDir;
     float wishSpeed = 0.0f;
     if (glm::length(wishDir) > 0.001f) {
-        wishDir = glm::normalize(wishDir);
         wishSpeed = maxSpeed;
     }
     
     // 3. Трение и ускорение
     float currentSpeed = glm::length(glm::vec3(velocity.x, 0, velocity.z));
-    float accel = onGround ? accelerate : airAccel;
+    float accel = onGround ? accelRate : airAccelRate;
     
     if (onGround && wishSpeed == 0) {
         // Трение когда стоим
@@ -421,81 +405,15 @@ void Player::moveWithCollision(float deltaTime) {
         }
     }
     
-    // 4. Движение с коллизиями (разбиваем на шаги)
-    float timeLeft = deltaTime;
-    const int maxSteps = 5;
+    // 4. Движение с коллизиями через flyMove (Quake-style)
+    walkMove(deltaTime);
     
-    for (int step = 0; step < maxSteps; step++) {
-        if (timeLeft <= 0.001f) break;
-        
-        glm::vec3 moveVec = velocity * timeLeft;
-        glm::vec3 desiredPos = position + moveVec;
-        
-        // Пробуем двигаться
-        if (!checkCollisionMesh(desiredPos)) {
-            position = desiredPos;
-            timeLeft = 0;
-        } else {
-            // Столкновение - пробуем Step Up
-            glm::vec3 stepPos = position;
-            stepPos.y += stepHeight;
-            
-            bool canStep = !checkCollisionMesh(stepPos);
-            if (canStep) {
-                glm::vec3 stepForwardPos = stepPos + moveVec;
-                if (!checkCollisionMesh(stepForwardPos)) {
-                    position = stepForwardPos;
-                    timeLeft = 0;
-                    onGround = true;
-                    continue;
-                }
-            }
-            
-            // Не смогли шагнуть - это стена, скользим по осям
-            float oldVelX = velocity.x;
-            float oldVelZ = velocity.z;
-            
-            // Движение по X
-            glm::vec3 testX = position + glm::vec3(moveVec.x, 0, 0);
-            if (!checkCollisionMesh(testX)) {
-                position.x = testX.x;
-            } else {
-                velocity.x = 0;
-            }
-            
-            // Движение по Z
-            glm::vec3 testZ = position + glm::vec3(0, 0, moveVec.z);
-            if (!checkCollisionMesh(testZ)) {
-                position.z = testZ.z;
-            } else {
-                velocity.z = 0;
-            }
-            
-            // Движение по Y
-            glm::vec3 testY = position + glm::vec3(0, moveVec.y, 0);
-            if (!checkCollisionMesh(testY)) {
-                position.y = testY.y;
-            } else {
-                if (velocity.y < 0) {
-                    onGround = true;
-                    velocity.y = 0;
-                } else {
-                    velocity.y = 0;
-                }
-            }
-            
-            timeLeft = 0;
-        }
-    }
-    
-    // 5. Проверка земли
-    glm::vec3 groundTest = position;
-    groundTest.y -= 0.1f;
-    if (checkCollisionMesh(groundTest)) {
+    // 5. Проверка земли после движения
+    if (!checkOnGround()) {
+        onGround = false;
+    } else {
         onGround = true;
         if (velocity.y < 0) velocity.y = 0;
-    } else {
-        onGround = false;
     }
 }
 
@@ -524,38 +442,12 @@ bool Player::checkCollisionMesh(const glm::vec3& pos) const {
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
     glm::vec3 testPos = position;
-    testPos.y -= 0.01f;
+    testPos.y -= 0.1f;  // Увеличенный отступ для лучшей проверки земли
     return checkCollisionMesh(testPos);
 }
 
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
-    glm::vec3 newPos = position;
-
-    if (axis == 0) newPos.x += velocity.x * deltaTime;
-    else if (axis == 1) newPos.y += velocity.y * deltaTime;
-    else newPos.z += velocity.z * deltaTime;
-
-    if (checkCollisionMesh(newPos)) {
-        if (axis == 1) {
-            if (velocity.y > 0) {
-                velocity.y = 0;
-            }
-            else if (velocity.y < 0) {
-                onGround = true;
-                velocity.y = 0;
-            }
-        }
-        else {
-            // Для X и Z осей - просто останавливаем движение
-            if (axis == 0) velocity.x = 0;
-            else velocity.z = 0;
-        }
-        return;
-    }
-
-    if (axis == 0) position.x = newPos.x;
-    else if (axis == 1) position.y = newPos.y;
-    else position.z = newPos.z;
+    // Эта функция больше не используется - удалена в пользу flyMove/walkMove
 }
 
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
