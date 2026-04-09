@@ -1,5 +1,4 @@
-﻿#define _CRT_SECURE_NO_WARNINGS
-#include "BSPLoader.h"
+﻿#include "BSPLoader.h"
 #include "Light.h"
 #include <iostream>
 #include <cstdio>
@@ -12,8 +11,19 @@
 #include <glm/gtc/type_ptr.hpp>
 #include "WADLoader.h"
 #include "TriangleCollider.h"
+#include <unordered_set>
 
 static const float BSP_SCALE = 0.025f;
+
+// Быстрый парсинг строки в float массив
+static bool parseVector3(const std::string& str, float& x, float& y, float& z) {
+    return sscanf(str.c_str(), "%f %f %f", &x, &y, &z) == 3;
+}
+
+// Проверка является ли класс сущности критическим
+static inline bool isCriticalEntityClass(const std::string& classname) {
+    return CRITICAL_ENTITY_CLASSES.find(classname) != CRITICAL_ENTITY_CLASSES.end();
+}
 
 static glm::vec3 convertPosition(const glm::vec3& bspPos) {
     return glm::vec3(-bspPos.x * BSP_SCALE, bspPos.z * BSP_SCALE, bspPos.y * BSP_SCALE);
@@ -319,64 +329,131 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_ENTITIES];
     if (lump.length == 0) return false;
+    
+    // Читаем весь lump в буфер
     std::string buffer;
     buffer.resize(lump.length);
     fseek(file, lump.offset, SEEK_SET);
     fread(&buffer[0], 1, lump.length, file);
 
+    // Оптимизированный парсер: пропускаем ненужные сущности
     size_t pos = 0;
-    while (pos < buffer.size()) {
-        while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
-        if (pos >= buffer.size() || buffer[pos] != '{') break;
+    const size_t len = buffer.size();
+    
+    while (pos < len) {
+        // Пропускаем пробелы
+        while (pos < len && (buffer[pos] <= 32)) pos++;
+        if (pos >= len || buffer[pos] != '{') break;
         pos++;
 
-        BSPEntity entity;
-        while (pos < buffer.size()) {
-            while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
+        // Сначала собираем classname чтобы решить сохранять ли сущность
+        std::string classname;
+        std::string model;
+        glm::vec3 origin(0);
+        glm::vec3 angles(0);
+        bool hasOrigin = false;
+        bool hasAngles = false;
+        
+        // Быстрый проход для извлечения ключевых полей
+        size_t entityStart = pos;
+        bool skipEntity = false;
+        
+        while (pos < len) {
+            // Пропускаем пробелы
+            while (pos < len && (buffer[pos] <= 32)) pos++;
             if (buffer[pos] == '}') { pos++; break; }
             if (buffer[pos] != '"') { pos++; continue; }
             pos++;
+            
+            // Ключ
             size_t keyStart = pos;
-            while (pos < buffer.size() && buffer[pos] != '"') pos++;
-            std::string key = buffer.substr(keyStart, pos - keyStart);
+            while (pos < len && buffer[pos] != '"') pos++;
+            if (pos >= len) break;
+            std::string_view keyView(buffer.data() + keyStart, pos - keyStart);
             pos++;
-
-            while (pos < buffer.size() && std::isspace(static_cast<unsigned char>(buffer[pos]))) pos++;
-            if (buffer[pos] != '"') { pos++; continue; }
+            
+            // Пропускаем пробелы
+            while (pos < len && (buffer[pos] <= 32)) pos++;
+            if (pos >= len || buffer[pos] != '"') { pos++; continue; }
             pos++;
+            
+            // Значение
             size_t valStart = pos;
-            while (pos < buffer.size() && buffer[pos] != '"') pos++;
-            std::string value = buffer.substr(valStart, pos - valStart);
+            while (pos < len && buffer[pos] != '"') pos++;
+            if (pos >= len) break;
+            std::string_view valView(buffer.data() + valStart, pos - valStart);
             pos++;
-
-            entity.properties[key] = value;
-            if (key == "classname") entity.classname = value;
-            if (key == "model") entity.model = value;
-
-            if (key == "origin") {
-                float ox = 0, oy = 0, oz = 0;
-                int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
-                if (parsed != 3) {
-                    std::cerr << "[BSP] Failed to parse origin: \"" << value << "\"\n";
-                    entity.origin = glm::vec3(0);
-                } else {
-                    entity.origin = convertPosition(glm::vec3(ox, oy, oz));
+            
+            // Обрабатываем только ключевые поля
+            if (keyView == "classname") {
+                classname = std::string(valView);
+                // Если это не критическая сущность, помечаем на пропуск
+                if (!isCriticalEntityClass(classname)) {
+                    skipEntity = true;
                 }
-            }
-
-            if (key == "angles") {
-                float ax = 0, ay = 0, az = 0;
-                int parsed = sscanf(value.c_str(), "%f %f %f", &ax, &ay, &az);
-                if (parsed != 3) {
-                    std::cerr << "[BSP] Failed to parse angles: \"" << value << "\"\n";
-                    entity.angles = glm::vec3(0);
-                } else {
-                    entity.angles = glm::vec3(ax, ay, az);
+            } else if (keyView == "origin" && !hasOrigin) {
+                float ox, oy, oz;
+                if (parseVector3(std::string(valView), ox, oy, oz)) {
+                    origin = convertPosition(glm::vec3(ox, oy, oz));
+                    hasOrigin = true;
                 }
+            } else if (keyView == "angles" && !hasAngles) {
+                float ax, ay, az;
+                if (parseVector3(std::string(valView), ax, ay, az)) {
+                    angles = glm::vec3(ax, ay, az);
+                    hasAngles = true;
+                }
+            } else if (keyView == "model") {
+                model = std::string(valView);
             }
         }
-        entities.push_back(entity);
+        
+        // Сохраняем только критические сущности
+        if (!skipEntity && !classname.empty()) {
+            BSPEntity entity;
+            entity.classname = classname;
+            entity.model = model;
+            entity.origin = origin;
+            entity.angles = angles;
+            
+            // Для критических сущностей сохраняем все свойства (если нужно)
+            if (classname == "light_environment") {
+                // Перепарсиваем для сохранения всех свойств
+                pos = entityStart;
+                while (pos < len) {
+                    while (pos < len && (buffer[pos] <= 32)) pos++;
+                    if (buffer[pos] == '}') break;
+                    if (buffer[pos] != '"') { pos++; continue; }
+                    pos++;
+                    
+                    size_t keyStart = pos;
+                    while (pos < len && buffer[pos] != '"') pos++;
+                    if (pos >= len) break;
+                    std::string key = buffer.substr(keyStart, pos - keyStart);
+                    pos++;
+                    
+                    while (pos < len && (buffer[pos] <= 32)) pos++;
+                    if (pos >= len || buffer[pos] != '"') { pos++; continue; }
+                    pos++;
+                    
+                    size_t valStart = pos;
+                    while (pos < len && buffer[pos] != '"') pos++;
+                    if (pos >= len) break;
+                    std::string value = buffer.substr(valStart, pos - valStart);
+                    pos++;
+                    
+                    entity.properties[key] = value;
+                }
+                // Пропускаем закрывающую скобку
+                while (pos < len && (buffer[pos] <= 32)) pos++;
+                if (pos < len && buffer[pos] == '}') pos++;
+            }
+            
+            entities.push_back(std::move(entity));
+        }
     }
+    
+    std::cout << "[BSP] Parsed " << entities.size() << " critical entities (optimized)" << std::endl;
     return true;
 }
 

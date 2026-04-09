@@ -41,6 +41,19 @@ struct BSPModel { float min[3]; float max[3]; float origin[3]; int headNode[4]; 
 struct BSPTexInfo { float s[4]; float t[4]; int textureIndex; int flags; };
 #pragma pack(pop)
 
+// Ключевые классы сущностей для быстрого поиска
+static const std::unordered_set<std::string> CRITICAL_ENTITY_CLASSES = {
+    "info_player_start",
+    "info_player_deathmatch", 
+    "info_player_coop",
+    "info_player_team1",
+    "info_player_team2",
+    "info_player_axis",
+    "info_player_allies",
+    "player_start",
+    "light_environment"
+};
+
 struct BSPVertex {
     glm::vec3 position;
     glm::vec3 normal;
