@@ -3,19 +3,31 @@
 #include <vector>
 #include "TriangleCollider.h"
 
+// Quake-style movement constants
+constexpr float MOVE_EPSILON = 0.01f;
+constexpr float STOP_EPSILON = 0.1f;
+constexpr int MAX_CLIP_PLANES = 5;
+constexpr float STEPSIZE = 0.45f; // 18 units in Quake (~0.45m)
+constexpr int NUM_MOVE_BUMPS = 4;
+
 class MeshCollider;
 
 class Player {
 private:
     glm::vec3 position;
     glm::vec3 velocity;
+    glm::vec3 wishDir;        // направление желания движения
     glm::vec3 size;
 
     bool onGround;
     float speed;
+    float maxSpeed;
     float jumpForce;
     float gravity;
     float friction;
+    float stopSpeed;
+    float accelRate;       // скорость ускорения (sv_accelerate)
+    float airAccelRate;    // ускорение в воздухе
 
     float yaw;
     float pitch;
@@ -26,8 +38,25 @@ private:
     const MeshCollider* meshCollider = nullptr;
     bool jumpKeyWasHeld = false;
 
-    float stepHeight = 0.45f;
-    float stepUpSpeed = 1.0f;
+    float stepHeight;
+    
+    // Для обработки движения
+    glm::vec3 baseVelocity;   // для лифтов и движущихся платформ
+    int groundEntity = -1;
+
+    // Вспомогательные функции для Quake-style движения
+    void clipVelocity(const glm::vec3& in, const glm::vec3& normal, glm::vec3& out, float overbounce);
+    int flyMove(float deltaTime);
+    void walkMove(float deltaTime);
+    void applyAcceleration(float wishspeed, const glm::vec3& wishdir);
+    void applyAirAcceleration(float wishspeed, const glm::vec3& wishveloc);
+    void userFriction();
+    bool tryStepUpQuake(float deltaTime, glm::vec3& velocity);
+    
+    // Старый метод (оставлен для совместимости)
+    bool tryStepUpOld(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight, float deltaTime);
+
+    void resolveCollisionAxis(float deltaTime, int axis);
 
 public:
     Player();
@@ -41,11 +70,7 @@ public:
     bool checkCollision(const glm::vec3& pos, const AABB& box);
     bool checkCollisionMesh(const glm::vec3& pos) const;
     bool checkOnGround() const;
-    // ИСПРАВЛЕНО: добавлен deltaTime параметр
-    bool tryStepUp(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight, float deltaTime);
-
-    void resolveCollisionAxis(float deltaTime, int axis);
-
+    
     void toggleNoclip() { noclipMode = !noclipMode; }
     bool isNoclip() const { return noclipMode; }
 
@@ -67,4 +92,9 @@ public:
     void setPitch(float p) { pitch = p; }
     float getYaw() const { return yaw; }
     float getPitch() const { return pitch; }
+    
+    // Геттеры для физических параметров
+    float getSpeed() const { return speed; }
+    float getMaxSpeed() const { return maxSpeed; }
+    float getGravity() const { return gravity; }
 };
