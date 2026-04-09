@@ -96,6 +96,11 @@ private:
 
     // Получение матрицы трансформации brush модели
     glm::mat4 getBrushTransformation(const glm::vec3& origin, const glm::vec3& angles) const;
+    
+    // Псевдоним для совместимости
+    glm::mat4 getBrushTransform(const glm::vec3& origin, const glm::vec3& angles) const {
+        return getBrushTransformation(origin, angles);
+    }
 
     // Добавление поверхности в текущий батч
     void batchAddSurface(unsigned int vertexOffset, unsigned int vertexCount);

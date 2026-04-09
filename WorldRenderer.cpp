@@ -15,16 +15,10 @@ WorldRenderer::~WorldRenderer() {
     cleanup();
 }
 
-bool WorldRenderer::initialize(const BSPLoader& bspLoader) {
+bool WorldRenderer::init(const BSPLoader& bspLoader) {
     if (initialized) {
         return true;
     }
-
-    // Получаем данные из BSP загрузчика
-    const auto& faces = bspLoader.getMeshIndices(); // Используем как временное решение
-    const auto& planes = /* нужно добавить getter в BSPLoader */ std::vector<BSPPlane>();
-    const auto& leaves_data = /* нужно добавить getter */ std::vector<int>();
-    const auto& nodes_data = /* нужно добавить getter */ std::vector<int>();
 
     // Создаем листья и узлы
     createLeaves(bspLoader);
@@ -38,11 +32,8 @@ bool WorldRenderer::initialize(const BSPLoader& bspLoader) {
     createBuffers();
 
     // Инициализируем список поверхностей
-    // Примечание: здесь нужна интеграция с данными о поверхностях из BSP
-    // В оригинальном коде поверхности уже подготовлены SceneRenderer'ом
-    
-    nextMaterialIndex = 1; // Минимум одна текстура
-    surfaces.reserve(1000); // Резервируем место
+    nextMaterialIndex = 1;
+    surfaces.reserve(1000);
 
     initialized = true;
     return true;
@@ -58,6 +49,204 @@ void WorldRenderer::cleanup() {
     leaves.clear();
     surfaces.clear();
     initialized = false;
+}
+
+void WorldRenderer::createLeaves(const BSPLoader& bspLoader) {
+    // Заглушка: нужно добавить getter для листьев в BSPLoader
+    // leaves = bspLoader.getLeaves();
+    leaves.clear();
+}
+
+void WorldRenderer::createNodes(const BSPLoader& bspLoader) {
+    // Заглушка: нужно добавить getter для узлов в BSPLoader
+    // nodes = bspLoader.getNodes();
+    nodes.clear();
+}
+
+void WorldRenderer::updateNodeParents(int nodeIdx, int parent) {
+    if (nodeIdx >= static_cast<int>(nodes.size())) {
+        return;
+    }
+    
+    nodes[nodeIdx].parentIdx = parent;
+    
+    // Рекурсивно обновляем детей
+    Node& node = nodes[nodeIdx];
+    if (node.children[0] != 0) {
+        updateNodeParents(node.children[0], nodeIdx);
+    }
+    if (node.children[1] != 0) {
+        updateNodeParents(node.children[1], nodeIdx);
+    }
+}
+
+void WorldRenderer::createBuffers() {
+    // Создаем EBO для батчинга
+    glGenBuffers(1, &worldEBO);
+    worldEBOBuf.reserve(10000);
+}
+
+void WorldRenderer::render(const glm::vec3& viewPos, const glm::mat4& view, const glm::mat4& projection,
+                           Shader& shader, const BSPLightmap& lightmap) {
+    if (!initialized) {
+        return;
+    }
+
+    stats.reset();
+    
+    WorldSurfaceList surfList;
+    surfList.nodeVisFrame.resize(nodes.size(), 0);
+    surfList.leafVisFrame.resize(leaves.size(), 0);
+    
+    // Получаем видимые поверхности
+    getVisibleSurfaces(viewPos, surfList);
+    
+    // Рендерим текстурный мир
+    drawTexturedWorld(surfList, shader, lightmap);
+    
+    // Сохраняем статистику
+    lastDrawCalls = stats.drawCalls;
+    lastTriangles = stats.worldPolys + stats.skyPolys;
+}
+
+void WorldRenderer::getVisibleSurfaces(const glm::vec3& viewPos, WorldSurfaceList& surfList) {
+    surfList.textureChain.clear();
+    surfList.skySurfaces.clear();
+    surfList.textureChainFrames.clear();
+    surfList.visFrame++;
+    
+    // Находим лист, в котором находится камера
+    // Заглушка: нужна реальная логика поиска листа
+    surfList.viewLeaf = 0;
+    
+    // Помечаем видимые листья
+    markLeaves(viewPos, surfList);
+    
+    // Обходим узлы и собираем видимые поверхности
+    if (!nodes.empty()) {
+        recursiveWorldNodesTextured(viewPos, surfList, 0);
+    }
+}
+
+void WorldRenderer::markLeaves(const glm::vec3& viewPos, WorldSurfaceList& surfList) {
+    // Заглушка: реализация PVS (Potentially Visible Set)
+    // В реальной реализации нужно использовать visData из BSP
+    if (surfList.viewLeaf >= 0 && surfList.viewLeaf < static_cast<int>(leaves.size())) {
+        surfList.leafVisFrame[surfList.viewLeaf] = surfList.visFrame;
+    }
+}
+
+void WorldRenderer::recursiveWorldNodesTextured(const glm::vec3& viewPos, WorldSurfaceList& surfList, int nodeIdx) {
+    if (nodeIdx < 0 || nodeIdx >= static_cast<int>(nodes.size())) {
+        return;
+    }
+    
+    Node& node = nodes[nodeIdx];
+    
+    // Frustum culling можно добавить здесь
+    
+    // Проверяем, является ли узел листом
+    if (node.contents != CONTENTS_EMPTY) {
+        // Это лист
+        if (nodeIdx < static_cast<int>(leaves.size())) {
+            Leaf& leaf = leaves[nodeIdx];
+            if (leafVisFrame[nodeIdx] == surfList.visFrame) {
+                // Добавляем поверхности листа
+                // Заглушка: нужна реальная логика
+            }
+        }
+        return;
+    }
+    
+    // Обходим детей
+    recursiveWorldNodesTextured(viewPos, surfList, node.children[0]);
+    recursiveWorldNodesTextured(viewPos, surfList, node.children[1]);
+    
+    // Добавляем поверхности узла
+    for (unsigned int i = 0; i < node.numSurfaces; ++i) {
+        unsigned int surfIdx = node.firstSurface + i;
+        if (surfIdx < surfaces.size()) {
+            RenderSurface& surf = surfaces[surfIdx];
+            
+            // Пропускаем небо в обычном рендеринге
+            if (surf.flags & SURF_DRAWSKY) {
+                surfList.skySurfaces.push_back(surfIdx);
+                continue;
+            }
+            
+            // Добавляем в цепочку текстуры
+            if (surf.materialIdx >= surfList.textureChain.size()) {
+                surfList.textureChain.resize(surf.materialIdx + 1);
+                surfList.textureChainFrames.resize(surf.materialIdx + 1, 0);
+            }
+            
+            surfList.textureChain[surf.materialIdx].push_back(surfIdx);
+            surfList.textureChainFrames[surf.materialIdx] = surfList.visFrame;
+        }
+    }
+}
+
+void WorldRenderer::drawTexturedWorld(WorldSurfaceList& surfList, const Shader& shader, const BSPLightmap& lightmap) {
+    if (surfList.textureChain.empty()) {
+        return;
+    }
+    
+    shader.bind();
+    
+    // Bind VAO (нужно создать при инициализации)
+    // glBindVertexArray(worldVAO);
+    
+    // Настраиваем lightmap texture array
+    // GLuint texArray = lightmap.getTextureArray();
+    // glActiveTexture(GL_TEXTURE1);
+    // glBindTexture(GL_TEXTURE_2D_ARRAY, texArray);
+    
+    // Рендерим каждую цепочку текстур
+    for (size_t i = 0; i < surfList.textureChain.size(); ++i) {
+        if (surfList.textureChain[i].empty()) {
+            continue;
+        }
+        
+        // Активируем текстуру материала
+        // В реальной реализации: gTextures[materialIdx]->bind()
+        
+        stats.drawCalls++;
+        stats.worldPolys += static_cast<unsigned int>(surfList.textureChain[i].size());
+        
+        // Рендерим поверхности в цепочке
+        // Здесь нужен batching через glMultiDrawElements
+        for (unsigned int surfIdx : surfList.textureChain[i]) {
+            // RenderSurface& surf = surfaces[surfIdx];
+            // glDrawElements(GL_TRIANGLES, surf.vertexCount, GL_UNSIGNED_SHORT, ...);
+        }
+    }
+    
+    // Восстанавливаем состояние
+    // glBindVertexArray(0);
+}
+
+void WorldRenderer::drawSkybox(WorldSurfaceList& surfList, const Shader& shader) {
+    if (surfList.skySurfaces.empty()) {
+        return;
+    }
+    
+    shader.bind();
+    
+    stats.drawCalls++;
+    stats.skyPolys += static_cast<unsigned int>(surfList.skySurfaces.size());
+    
+    // Рендерим sky поверхности
+    // В реальной реализации нужен отдельный шейдер для неба
+}
+
+void WorldRenderer::drawWireframe(WorldSurfaceList& surfList, const Shader& wireframeShader, bool drawSky) {
+    // Заглушка для wireframe рендеринга
+}
+
+void WorldRenderer::setLightstyleScale(int style, float scale) {
+    if (style >= 0 && style < 4) {
+        lightstyleScales[style] = scale;
+    }
 }
 
 void WorldRenderer::getVisibleSurfaces(const Camera& camera, WorldSurfaceList& surfList) {

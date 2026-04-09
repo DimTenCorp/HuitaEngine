@@ -226,11 +226,11 @@ bool BrushRenderer::prepareEntity(const Camera& camera,
     //     return true; // Отсечено
     // }
 
-    outTransform = getBrushTransform(origin, angles);
+    outTransform = getBrushTransformation(origin, angles);
     return false; // Не отсечено
 }
 
-glm::mat4 BrushRenderer::getBrushTransform(const glm::vec3& origin, 
+glm::mat4 BrushRenderer::getBrushTransformation(const glm::vec3& origin, 
                                            const glm::vec3& angles) const {
     glm::mat4 modelMat = glm::identity<glm::mat4>();
     
