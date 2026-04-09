@@ -361,44 +361,141 @@ void Player::moveNoclip(float deltaTime) {
 // MOVE WITH COLLISION - основное движение с коллизиями (Quake-style)
 // ============================================================================
 void Player::moveWithCollision(float deltaTime) {
-    // Применяем гравитацию если в воздухе
+    const float gravity = 800.0f;
+    const float maxSpeed = 8.0f;
+    const float accelerate = 10.0f;
+    const float airAccel = 1.0f;
+    const float friction = 4.0f;
+    const float stepHeight = 0.5f;
+    
+    // 1. Гравитация
     if (!onGround) {
         velocity.y -= gravity * deltaTime;
     }
-
-    // Определяем желаемую скорость
-    float wishspeed = maxSpeed;
     
-    // Если есть направление движения, применяем ускорение
-    if (glm::length(wishDir) > 0.0f) {
-        if (onGround) {
-            // На земле - используем обычное ускорение и трение
-            userFriction();
-            applyAcceleration(wishspeed, wishDir);
-        } else {
-            // В воздухе - меньшее ускорение (air control)
-            applyAirAcceleration(wishspeed, wishDir);
-        }
+    // 2. Получаем направление ввода
+    glm::vec3 forward = glm::vec3(camera->Front.x, 0.0f, camera->Front.z);
+    glm::vec3 right = glm::vec3(camera->Right.x, 0.0f, camera->Right.z);
+    
+    if (glm::length(forward) > 0.001f) forward = glm::normalize(forward);
+    if (glm::length(right) > 0.001f) right = glm::normalize(right);
+    
+    glm::vec3 wishDir = glm::vec3(0.0f);
+    if (keys[GLFW_KEY_W]) wishDir += forward;
+    if (keys[GLFW_KEY_S]) wishDir -= forward;
+    if (keys[GLFW_KEY_D]) wishDir += right;
+    if (keys[GLFW_KEY_A]) wishDir -= right;
+    
+    float wishSpeed = 0.0f;
+    if (glm::length(wishDir) > 0.001f) {
+        wishDir = glm::normalize(wishDir);
+        wishSpeed = maxSpeed;
     }
-
-    // Ограничиваем максимальную скорость
-    float currentSpeed = vec3Length(glm::vec3(velocity.x, velocity.y, velocity.z));
-    if (currentSpeed > maxSpeed * 2.0f) {  // *2 для падения
-        float scale = (maxSpeed * 2.0f) / currentSpeed;
-        velocity *= scale;
-    }
-
-    // Выполняем движение
-    if (onGround) {
-        walkMove(deltaTime);
-    } else {
-        flyMove(deltaTime);
+    
+    // 3. Трение и ускорение
+    float currentSpeed = glm::length(glm::vec3(velocity.x, 0, velocity.z));
+    float accel = onGround ? accelerate : airAccel;
+    
+    if (onGround && wishSpeed == 0) {
+        // Трение когда стоим
+        float drop = currentSpeed * friction * deltaTime;
+        float newSpeed = currentSpeed - drop;
+        if (newSpeed < 0) newSpeed = 0;
         
-        // Проверяем, не приземлились ли мы
-        if (checkOnGround()) {
-            onGround = true;
-            velocity.y = 0.0f;
+        if (currentSpeed > 0.001f) {
+            glm::vec3 horizontalVel = glm::vec3(velocity.x, 0, velocity.z);
+            horizontalVel = glm::normalize(horizontalVel) * newSpeed;
+            velocity.x = horizontalVel.x;
+            velocity.z = horizontalVel.z;
         }
+    } else if (wishSpeed > 0) {
+        // Ускорение при движении
+        float addSpeed = wishSpeed - currentSpeed;
+        if (addSpeed > 0) {
+            float currentSpeedInWishDir = glm::dot(glm::vec3(velocity.x, 0, velocity.z), wishDir);
+            float accelSpeed = accel * wishSpeed * deltaTime;
+            if (accelSpeed > addSpeed) accelSpeed = addSpeed;
+            
+            velocity.x += wishDir.x * accelSpeed;
+            velocity.z += wishDir.z * accelSpeed;
+        }
+    }
+    
+    // 4. Движение с коллизиями (разбиваем на шаги)
+    float timeLeft = deltaTime;
+    const int maxSteps = 5;
+    
+    for (int step = 0; step < maxSteps; step++) {
+        if (timeLeft <= 0.001f) break;
+        
+        glm::vec3 moveVec = velocity * timeLeft;
+        glm::vec3 desiredPos = position + moveVec;
+        
+        // Пробуем двигаться
+        if (!checkCollisionMesh(desiredPos)) {
+            position = desiredPos;
+            timeLeft = 0;
+        } else {
+            // Столкновение - пробуем Step Up
+            glm::vec3 stepPos = position;
+            stepPos.y += stepHeight;
+            
+            bool canStep = !checkCollisionMesh(stepPos);
+            if (canStep) {
+                glm::vec3 stepForwardPos = stepPos + moveVec;
+                if (!checkCollisionMesh(stepForwardPos)) {
+                    position = stepForwardPos;
+                    timeLeft = 0;
+                    onGround = true;
+                    continue;
+                }
+            }
+            
+            // Не смогли шагнуть - это стена, скользим по осям
+            float oldVelX = velocity.x;
+            float oldVelZ = velocity.z;
+            
+            // Движение по X
+            glm::vec3 testX = position + glm::vec3(moveVec.x, 0, 0);
+            if (!checkCollisionMesh(testX)) {
+                position.x = testX.x;
+            } else {
+                velocity.x = 0;
+            }
+            
+            // Движение по Z
+            glm::vec3 testZ = position + glm::vec3(0, 0, moveVec.z);
+            if (!checkCollisionMesh(testZ)) {
+                position.z = testZ.z;
+            } else {
+                velocity.z = 0;
+            }
+            
+            // Движение по Y
+            glm::vec3 testY = position + glm::vec3(0, moveVec.y, 0);
+            if (!checkCollisionMesh(testY)) {
+                position.y = testY.y;
+            } else {
+                if (velocity.y < 0) {
+                    onGround = true;
+                    velocity.y = 0;
+                } else {
+                    velocity.y = 0;
+                }
+            }
+            
+            timeLeft = 0;
+        }
+    }
+    
+    // 5. Проверка земли
+    glm::vec3 groundTest = position;
+    groundTest.y -= 0.1f;
+    if (checkCollisionMesh(groundTest)) {
+        onGround = true;
+        if (velocity.y < 0) velocity.y = 0;
+    } else {
+        onGround = false;
     }
 }
 
