@@ -8,6 +8,7 @@
 #include <vector>
 #include <cctype>
 #include <fstream>
+#include <cfloat>
 #include <glm/gtc/type_ptr.hpp>
 #include "WADLoader.h"
 #include "TriangleCollider.h"
@@ -645,53 +646,169 @@ bool BSPLoader::loadLighting(FILE* file, const BSPHeader& header) {
 
 // Построение UV координат световой карты для каждой вершины
 void BSPLoader::buildLightmapUVs() {
+    // Инициализируем все UV нулями по умолчанию
+    for (auto& v : meshVertices) {
+        v.lightmapUV = glm::vec3(0.0f, 0.0f, 0.0f);
+    }
+    
     if (faces.empty() || lightmapData.empty()) {
-        // Если нет данных освещения, устанавливаем нулевые UV
-        for (auto& v : meshVertices) {
-            v.lightmapUV = glm::vec3(0.0f, 0.0f, 0.0f);
-        }
+        std::cout << "[BSP] No lighting data or faces, skipping lightmap UVs" << std::endl;
         return;
     }
     
     std::cout << "[BSP] Building lightmap UVs for " << faces.size() << " faces" << std::endl;
     
-    // Для каждой грани вычисляем UV координаты в световой карте
-    // В GoldSrc каждая грань имеет lightOffset который указывает на данные в LUMP_LIGHTING
-    // Формат: для каждой грани - сетка sample'ов освещения размером (width x height)
+    // Сначала нужно понять структуру lightmap данных
+    // В GoldSrc формат LUMP_LIGHTING:
+    // Для каждой грани со светом:
+    //   [lightOffset] -> 4 байта заголовка (width, height как uint8_t каждый, но занимают 4 байта)
+    //                  -> width * height * 3 байт RGB данных
     
-    int totalSamples = 0;
+    // Нам нужно для каждой грани:
+    // 1. Определить её lightOffset и размеры сетки освещения
+    // 2. Вычислить page index (номер страницы 128x128)
+    // 3. Для каждой вершины грани вычислить UV в пределах этой страницы
+    
+    int currentLightOffset = 0;
     int processedFaces = 0;
+    
+    // Проходим по всем граням и собираем информацию о lightmap страницах
+    std::vector<int> faceLightmapPage(faces.size(), -1);
+    std::vector<glm::vec2> faceLightmapSize(faces.size(), glm::vec2(0, 0));
+    std::vector<glm::vec2> faceLightmapOrigin(faces.size(), glm::vec2(0, 0));
     
     for (size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
         const BSPFace& face = faces[faceIdx];
         
-        // Пропускаем грани без освещения
-        if (face.lightOffset < 0) continue;
+        if (face.lightOffset < 0) {
+            continue;  // Нет освещения для этой грани
+        }
         
         if (face.texInfo >= texInfos.size()) continue;
-        const BSPTexInfo& texInfo = texInfos[face.texInfo];
         
-        // Получаем размеры сетки освещения для этой грани
-        // В GoldSrc размеры вычисляются из bounding box грани
-        // Для упрощения используем фиксированный подход
+        // Читаем размеры сетки освещения из lightmap данных
+        // Формат: первые 4 байта по lightOffset содержат ширину и высоту
+        if (face.lightOffset + 4 > (int)lightmapData.size()) continue;
         
-        // Находим вершины этой грани в meshVertices
-        // (это сложно сделать напрямую, поэтому используем упрощенный подход)
+        uint8_t width = lightmapData[face.lightOffset];
+        uint8_t height = lightmapData[face.lightOffset + 1];
+        // Байты 2 и 3 зарезервированы
         
-        // Вычисляем световые UV на основе текстурных UV
-        // В реальном BSP нужны отдельные UV для световой карты
-        // Здесь используем упрощенную версию
+        if (width < 2 || height < 2) continue;  // Минимальный размер 2x2
+        
+        faceLightmapSize[faceIdx] = glm::vec2(width, height);
+        
+        // Вычисляем на какой странице (128x128) находится эта грань
+        // В GoldSrc страницы идут последовательно, каждая 128*128*3 = 49152 байта
+        int pageStride = lightmapSize * lightmapSize * 3;  // 49152 байта
+        int pageIndex = face.lightOffset / pageStride;
+        
+        faceLightmapPage[faceIdx] = pageIndex;
         
         processedFaces++;
     }
     
-    std::cout << "[BSP] Processed " << processedFaces << " faces with lightmaps" << std::endl;
+    std::cout << "[BSP] Found " << processedFaces << " faces with valid lightmaps" << std::endl;
     
-    // Временная заглушка: заполняем все UV нулями
-    // Правильная реализация требует парсинга размеров каждой грани из BSP
-    for (auto& v : meshVertices) {
-        v.lightmapUV = glm::vec3(0.5f, 0.5f, 0.0f);  // Центр первой страницы
+    // Теперь для каждой грани находим её вершины в meshVertices и вычисляем lightmap UV
+    // Проблема: meshVertices содержит все вершины всех граней, но мы не знаем какая вершина к какой грани относится
+    
+    // Решение: при построении меша (buildMesh) мы проходим по граням, 
+    // поэтому нам нужно сохранить информацию о том, какие вершины относятся к какой грани
+    
+    // Альтернативный подход: вычисляем UV на основе позиции вершины и параметров грани
+    // Используем texInfo для вычисления UV координат в пространстве световой карты
+    
+    for (size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
+        const BSPFace& face = faces[faceIdx];
+        
+        if (faceLightmapPage[faceIdx] < 0) continue;
+        
+        if (face.texInfo >= texInfos.size()) continue;
+        const BSPTexInfo& texInfo = texInfos[face.texInfo];
+        
+        glm::vec2 lmSize = faceLightmapSize[faceIdx];
+        int pageIdx = faceLightmapPage[faceIdx];
+        
+        // Получаем все ребра этой грани
+        std::vector<glm::vec3> faceVerts;
+        for (int j = 0; j < face.numEdges; j++) {
+            int edgeIdx = face.firstEdge + j;
+            if (edgeIdx < 0 || edgeIdx >= (int)surfEdges.size()) continue;
+            
+            int surfEdge = surfEdges[edgeIdx];
+            unsigned short vindex;
+            
+            if (surfEdge >= 0) {
+                if (surfEdge >= (int)edges.size()) continue;
+                vindex = edges[surfEdge].v[0];
+            } else {
+                int negEdge = -surfEdge;
+                if (negEdge >= (int)edges.size()) continue;
+                vindex = edges[negEdge].v[1];
+            }
+            
+            if (vindex < vertices.size()) {
+                faceVerts.push_back(vertices[vindex]);
+            }
+        }
+        
+        if (faceVerts.size() < 3) continue;
+        
+        // Находим минимальные и максимальные S,T координаты для нормализации UV
+        float minS = FLT_MAX, maxS = FLT_MIN;
+        float minT = FLT_MAX, maxT = FLT_MIN;
+        
+        for (const auto& vertPos : faceVerts) {
+            float s = glm::dot(vertPos, glm::vec3(texInfo.s[0], texInfo.s[1], texInfo.s[2])) + texInfo.s[3];
+            float t = glm::dot(vertPos, glm::vec3(texInfo.t[0], texInfo.t[1], texInfo.t[2])) + texInfo.t[3];
+            minS = std::min(minS, s);
+            maxS = std::max(maxS, s);
+            minT = std::min(minT, t);
+            maxT = std::max(maxT, t);
+        }
+        
+        // Добавляем небольшой отступ чтобы избежать проблем с границами
+        float sRange = maxS - minS;
+        float tRange = maxT - minT;
+        if (sRange < 0.001f) sRange = 0.001f;
+        if (tRange < 0.001f) tRange = 0.001f;
+        
+        // Для каждой вершины грани вычисляем lightmap UV
+        for (const auto& vertPos : faceVerts) {
+            // Вычисляем UV координаты в пространстве lightmap этой грани
+            float s = glm::dot(vertPos, glm::vec3(texInfo.s[0], texInfo.s[1], texInfo.s[2])) + texInfo.s[3];
+            float t = glm::dot(vertPos, glm::vec3(texInfo.t[0], texInfo.t[1], texInfo.t[2])) + texInfo.t[3];
+            
+            // Нормализуем UV в пределах [0, 1] для этой грани
+            float u = (s - minS) / sRange;
+            float v = (t - minT) / tRange;
+            
+            // Смещаем UV на номер страницы
+            // В texture array Z координата - это индекс слоя (страницы)
+            glm::vec3 lightmapUV(u, v, (float)pageIdx);
+            
+            // Находим соответствующую вершину в meshVertices и обновляем её lightmapUV
+            // Это приближение - в реальности нужно точно сопоставлять вершины
+            for (auto& mv : meshVertices) {
+                if (glm::distance(mv.position, vertPos) < 0.01f) {
+                    mv.lightmapUV = lightmapUV;
+                    break;
+                }
+            }
+        }
     }
+    
+    // Подсчитываем сколько вершин получили valid lightmap UV
+    int validUVCount = 0;
+    for (const auto& v : meshVertices) {
+        if (glm::length(v.lightmapUV) > 0.001f) {
+            validUVCount++;
+        }
+    }
+    
+    std::cout << "[BSP] " << validUVCount << " / " << meshVertices.size() 
+              << " vertices have valid lightmap UVs" << std::endl;
 }
 
 std::vector<Light> BSPLoader::extractLights() const {
