@@ -549,6 +549,7 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         bool hasLightmap = false;
         float minS = 0.0f, maxS = 0.0f, minT = 0.0f, maxT = 0.0f;
         int pageIndex = 0;
+        float lmScale = 16.0f; // Стандартный размер текселя световой карты в Half-Life
         
         if (face.lightOffset >= 0 && !lightmapData.empty()) {
             // Читаем размеры lightmap сетки из данных освещения
@@ -612,16 +613,15 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             // Вычисляем lightmap UV если грань имеет освещение
             glm::vec3 lightmapUVCoord(0.0f, 0.0f, (float)pageIndex);
             if (hasLightmap) {
-                float sRange = maxS - minS;
-                float tRange = maxT - minT;
-                
-                // Вычисляем UV для текущей вершины
+                // Вычисляем UV для текущей вершины используя подход из hlbsp-viewer
+                // Нормализуем координаты относительно минимальных значений
                 float s = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
                 float t = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
                 
-                // Нормализуем в пределах [0, 1] для этой грани
-                float lmU = (sRange > 0.001f) ? (s - minS) / sRange : 0.0f;
-                float lmV = (tRange > 0.001f) ? (t - minT) / tRange : 0.0f;
+                // Преобразуем в UV координаты световой карты [0, 1] для этой грани
+                // Используем ceil/floor для правильного выравнивания по текселям
+                float lmU = (std::ceil(s) - std::floor(minS)) / lmScale;
+                float lmV = (std::ceil(t) - std::floor(minT)) / lmScale;
                 
                 lightmapUVCoord = glm::vec3(lmU, lmV, (float)pageIndex);
             }
