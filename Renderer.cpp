@@ -572,6 +572,11 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
         setLightmapTexture(lightmapTex, lightmapSize);
         std::cout << "Renderer: Lightmap texture set, size=" << lightmapSize << std::endl;
     }
+    
+    // Получаем значения яркости граней из BSPLoader (как в go-quake brightness SSBO)
+    // Эти данные могут использоваться шейдером для специальных эффектов (sky, water, lava)
+    const std::vector<float>& faceBrightness = bsp.getFaceBrightnessValues();
+    std::cout << "Renderer: Got " << faceBrightness.size() << " face brightness values from BSPLoader" << std::endl;
 
     std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
 

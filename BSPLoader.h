@@ -91,6 +91,15 @@ private:
     std::vector<unsigned char> lightmapData;  // Сырые данные освещения из BSP
     GLuint lightmapTexture = 0;
     int lightmapSize = 128;  // Стандартный размер lightmap страницы в GoldSrc
+    
+    // Face brightness values for shader (similar to go-quake brightness SSBO)
+    std::vector<float> faceBrightnessValues;
+    
+    // Special brightness sentinel values (from go-quake)
+    static constexpr float BRIGHTNESS_SKY = 2.0f;
+    static constexpr float BRIGHTNESS_WATER = 3.0f;
+    static constexpr float BRIGHTNESS_LAVA = 4.0f;
+    static constexpr float BRIGHTNESS_PORTAL = 5.0f;
 
     bool loadVertices(FILE* file, const BSPHeader& header);
     bool loadEdges(FILE* file, const BSPHeader& header);
@@ -132,7 +141,11 @@ public:
     void setupLightEnvironment(LightManager& lightManager) const;
 
     std::vector<Light> extractLights() const;
-
+    
+    // Lightmap and brightness methods (from go-quake lighting.go)
+    const std::vector<float>& getFaceBrightnessValues() const { return faceBrightnessValues; }
+    float getFaceBrightness(size_t faceIndex) const;
+    
     // Lightmap data
     GLuint getLightmapTexture() const { return lightmapTexture; }
     int getLightmapSize() const { return lightmapSize; }
@@ -140,4 +153,7 @@ public:
 private:
     bool loadLighting(FILE* file, const BSPHeader& header);
     void buildLightmapUVs();
+    void computeFaceBrightness();  // Вычисляет яркость для каждой грани (как в go-quake)
+    std::string getTextureName(size_t faceIndex) const;  // Получает имя текстуры грани
+    float calculateFaceBrightness(size_t faceIndex) const;  // Вычисляет среднюю яркость грани
 };
