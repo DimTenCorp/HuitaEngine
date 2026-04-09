@@ -23,9 +23,15 @@ static bool parseVector3(std::string_view str, float& x, float& y, float& z) {
     return sscanf(temp.c_str(), "%f %f %f", &x, &y, &z) == 3;
 }
 
-// Проверка является ли класс сущности критическим
-static inline bool isCriticalEntityClass(const std::string& classname) {
-    return CRITICAL_ENTITY_CLASSES.find(classname) != CRITICAL_ENTITY_CLASSES.end();
+// Проверка является ли класс сущности игнорируемым (ненужные источники света)
+static inline bool isIgnoredEntityClass(const std::string& classname) {
+    static const std::unordered_set<std::string> IGNORED_CLASSES = {
+        "light_spot",
+        "light_ambient", 
+        "light_glow",
+        "env_light"
+    };
+    return IGNORED_CLASSES.find(classname) != IGNORED_CLASSES.end();
 }
 
 static glm::vec3 convertPosition(const glm::vec3& bspPos) {
@@ -390,8 +396,8 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             // Обрабатываем только ключевые поля
             if (keyView == "classname") {
                 classname = std::string(valView);
-                // Если это не критическая сущность, помечаем на пропуск
-                if (!isCriticalEntityClass(classname)) {
+                // Если это игнорируемая сущность (ненужный свет), помечаем на пропуск
+                if (isIgnoredEntityClass(classname)) {
                     skipEntity = true;
                 }
             } else if (keyView == "origin" && !hasOrigin) {
@@ -411,7 +417,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             }
         }
         
-        // Сохраняем только критические сущности
+        // Сохраняем все сущности кроме игнорируемых (ненужных источников света)
         if (!skipEntity && !classname.empty()) {
             BSPEntity entity;
             entity.classname = classname;
@@ -419,7 +425,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             entity.origin = origin;
             entity.angles = angles;
             
-            // Для критических сущностей сохраняем все свойства (если нужно)
+            // Для light_environment сохраняем все свойства
             if (classname == "light_environment") {
                 // Перепарсиваем для сохранения всех свойств
                 pos = entityStart;
@@ -456,7 +462,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
         }
     }
     
-    std::cout << "[BSP] Parsed " << entities.size() << " critical entities (optimized)" << std::endl;
+    std::cout << "[BSP] Parsed " << entities.size() << " entities (optimized, ignored only unnecessary lights)" << std::endl;
     return true;
 }
 
