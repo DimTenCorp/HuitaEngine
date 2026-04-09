@@ -268,11 +268,13 @@ layout (location = 3) in vec3 aLightmapUV;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform vec3 uSunDir;
 
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
 out vec3 vLightmapUV;
+out vec3 vLightDir;
 
 void main() {
     vTexCoord = aTexCoord;
@@ -281,6 +283,7 @@ void main() {
     vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
     gl_Position = projection * view * model * vec4(aPos, 1.0);
+    vLightDir = uSunDir;
 }
 )glsl";
 
@@ -290,6 +293,7 @@ in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
 in vec3 vLightmapUV;
+in vec3 vLightDir;
 
 layout (location = 0) out vec4 gPosition;
 layout (location = 1) out vec4 gNormal;
@@ -299,6 +303,9 @@ layout (location = 3) out vec4 gLighting;
 uniform sampler2D uTexture;
 uniform sampler2DArray uLightmap;
 uniform bool uUseLightmap;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform float uSunIntensity;
 
 // Гамма-коррекция как в Quake/Half-Life (гамма ~2.2)
 const float GAMMA = 2.2;
@@ -312,19 +319,29 @@ void main() {
     gNormal = vec4(normalize(vNormal), 1.0);
     gAlbedo = texColor;
     
+    vec3 bakedLight = vec3(0.0);
+    
     if (uUseLightmap && length(vLightmapUV) > 0.001) {
         // Читаем запечённый свет из BSP lightmap
-        // В Half-Life lightmap значения уже в диапазоне 0-255 и представляют освещённость
         vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-        // Конвертируем из [0,255] в [0,1] с учётом того что максимальная яркость может быть > 255
-        // В Half-Life максимальное значение 255 = белый свет полной яркости
+        // Конвертируем из [0,255] в [0,1] 
         lightmapColor = lightmapColor / 255.0;
         // Применяем гамма-коррекцию для правильного отображения
-        lightmapColor = pow(lightmapColor, vec3(GAMMA));
-        gLighting = vec4(lightmapColor, 1.0);
-    } else {
-        gLighting = vec4(1.0, 1.0, 1.0, 1.0);
+        bakedLight = pow(lightmapColor, vec3(GAMMA));
     }
+    
+    // Добавляем солнце с простыми тенями (как в Half-Life - без карт теней для солнца)
+    // Тени в Half-Life создаются за счёт того что свет не проходит через стены
+    // Это эмулируется тем что в помещениях доминирует lightmap, а на улице - солнце
+    vec3 lightDir = normalize(uSunDir);
+    float diff = max(dot(normalize(vNormal), lightDir), 0.0);
+    vec3 sunContribution = uSunColor * diff * uSunIntensity;
+    
+    // Смешиваем: если есть lightmap - используем его, иначе солнце
+    // Это создаёт эффект "тени" - в помещении темно (только lightmap), на улице светло (солнце)
+    vec3 finalLight = bakedLight + sunContribution;
+    
+    gLighting = vec4(finalLight, 1.0);
 }
 )glsl";
 
@@ -352,9 +369,6 @@ uniform sampler2D gAlbedo;
 uniform sampler2D gLighting;
 
 uniform vec3 uViewPos;
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform float uSunIntensity;
 uniform float uAmbient;
 
 // Гамма-коррекция как в Quake/Half-Life
@@ -365,19 +379,19 @@ void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
-    vec4 lightmap = texture(gLighting, vTexCoord);
+    vec4 bakedLight = texture(gLighting, vTexCoord);
     
     if (length(fragPos) < 0.001) {
         FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    // Используем только запечённое освещение из lightmap BSP
+    // Используем запечённое освещение из lightmap BSP + солнце
     // Свет уже прошёл гамма-коррекцию в geometry pass
     // Умножаем на albedo для получения финального цвета
-    vec3 result = lightmap.rgb * albedo.rgb;
+    vec3 result = bakedLight.rgb * albedo.rgb;
     
-    // Добавляем минимальное ambient освещение для теней (как в Half-Life)
+    // Добавляем минимальное ambient освещение для совсем тёмных зон
     result += vec3(uAmbient) * albedo.rgb;
     
     // Применяем обратную гамма-коррекцию перед выводом (tonemap)
@@ -609,6 +623,11 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
     geometryShader->setBool("uUseLightmap", true);
+    
+    // Передаем параметры солнца в геометрию для смешивания с lightmap
+    geometryShader->setVec3("uSunDir", sunDirection);
+    geometryShader->setVec3("uSunColor", sunColor);
+    geometryShader->setFloat("uSunIntensity", sunIntensity);
 
     // Привязываем lightmap текстуру из BSP
     if (lightmapTexture != 0) {
@@ -645,9 +664,6 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     lightingShader->setInt("gLighting", 3);
 
     lightingShader->setVec3("uViewPos", viewPos);
-    lightingShader->setVec3("uSunDir", sunDirection);
-    lightingShader->setVec3("uSunColor", sunColor);
-    lightingShader->setFloat("uSunIntensity", sunIntensity);
     lightingShader->setFloat("uAmbient", ambientStrength);
 
     // Используем только запечённое освещение из BSP - динамические источники отключены
