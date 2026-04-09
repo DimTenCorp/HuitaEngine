@@ -45,6 +45,7 @@ struct BSPVertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 texCoord;
+    glm::vec3 lightmapUV;  // UV координаты для световой карты
 };
 
 struct BSPEntity {
@@ -83,6 +84,11 @@ private:
 
     std::vector<BSPEntity> entities;
     std::vector<std::string> requiredWADs;
+
+    // Lightmap data
+    std::vector<unsigned char> lightmapData;  // Сырые данные освещения из BSP
+    GLuint lightmapTexture = 0;
+    int lightmapSize = 128;  // Стандартный размер lightmap страницы в GoldSrc
 
     bool loadVertices(FILE* file, const BSPHeader& header);
     bool loadEdges(FILE* file, const BSPHeader& header);
@@ -124,4 +130,12 @@ public:
     void setupLightEnvironment(LightManager& lightManager) const;
 
     std::vector<Light> extractLights() const;
+
+    // Lightmap data
+    GLuint getLightmapTexture() const { return lightmapTexture; }
+    int getLightmapSize() const { return lightmapSize; }
+    
+private:
+    bool loadLighting(FILE* file, const BSPHeader& header);
+    void buildLightmapUVs();
 };

@@ -208,6 +208,7 @@ static const char* s_geometryVert = R"glsl(
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
+layout (location = 3) in vec3 aLightmapUV;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -216,9 +217,11 @@ uniform mat4 projection;
 out vec2 vTexCoord;
 out vec3 vNormal;
 out vec3 vFragPos;
+out vec3 vLightmapUV;
 
 void main() {
     vTexCoord = aTexCoord;
+    vLightmapUV = aLightmapUV;
     mat3 normalMatrix = mat3(transpose(inverse(model)));
     vNormal = normalMatrix * aNormal;
     vFragPos = vec3(model * vec4(aPos, 1.0));
@@ -231,12 +234,16 @@ static const char* s_geometryFrag = R"glsl(
 in vec2 vTexCoord;
 in vec3 vNormal;
 in vec3 vFragPos;
+in vec3 vLightmapUV;
 
 layout (location = 0) out vec4 gPosition;
 layout (location = 1) out vec4 gNormal;
 layout (location = 2) out vec4 gAlbedo;
+layout (location = 3) out vec4 gLighting;
 
 uniform sampler2D uTexture;
+uniform sampler2DArray uLightmap;
+uniform bool uUseLightmap;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
@@ -244,6 +251,14 @@ void main() {
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
+    
+    if (uUseLightmap && length(vLightmapUV) > 0.001) {
+        vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
+        gLighting = vec4(lightmapColor, 1.0);
+    } else {
+        gLighting = vec4(1.0, 1.0, 1.0, 1.0);
+    }
+    
     gAlbedo = texColor;
 }
 )glsl";
@@ -269,6 +284,7 @@ out vec4 FragColor;
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedo;
+uniform sampler2D gLighting;
 uniform sampler2D gShadowMap;
 
 uniform vec3 uViewPos;
@@ -314,17 +330,21 @@ void main() {
     vec3 fragPos = texture(gPosition, vTexCoord).xyz;
     vec3 normal = normalize(texture(gNormal, vTexCoord).xyz);
     vec4 albedo = texture(gAlbedo, vTexCoord);
+    vec4 lightmap = texture(gLighting, vTexCoord);
     
     if (length(fragPos) < 0.001) {
         FragColor = vec4(0.05, 0.05, 0.05, 1.0);
         return;
     }
     
-    vec3 result = uAmbient * albedo.rgb;
+    // Базовое освещение от lightmap из BSP
+    vec3 result = lightmap.rgb * albedo.rgb;
     
+    // Добавляем солнце
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
     result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
     
+    // Добавляем точечные источники света из сущностей BSP
     for (int i = 0; i < uLightCount; i++) {
         if (uLights[i].outerEnabled.y < 0.5) continue;
         

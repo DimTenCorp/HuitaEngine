@@ -13,6 +13,7 @@ struct GBuffer {
     GLuint positionTex = 0;
     GLuint normalTex = 0;
     GLuint albedoTex = 0;
+    GLuint lightingTex = 0;  // Текстура для освещения из lightmap
     GLuint depthTex = 0;
     int width = 1280;
     int height = 720;
@@ -27,7 +28,7 @@ struct GBuffer {
     bool create(int w, int h);
     void destroy();
     void bindForWriting() const;
-    void bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const;
+    void bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo, GLuint texUnitLighting) const;
     static void unbind();
 };
 
@@ -107,6 +108,8 @@ public:
     void setSunColor(const glm::vec3& color) { sunColor = color; }
     void setSunIntensity(float intensity) { sunIntensity = glm::max(0.0f, intensity); }
     void setAmbientStrength(float strength) { ambientStrength = glm::clamp(strength, 0.0f, 1.0f); }
+    
+    void setLightmapTexture(GLuint tex, int size) { lightmapTexture = tex; lightmapSize = size; }
 
 private:
     BspMesh worldMesh;
@@ -140,6 +143,9 @@ private:
     glm::vec3 sunColor{ 1.0f, 0.95f, 0.8f };
     float sunIntensity{ 1.0f };
     float ambientStrength{ 0.1f };
+
+    GLuint lightmapTexture = 0;
+    int lightmapSize = 128;
 
     static constexpr int MAX_LIGHTS = 32;
 
