@@ -300,6 +300,10 @@ uniform sampler2D uTexture;
 uniform sampler2DArray uLightmap;
 uniform bool uUseLightmap;
 
+// Нормализация яркости как в Quake/Half-Life
+// Lightmap данные хранятся в диапазоне 0-255, делим на 256 для получения [0, 1)
+const float LIGHTMAP_SCALE = 1.0 / 256.0;
+
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     if (texColor.a < 0.5) discard;
@@ -307,12 +311,15 @@ void main() {
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
     
-if (uUseLightmap && length(vLightmapUV) > 0.001) {
-    vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
-    gLighting = vec4(lightmapColor, 1.0);  // Записываем pre-baked свет из BSP в GBuffer
-} else {
-    gLighting = vec4(1.0, 1.0, 1.0, 1.0);
-}
+    if (uUseLightmap && length(vLightmapUV) > 0.001) {
+        // Читаем запечённый свет из BSP lightmap
+        vec3 lightmapColor = texture(uLightmap, vLightmapUV).rgb;
+        // Нормализуем яркость как в GoldSrc: делим на 256 для корректного диапазона
+        lightmapColor = lightmapColor * LIGHTMAP_SCALE;
+        gLighting = vec4(lightmapColor, 1.0);
+    } else {
+        gLighting = vec4(1.0, 1.0, 1.0, 1.0);
+    }
     
     gAlbedo = texColor;
 }
@@ -359,9 +366,10 @@ void main() {
     }
     
     // Используем только запечённое освещение из lightmap BSP
+    // Свет уже нормализован в geometry pass (делён на 256)
     vec3 result = lightmap.rgb * albedo.rgb;
     
-    // Добавляем солнце (опционально, можно отключить если не нужно)
+    // Добавляем солнце для внешнего освещения (как в Half-Life)
     float sunDiff = max(dot(normal, -uSunDir), 0.0);
     result += sunDiff * uSunColor * uSunIntensity * albedo.rgb;
     
