@@ -105,10 +105,10 @@ private:
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel);
     
+public:
     // Доступ к сырым данным освещения для BSPLightmap
     const std::vector<unsigned char>& getLightmapData() const { return lightmapData; }
 
-public:
     BSPLoader();
     ~BSPLoader();
     bool load(const std::string& filename, WADLoader& wadLoader);
