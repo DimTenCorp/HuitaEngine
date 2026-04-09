@@ -51,11 +51,7 @@ private:
     void applyAcceleration(float wishspeed, const glm::vec3& wishdir);
     void applyAirAcceleration(float wishspeed, const glm::vec3& wishveloc);
     void userFriction();
-    bool tryStepUpQuake(float deltaTime, glm::vec3& velocity);
     
-    // Старый метод (оставлен для совместимости)
-    bool tryStepUpOld(const glm::vec3& fromPos, const glm::vec3& moveDir, float maxStepHeight, float deltaTime);
-
     void resolveCollisionAxis(float deltaTime, int axis);
 
 public:
