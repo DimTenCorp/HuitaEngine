@@ -625,12 +625,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos, Shad
 
     geometryPass(view, projection);
 
-    if (flashlight.enabled && shadowSystem) {
-        shadowSystem->bindDynamicShadowForWriting();
-        renderShadowPass(shadowSystem->getDynamicLightSpaceMatrix());
-        shadowSystem->unbindDynamicShadow(screenWidth, screenHeight);
-    }
-
+    // Освещение берется из lightmap BSP, динамические источники добавляются отдельно
     lightingPass(view, viewPos, shadowSystem);
 }
 
@@ -644,6 +639,13 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
     geometryShader->setBool("uUseLightmap", true);
+
+    // Привязываем lightmap текстуру из BSP
+    if (lightmapTexture != 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, lightmapTexture);
+        geometryShader->setInt("uLightmap", 1);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
@@ -678,22 +680,10 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
     lightingShader->setFloat("uSunIntensity", sunIntensity);
     lightingShader->setFloat("uAmbient", ambientStrength);
 
-    bool hasFlashlight = (flashlight.enabled && shadowSystem);
-    lightingShader->setBool("uHasFlashlight", hasFlashlight);
+    // Фонарик отключен - используем только свет из BSP
+    lightingShader->setBool("uHasFlashlight", false);
 
-    if (hasFlashlight) {
-        shadowSystem->updateDynamicShadow(flashlight.position, flashlight.direction);
-
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, shadowSystem->getDynamicDepthMap());
-        lightingShader->setInt("gShadowMap", 4);
-
-        lightingShader->setMat4("uFlashlightMatrix", shadowSystem->getDynamicLightSpaceMatrix());
-        lightingShader->setVec3("uFlashlightPos", flashlight.position);
-        lightingShader->setVec3("uFlashlightDir", flashlight.direction);
-        lightingShader->setFloat("uFlashlightCutoff", glm::cos(flashlight.cutoffOuter));
-    }
-
+    // Динамические источники света из сущностей BSP добавляются поверх lightmap
     std::vector<LightShaderData> visibleLights;
     visibleLights.reserve(lights.size());
 
@@ -703,12 +693,6 @@ void Renderer::lightingPass(const glm::mat4& view, const glm::vec3& viewPos, Sha
 
         float distToCamera = glm::distance(light.position, viewPos);
         if (distToCamera > light.radius * 1.5f) continue;
-
-        if (light.shadowID >= 0 && shadowSystem) {
-            if (!shadowSystem->canSeeLight(light.shadowID, viewPos)) {
-                if (distToCamera > light.radius) continue;
-            }
-        }
 
         visibleLights.push_back(light.data);
     }
