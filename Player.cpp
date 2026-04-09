@@ -471,51 +471,7 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     if (noclipMode) {
         moveNoclip(deltaTime);
     } else {
-        // Применяем гравитацию если в воздухе
-        if (!onGround) {
-            velocity.y -= gravity * deltaTime;
-        }
-
-        // Определяем желаемую скорость
-        float wishspeed = maxSpeed;
-        
-        // Если есть направление движения, применяем ускорение
-        if (glm::length(wishDir) > 0.0f) {
-            if (onGround) {
-                // На земле - используем обычное ускорение и трение
-                userFriction();
-                applyAcceleration(wishspeed, wishDir);
-            } else {
-                // В воздухе - меньшее ускорение (air control)
-                applyAirAcceleration(wishspeed, wishDir);
-            }
-        }
-
-        // Ограничиваем максимальную скорость
-        float currentSpeed = vec3Length(glm::vec3(velocity.x, velocity.y, velocity.z));
-        if (currentSpeed > maxSpeed * 2.0f) {  // *2 для падения
-            float scale = (maxSpeed * 2.0f) / currentSpeed;
-            velocity *= scale;
-        }
-
-        // Проверяем землю перед движением
-        bool groundBelow = checkOnGround();
-        if (onGround && !groundBelow && velocity.y >= 0) {
-            onGround = false;
-        }
-
-        // Выполняем движение по осям с проверкой коллизий
-        resolveCollisionAxis(deltaTime, 0);
-        resolveCollisionAxis(deltaTime, 2);
-        resolveCollisionAxis(deltaTime, 1);
-
-        // Проверяем приземление
-        if (!onGround && velocity.y < 0) {
-            if (checkOnGround()) {
-                onGround = true;
-                velocity.y = 0;
-            }
-        }
+        moveWithCollision(deltaTime);
     }
 }
 
