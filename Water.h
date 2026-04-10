@@ -64,6 +64,9 @@ struct WaterPoly {
     }
 };
 
+// Функция для установки экранного эффекта (как D_SetFadeColor в HL1)
+void D_SetScreenFade(int r, int g, int b, int alpha, int type);
+
 // Класс для управления водными эффектами
 class WaterManager {
 public:

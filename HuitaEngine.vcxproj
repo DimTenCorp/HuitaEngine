@@ -266,6 +266,8 @@
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
+    <ClCompile Include="Water.cpp" />
+    <ClCompile Include="WaterRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Dev\vcpkg\installed\x64-windows\include\glad\glad.h" />
@@ -282,6 +284,8 @@
     <ClInclude Include="Shader.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
+    <ClInclude Include="Water.h" />
+    <ClInclude Include="WaterRenderer.h" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Dima|x64'">
     <PostBuildEvent>
