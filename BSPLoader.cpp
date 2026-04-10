@@ -321,14 +321,17 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
     defaultTextureId = wadLoader.getDefaultTexture();
     glTextureIds.reserve(numTextures);
     textureDimensions.reserve(numTextures);
+    textureIsLiquid.reserve(numTextures);
 
     int foundCount = 0;
     int notFoundCount = 0;
+    int liquidCount = 0;
 
     for (int i = 0; i < numTextures; ++i) {
         if (offsets[i] == -1 || offsets[i] < 0 || offsets[i] >= (int)lump.length) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureIsLiquid.push_back(false);
             notFoundCount++;
             continue;
         }
@@ -339,6 +342,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         if (texPtr + 16 > lumpData.data() + lumpData.size()) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureIsLiquid.push_back(false);
             notFoundCount++;
             continue;
         }
@@ -357,6 +361,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         if (name.empty()) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureIsLiquid.push_back(false);
             notFoundCount++;
             continue;
         }
@@ -377,6 +382,12 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         GLuint texId = wadLoader.getTexture(name);
 
+        // Проверяем, является ли текстура жидкостью
+        bool isLiquid = wadLoader.isLiquidTexture(name);
+        if (isLiquid) {
+            liquidCount++;
+        }
+
         if (texId != defaultTextureId) {
             foundCount++;
         }
@@ -391,10 +402,12 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         glTextureIds.push_back(texId);
         textureDimensions.push_back({ width, height });
+        textureIsLiquid.push_back(isLiquid);
     }
 
     std::cout << "[BSP] Textures mapped: " << glTextureIds.size()
-        << " (found: " << foundCount << ", missing: " << notFoundCount << ")" << std::endl;
+        << " (found: " << foundCount << ", missing: " << notFoundCount 
+        << ", liquids: " << liquidCount << ")" << std::endl;
 
     return true;
 }

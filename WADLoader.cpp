@@ -389,6 +389,13 @@ bool WADLoader::loadWADFile(const std::string& path) {
         info.width = tex.width;
         info.height = tex.height;
 
+        // Проверяем, является ли текстура жидкостью (префикс !)
+        if (!rawName.empty() && rawName[0] == '!') {
+            liquidTextures[lowerName] = true;
+            liquidTextures[rawName] = true;
+            std::cout << "[WAD] Liquid texture detected: " << rawName << std::endl;
+        }
+
         // Избегаем дублирования записей в кэше - проверяем существует ли уже запись
         if (textureCache.find(lowerName) == textureCache.end()) {
             textureCache[lowerName] = info;
@@ -401,7 +408,8 @@ bool WADLoader::loadWADFile(const std::string& path) {
         loadedCount++;
     }
 
-    std::cout << "[WAD] Loaded " << loadedCount << " textures from " << path << std::endl;
+    std::cout << "[WAD] Loaded " << loadedCount << " textures from " << path 
+              << " (liquids: " << liquidTextures.size() / 2 << ")" << std::endl;
     return loadedCount > 0;
 }
 
@@ -557,4 +565,12 @@ bool WADLoader::hasTexture(const std::string& name) const {
 
     std::string lowerName = normalizeTextureName(name);
     return textureCache.find(lowerName) != textureCache.end();
+}
+
+bool WADLoader::isLiquidTexture(const std::string& name) const {
+    auto it = liquidTextures.find(name);
+    if (it != liquidTextures.end()) return true;
+
+    std::string lowerName = normalizeTextureName(name);
+    return liquidTextures.find(lowerName) != liquidTextures.end();
 }

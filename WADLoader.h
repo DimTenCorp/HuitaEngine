@@ -21,6 +21,7 @@ struct TextureInfo {
 class WADLoader {
 private:
     std::unordered_map<std::string, TextureInfo> textureCache;
+    std::unordered_map<std::string, bool> liquidTextures;  // Текстуры с префиксом ! - жидкости
     GLuint defaultTexture = 0;
     TextureInfo defaultTextureInfo;
     bool initialized = false;
@@ -56,6 +57,10 @@ public:
     // Debug методы
     void debugPrintCache() const;
     bool hasTexture(const std::string& name) const;
+
+    // Проверка на жидкость (текстуры с префиксом !)
+    bool isLiquidTexture(const std::string& name) const;
+    const std::unordered_map<std::string, bool>& getLiquidTextures() const { return liquidTextures; }
 
     // Очистка
     void cleanup();

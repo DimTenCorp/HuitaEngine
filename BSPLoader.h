@@ -84,6 +84,7 @@ private:
 
     std::vector<GLuint> glTextureIds;
     std::vector<glm::uvec2> textureDimensions;
+    std::vector<bool> textureIsLiquid;  // Флаг жидкости для каждой текстуры
     GLuint defaultTextureId = 0;
     std::vector<FaceDrawCall> drawCalls;
 
@@ -160,6 +161,13 @@ public:
             return glTextureIds[index];
         }
         return defaultTextureId;
+    }
+
+    bool isTextureLiquid(int index) const {
+        if (index >= 0 && index < static_cast<int>(textureIsLiquid.size())) {
+            return textureIsLiquid[index];
+        }
+        return false;
     }
 
     glm::uvec2 getTextureDimensions(int index) const {
