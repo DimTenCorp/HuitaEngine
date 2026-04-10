@@ -433,7 +433,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     if (!worldLoaded) return;
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+        (float)screenWidth / (float)screenHeight, 1.0f, 10000.0f);
 
     geometryPass(view, projection);
     lightingPass(viewPos);
