@@ -85,7 +85,7 @@ private:
     bool worldLoaded = false;
 
     BspMesh hitboxMesh;
-    bool showHitbox = true;
+    bool showHitbox = false;
 
     std::unique_ptr<Shader> geometryShader;
     std::unique_ptr<Shader> lightingShader;

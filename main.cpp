@@ -396,12 +396,6 @@ int main() {
             g_renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
 
             g_renderer->renderWorld(view, eyePos);
-
-            if (g_renderer->getShowHitbox()) {
-                glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-                    (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 1000.0f);
-                g_renderer->renderHitbox(view, projection, g_player->getPosition(), true);
-            }
         }
 
         // --- HUD ---

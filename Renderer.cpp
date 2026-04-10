@@ -443,9 +443,9 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
     glClear(GL_DEPTH_BUFFER_BIT);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
