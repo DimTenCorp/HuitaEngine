@@ -4,6 +4,10 @@
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/glm.hpp>
+
+// Helper macro for dot product (как в HL1)
+#define DotProduct(a,b) ((a).x*(b).x + (a).y*(b).y + (a).z*(b).z)
 
 // ============================================================================
 // WaterSurface Implementation

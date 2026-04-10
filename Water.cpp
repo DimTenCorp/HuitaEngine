@@ -6,7 +6,6 @@
 // turbsin[] - lookup table для ускорения расчетов sin/cos
 
 constexpr float PI = 3.14159265358979323846f;
-constexpr float TURB_SCALE = 256.0f / (2.0f * PI);
 
 WaterManager::WaterManager() 
     : currentTime(0.0f)

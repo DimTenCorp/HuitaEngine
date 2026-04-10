@@ -14,6 +14,7 @@
 #include "TriangleCollider.h"
 #include "Renderer.h"
 #include "WADLoader.h"
+#include "WaterRenderer.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -47,6 +48,7 @@ namespace {
     MeshCollider* g_meshCollider = nullptr;
     LightmapManager* g_lightmapManager = nullptr;
     LightmappedRenderer* g_lmRenderer = nullptr;
+    WaterRenderer* g_waterRenderer = nullptr;
 
     float g_lightmapIntensity = 1.0f;
     bool g_showLightmapsOnly = false;
@@ -219,6 +221,25 @@ bool initSystems(WADLoader& wadLoader) {
         }
     }
 
+    // ============ НОВОЕ: Инициализация WaterRenderer ============
+    
+    g_waterRenderer = new (std::nothrow) WaterRenderer();
+    if (g_waterRenderer) {
+        if (g_waterRenderer->init()) {
+            if (g_waterRenderer->loadFromBSP(*g_bspLoader, wadLoader)) {
+                std::cout << "[WATER] Water renderer initialized successfully" << std::endl;
+            }
+            else {
+                std::cout << "[WATER] No water surfaces found in BSP" << std::endl;
+            }
+        }
+        else {
+            std::cerr << "[WATER] Failed to init water renderer" << std::endl;
+            delete g_waterRenderer;
+            g_waterRenderer = nullptr;
+        }
+    }
+
     // Загружаем мир в обычный рендерер (fallback)
     if (!g_renderer->loadWorld(*g_bspLoader)) {
         std::cerr << "Failed to load world into renderer" << std::endl;
@@ -378,6 +399,9 @@ int main() {
         g_player->getViewMatrix(glm::value_ptr(view));
 
         glm::vec3 eyePos = g_player->getEyePosition();
+        
+        // Получаем текущее время для анимации воды
+        float currentTime = (float)glfwGetTime();
 
         // Выбираем рендерер
         if (g_useLightmappedRenderer && g_lmRenderer) {
@@ -388,6 +412,12 @@ int main() {
 
             // Рендерим мир с lightmaps
             g_lmRenderer->renderWorld(view, eyePos, *g_bspLoader, glm::vec3(0.05f)); // Низкий ambient
+            
+            // Рендерим воду поверх мира
+            if (g_waterRenderer) {
+                g_waterRenderer->update(g_deltaTime, currentTime);
+                g_waterRenderer->render(view, glm::mat4(), eyePos, currentTime);
+            }
 
         }
         else if (g_renderer) {
@@ -396,6 +426,17 @@ int main() {
             g_renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
 
             g_renderer->renderWorld(view, eyePos);
+            
+            // Рендерим воду поверх мира
+            if (g_waterRenderer) {
+                g_waterRenderer->update(g_deltaTime, currentTime);
+                g_waterRenderer->render(view, glm::mat4(), eyePos, currentTime);
+            }
+        }
+        
+        // Рендерим underwater эффект если камера под водой
+        if (g_waterRenderer && g_waterRenderer->isCameraUnderwater(eyePos)) {
+            g_waterRenderer->renderUnderwaterEffect(SCR_WIDTH, SCR_HEIGHT);
         }
 
         // --- HUD ---
@@ -419,6 +460,9 @@ int main() {
     if (g_lmRenderer) {
         g_lmRenderer->unloadWorld();
     }
+    if (g_waterRenderer) {
+        g_waterRenderer->unload();
+    }
 
     g_bspLoader->cleanupTextures();
 
@@ -430,6 +474,7 @@ int main() {
     delete g_player;
     delete g_renderer;
     delete g_lmRenderer;
+    delete g_waterRenderer;
     delete g_bspLoader;
     delete g_meshCollider;
     delete g_lightmapManager;
