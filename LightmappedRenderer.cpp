@@ -55,29 +55,28 @@ uniform vec3 ambientColor;
 void main() {
     vec4 albedo = texture(albedoTexture, vTexCoord);
     
-    // Не отбрасываем прозрачные текстуры (для skybox и т.д.)
-    // if (albedo.a < 0.5) discard;
+    // Прозрачность
+    if (albedo.a < 0.5) discard;
+    if (albedo.r < 0.01 && albedo.g < 0.01 && albedo.b > 0.9) discard;
     
     // Читаем lightmap
     vec3 lightmap = texture(lightmapAtlas, vLightmapCoord).rgb;
-    
-    // Overbrighting как в HL1 (умножение на интенсивность)
-    lightmap = lightmap * lightmapIntensity;
-    
-    // Ограничиваем яркость
-    lightmap = min(lightmap, vec3(1.0));
     
     if (showLightmapsOnly) {
         FragColor = vec4(lightmap, 1.0);
         return;
     }
     
-    // Финальное освещение: lightmap + небольшой ambient для теней
-    vec3 lighting = lightmap + ambientColor;
+    // ============ HL1 ТОЧНЫЙ АЛГОРИТМ ============
+    // 1. Overbrighting (умножаем на 2 как в HL1)
+    vec3 lighting = lightmap * lightmapIntensity;
+    
+    // 2. Отключаем гамма-коррекцию для проверки
+    // Временное отключение гаммы для диагностики
     vec3 finalColor = albedo.rgb * lighting;
     
-    // Гамма-коррекция
-    finalColor = pow(finalColor, vec3(1.0 / 2.2));
+    // 3. БЕЗ гамма-коррекции пока (увидим реальные цвета)
+    // finalColor = pow(finalColor, vec3(1.0 / 2.2)); // Временно закомментировать
     
     FragColor = vec4(finalColor, albedo.a);
 }
@@ -300,9 +299,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
         // Fan triangulation
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
-            lmIndices.push_back(baseIdx);
-            lmIndices.push_back(baseIdx + (unsigned int)j);
-            lmIndices.push_back(baseIdx + (unsigned int)j + 1);
+            lmIndices.push_back(baseIdx);                       // 0
+            lmIndices.push_back(baseIdx + (unsigned int)j + 1); // 2  ← swapped
+            lmIndices.push_back(baseIdx + (unsigned int)j);     // 1  ← swapped
         }
 
         unsigned int indexCount = (unsigned int)(lmIndices.size() - startIndex);
@@ -401,7 +400,6 @@ void LightmappedRenderer::beginFrame(const glm::vec3& clearColor) {
     glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
-
 void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
     BSPLoader& bsp, const glm::vec3& ambientColor) {
 
@@ -421,8 +419,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     glActiveTexture(GL_TEXTURE1);
     lmManager->getAtlas().bind(GL_TEXTURE1);
 
-    // ВРЕМЕННО ОТКЛЮЧАЕМ CULLING ДЛЯ ДИАГНОСТИКИ
-    glDisable(GL_CULL_FACE);
 
     // Если отключение помогло - проблема в порядке вершин
     // Тогда нужно будет сменить GL_CCW на GL_CW или наоборот
@@ -439,6 +435,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
                 glBindTexture(GL_TEXTURE_2D, texID);
             }
             else {
+                // Если текстуры нет - используем дефолтную (белую) или пропускаем
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
             currentTex = texID;

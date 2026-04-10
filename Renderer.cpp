@@ -202,7 +202,12 @@ uniform sampler2D uTexture;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
-    if (texColor.a < 0.5) discard;
+    
+    // HL1 color key: синий цвет (0,0,1) = прозрачность
+    // Также проверяем обычную альфу
+    if (texColor.a < 0.5 || (texColor.r < 0.01 && texColor.g < 0.01 && texColor.b > 0.9)) {
+        discard;
+    }
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
@@ -238,12 +243,12 @@ void main() {
     vec4 albedo = texture(gAlbedo, vTexCoord);
     
     if (length(fragPos) < 0.001) {
-        FragColor = vec4(0.05, 0.05, 0.05, 1.0);
+        FragColor = vec4(0.0, 0.0, 0.0, 1.0);  // Полностью чёрный фон
         return;
     }
     
-    // Simple ambient lighting only - no dynamic lights
-    vec3 ambient = vec3(0.3) * albedo.rgb;
+    // Минимальный ambient - тёмные места почти чёрные
+    vec3 ambient = vec3(1.00) * albedo.rgb;
     
     FragColor = vec4(ambient, albedo.a);
 }

@@ -48,7 +48,7 @@ namespace {
     LightmapManager* g_lightmapManager = nullptr;
     LightmappedRenderer* g_lmRenderer = nullptr;
 
-    float g_lightmapIntensity = 4.0f;
+    float g_lightmapIntensity = 1.0f;
     bool g_showLightmapsOnly = false;
     bool g_useLightmappedRenderer = false;
 }

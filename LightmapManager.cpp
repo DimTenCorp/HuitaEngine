@@ -12,8 +12,8 @@ bool LightmapAtlas::init() {
     glGenTextures(1, &atlasTexture);
     glBindTexture(GL_TEXTURE_2D, atlasTexture);
 
-    // Белая текстура по умолчанию (255 = полный свет)
-    std::vector<uint8_t> emptyData(atlasSize * atlasSize * 3, 255);
+    // ИСПРАВЛЕНО: чёрный фон (0 = нет света) вместо белого
+    std::vector<uint8_t> emptyData(atlasSize * atlasSize * 3, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, atlasSize, atlasSize,
         0, GL_RGB, GL_UNSIGNED_BYTE, emptyData.data());
 
@@ -27,10 +27,7 @@ bool LightmapAtlas::init() {
     rowHeight = 0;
     initialized = true;
 
-    // Создаём "белый" lightmap в углу для полигонов без освещения
-    // Координаты (0,0) до (1,1) в пикселях - белый цвет
-    uint8_t whitePixel[3] = { 255, 255, 255 };
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, whitePixel);
+    // Не нужен белый пиксель - теперь где нет lightmap будет чёрный цвет из (0,0)
 
     return atlasTexture != 0;
 }
