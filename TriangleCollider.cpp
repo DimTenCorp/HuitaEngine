@@ -31,9 +31,8 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
         // Определяем, является ли треугольник жидкостью
         tri.isLiquid = false;
-        size_t triIndex = i / 3;
-        if (bspLoader && triIndex < faceTextureIndices.size()) {
-            int texIndex = faceTextureIndices[triIndex];
+        if (bspLoader && i < faceTextureIndices.size()) {
+            int texIndex = faceTextureIndices[i / 3];
             if (texIndex >= 0) {
                 tri.isLiquid = bspLoader->isTextureLiquid(texIndex);
             }
@@ -41,14 +40,6 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
         triangles.push_back(tri);
     }
-
-    // Подсчитываем количество жидких треугольников для отладки
-    size_t liquidCount = 0;
-    for (const auto& tri : triangles) {
-        if (tri.isLiquid) liquidCount++;
-    }
-    std::cout << "[COLLIDER] Total triangles: " << triangles.size() 
-              << ", Liquid triangles: " << liquidCount << std::endl;
 
     if (!triangles.empty()) {
         worldBounds = triangles[0].bounds;
