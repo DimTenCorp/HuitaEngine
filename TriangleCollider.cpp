@@ -9,7 +9,6 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
     if (indices.empty()) return;
 
-    // Строим треугольники из индексов
     for (size_t i = 0; i < indices.size(); i += 3) {
         if (i + 2 >= indices.size()) break;
 
@@ -25,14 +24,11 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
         const glm::vec3& v2 = vertices[i2].position;
 
         Triangle tri(v0, v1, v2);
-
-        // Отбрасываем слишком маленькие треугольники (degenerate)
         if (glm::length(tri.normal) < 0.001f) continue;
 
         triangles.push_back(tri);
     }
 
-    // Считаем общие bounds
     if (!triangles.empty()) {
         worldBounds = triangles[0].bounds;
         for (const auto& tri : triangles) {
@@ -40,6 +36,197 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
             worldBounds.max = glm::max(worldBounds.max, tri.bounds.max);
         }
     }
+}
+
+float MeshCollider::pointSegmentDistance(const glm::vec3& point, const glm::vec3& a,
+    const glm::vec3& b, glm::vec3& closest) const {
+    glm::vec3 ab = b - a;
+    float t = glm::dot(point - a, ab) / glm::dot(ab, ab);
+    t = glm::clamp(t, 0.0f, 1.0f);
+    closest = a + ab * t;
+    return glm::distance(point, closest);
+}
+
+float MeshCollider::segmentSegmentDistance(const glm::vec3& p1, const glm::vec3& p2,
+    const glm::vec3& p3, const glm::vec3& p4,
+    glm::vec3& closest1, glm::vec3& closest2) const {
+    glm::vec3 u = p2 - p1;
+    glm::vec3 v = p4 - p3;
+    glm::vec3 w = p1 - p3;
+
+    float a = glm::dot(u, u);
+    float b = glm::dot(u, v);
+    float c = glm::dot(v, v);
+    float d = glm::dot(u, w);
+    float e = glm::dot(v, w);
+
+    float D = a * c - b * b;
+    float sc, sN, sD = D;
+    float tc, tN, tD = D;
+
+    if (D < 0.0001f) {
+        sN = 0.0f;
+        sD = 1.0f;
+        tN = e;
+        tD = c;
+    }
+    else {
+        sN = (b * e - c * d);
+        tN = (a * e - b * d);
+        if (sN < 0.0f) {
+            sN = 0.0f;
+            tN = e;
+            tD = c;
+        }
+        else if (sN > sD) {
+            sN = sD;
+            tN = e + b;
+            tD = c;
+        }
+    }
+
+    if (tN < 0.0f) {
+        tN = 0.0f;
+        if (-d < 0.0f) sN = 0.0f;
+        else if (-d > a) sN = sD;
+        else {
+            sN = -d;
+            sD = a;
+        }
+    }
+    else if (tN > tD) {
+        tN = tD;
+        if ((-d + b) < 0.0f) sN = 0;
+        else if ((-d + b) > a) sN = sD;
+        else {
+            sN = (-d + b);
+            sD = a;
+        }
+    }
+
+    sc = (std::abs(sN) < 0.0001f ? 0.0f : sN / sD);
+    tc = (std::abs(tN) < 0.0001f ? 0.0f : tN / tD);
+
+    closest1 = p1 + sc * u;
+    closest2 = p3 + tc * v;
+
+    return glm::distance(closest1, closest2);
+}
+
+bool MeshCollider::intersectCapsule(const Capsule& capsule) const {
+    // Broad phase
+    AABB bounds = capsule.getBounds();
+    if (bounds.max.x < worldBounds.min.x || bounds.min.x > worldBounds.max.x ||
+        bounds.max.y < worldBounds.min.y || bounds.min.y > worldBounds.max.y ||
+        bounds.max.z < worldBounds.min.z || bounds.min.z > worldBounds.max.z) {
+        return false;
+    }
+
+    // Проверяем каждый треугольник
+    for (const auto& tri : triangles) {
+        // Проверка AABB треугольника
+        if (bounds.max.x < tri.bounds.min.x || bounds.min.x > tri.bounds.max.x ||
+            bounds.max.y < tri.bounds.min.y || bounds.min.y > tri.bounds.max.y ||
+            bounds.max.z < tri.bounds.min.z || bounds.min.z > tri.bounds.max.z) {
+            continue;
+        }
+
+        // Находим ближайшие точки между осью капсулы и треугольником
+        // Упрощенный метод: проверяем расстояние от центра капсулы до треугольника
+        glm::vec3 closestOnTri;
+        float distToTri = pointTriangleDistance(capsule.getCenter(), tri, closestOnTri);
+
+        // Если центр близко - проверяем точнее
+        if (distToTri < capsule.radius + capsule.getHeight() * 0.5f) {
+            // Точная проверка: расстояние от отрезка капсулы до треугольника
+            glm::vec3 closestOnSeg, closestOnTri2;
+
+            // Проверяем все 3 ребра треугольника против оси капсулы
+            float d1 = segmentSegmentDistance(capsule.a, capsule.b, tri.v0, tri.v1, closestOnSeg, closestOnTri2);
+            if (d1 < capsule.radius) return true;
+
+            float d2 = segmentSegmentDistance(capsule.a, capsule.b, tri.v1, tri.v2, closestOnSeg, closestOnTri2);
+            if (d2 < capsule.radius) return true;
+
+            float d3 = segmentSegmentDistance(capsule.a, capsule.b, tri.v2, tri.v0, closestOnSeg, closestOnTri2);
+            if (d3 < capsule.radius) return true;
+
+            // Проверяем расстояние от вершин капсулы до треугольника
+            float da = pointTriangleDistance(capsule.a, tri, closestOnTri2);
+            if (da < capsule.radius) return true;
+
+            float db = pointTriangleDistance(capsule.b, tri, closestOnTri2);
+            if (db < capsule.radius) return true;
+        }
+    }
+    return false;
+}
+
+SweepResult MeshCollider::sweepCapsule(const Capsule& playerCapsule, const glm::vec3& start,
+    const glm::vec3& end) const {
+    SweepResult result;
+    result.t = 1.0f;
+
+    glm::vec3 movement = end - start;
+    float moveLen = glm::length(movement);
+    if (moveLen < 0.0001f) {
+        Capsule testCapsule = playerCapsule;
+        testCapsule.a += start;
+        testCapsule.b += start;
+        result.hit = intersectCapsule(testCapsule);
+        return result;
+    }
+
+    glm::vec3 dir = movement / moveLen;
+    float bestT = 1.0f;
+    glm::vec3 bestNormal(0.0f, 1.0f, 0.0f);
+    bool foundHit = false;
+
+    // Проверяем несколько точек вдоль пути (simplified sweep)
+    int steps = std::max(3, (int)(moveLen / playerCapsule.radius));
+    for (int i = 0; i <= steps; ++i) {
+        float t = i / (float)steps;
+        glm::vec3 pos = start + movement * t;
+
+        Capsule testCapsule = playerCapsule;
+        testCapsule.a += pos;
+        testCapsule.b += pos;
+
+        if (intersectCapsule(testCapsule)) {
+            // Уточняем бинарным поиском
+            float left = (i > 0) ? (i - 1) / (float)steps : 0.0f;
+            float right = t;
+            for (int iter = 0; iter < 4; ++iter) {
+                float mid = (left + right) * 0.5f;
+                glm::vec3 midPos = start + movement * mid;
+                Capsule midCapsule = playerCapsule;
+                midCapsule.a += midPos;
+                midCapsule.b += midPos;
+
+                if (intersectCapsule(midCapsule)) {
+                    right = mid;
+                }
+                else {
+                    left = mid;
+                }
+            }
+
+            bestT = left;
+            foundHit = true;
+            break;
+        }
+    }
+
+    if (foundHit) {
+        result.hit = true;
+        result.t = bestT;
+        result.point = start + movement * bestT;
+        result.distance = bestT * moveLen;
+        // Нормаль примерная - в сторону движения назад
+        result.normal = -dir;
+    }
+
+    return result;
 }
 
 // Möller–Trumbore ray-triangle intersection
@@ -82,24 +269,19 @@ bool MeshCollider::aabbTriangleIntersect(const AABB& box, const Triangle& tri) c
 }
 
 bool MeshCollider::intersectAABB(const AABB& box) const {
-    // Broad phase: проверяем world bounds
     if (box.max.x < worldBounds.min.x || box.min.x > worldBounds.max.x ||
         box.max.y < worldBounds.min.y || box.min.y > worldBounds.max.y ||
         box.max.z < worldBounds.min.z || box.min.z > worldBounds.max.z) {
         return false;
     }
 
-    // Narrow phase: проверяем каждый треугольник
     for (const auto& tri : triangles) {
         if (aabbTriangleIntersect(box, tri)) {
-            // Дополнительная проверка: расстояние от центра AABB до треугольника
             glm::vec3 boxCenter = (box.min + box.max) * 0.5f;
             glm::vec3 closest;
             float dist = pointTriangleDistance(boxCenter, tri, closest);
-
             glm::vec3 boxSize = box.max - box.min;
             float boxRadius = glm::length(boxSize) * 0.5f;
-
             if (dist < boxRadius) return true;
         }
     }

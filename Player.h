@@ -36,6 +36,10 @@ class MeshCollider;
 #define VEC_VIEW            glm::vec3(0.0f, 28.0f, 0.0f)
 #define VEC_DUCK_VIEW       glm::vec3(0.0f, 12.0f, 0.0f)
 
+#define VEC_HULL_RADIUS     16.0f
+#define VEC_HULL_HEIGHT     72.0f  // Полная высота = 72 (от -36 до +36)
+#define VEC_DUCK_HULL_HEIGHT 36.0f
+
 class Player {
 private:
     glm::vec3 position;
@@ -78,6 +82,10 @@ private:
     bool m_bDidAutoJump = false;
     int m_nBunnyHopFrames = 0;
 
+    float m_fHullRadius;      // Радиус капсулы (обычно 16)
+    float m_fHullHeight;      // Текущая полная высота капсулы
+    float m_fDuckHullHeight;
+
 public:
     Player();
 
@@ -93,6 +101,8 @@ public:
     void WalkMove(float deltaTime);
     void FlyMove(float deltaTime);
     void CheckFalling(float deltaTime);
+
+    Capsule getPlayerCapsule(const glm::vec3& pos) const;
 
     glm::vec3 ClipVelocity(const glm::vec3& in, const glm::vec3& normal, float overbounce);
     bool TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& outPos);

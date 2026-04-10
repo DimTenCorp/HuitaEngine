@@ -26,13 +26,12 @@ struct SweepResult {
     float distance = 0.0f;
 };
 
-// Forward declaration of BSPVertex (defined in BSPLoader.h)
+// Forward declaration
 struct BSPVertex;
 
 class MeshCollider {
 private:
     std::vector<Triangle> triangles;
-    std::vector<AABB> cellBounds;
     AABB worldBounds;
 
     bool rayTriangleIntersect(const glm::vec3& orig, const glm::vec3& dir,
@@ -40,17 +39,28 @@ private:
     bool aabbTriangleIntersect(const AABB& box, const Triangle& tri) const;
     float pointTriangleDistance(const glm::vec3& p, const Triangle& tri, glm::vec3& closest) const;
 
+    // === НОВОЕ: Помощники для капсулы ===
+    float segmentSegmentDistance(const glm::vec3& p1, const glm::vec3& p2,
+        const glm::vec3& p3, const glm::vec3& p4,
+        glm::vec3& closest1, glm::vec3& closest2) const;
+    float pointSegmentDistance(const glm::vec3& point, const glm::vec3& a,
+        const glm::vec3& b, glm::vec3& closest) const;
+
 public:
     MeshCollider() = default;
 
-    // Use const reference to avoid needing full BSPVertex definition here
     void buildFromBSP(const std::vector<BSPVertex>& vertices,
         const std::vector<unsigned int>& indices);
 
+    // Старые AABB методы (оставим для совместимости)
+    bool intersectAABB(const AABB& box) const;
     SweepResult sweepAABB(const AABB& playerBox, const glm::vec3& start,
         const glm::vec3& end) const;
 
-    bool intersectAABB(const AABB& box) const;
+    // === НОВОЕ: Методы для капсулы ===
+    bool intersectCapsule(const Capsule& capsule) const;
+    SweepResult sweepCapsule(const Capsule& playerCapsule, const glm::vec3& start,
+        const glm::vec3& end) const;
 
     bool findClosestPoint(const glm::vec3& point, float radius,
         glm::vec3& closest, glm::vec3& normal) const;

@@ -8,19 +8,21 @@
 #include "TriangleCollider.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
-    return AABB{
-        pos + m_vecHullMin,
-        pos + m_vecHullMax
-    };
+    return getPlayerCapsule(pos).getBounds();
 }
 
 Player::Player() {
     position = glm::vec3(0.0f, 200.0f, 0.0f);
     velocity = glm::vec3(0.0f);
 
-    // Начинаем со стоячего hull
-    m_vecHullMin = VEC_HULL_MIN;
-    m_vecHullMax = VEC_HULL_MAX;
+    // Инициализация капсулы
+    m_fHullRadius = VEC_HULL_RADIUS;
+    m_fHullHeight = VEC_HULL_HEIGHT;
+    m_fDuckHullHeight = VEC_DUCK_HULL_HEIGHT;
+
+    // Начальные hull (как AABB для расчета, но используем как капсулу)
+    m_vecHullMin = glm::vec3(-m_fHullRadius, -m_fHullHeight * 0.5f, -m_fHullRadius);
+    m_vecHullMax = glm::vec3(m_fHullRadius, m_fHullHeight * 0.5f, m_fHullRadius);
 
     onGround = false;
     speed = 200.0f;
@@ -51,6 +53,20 @@ Player::Player() {
     m_nBunnyHopFrames = 0;
 
     stepHeight = 18.0f;
+}
+
+Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
+    float halfHeight = m_fHullHeight * 0.5f - m_fHullRadius; // Высота цилиндра без полусфер
+    if (halfHeight < 0) halfHeight = 0;
+
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    glm::vec3 offset = up * halfHeight;
+
+    return Capsule(
+        pos - offset,  // Нижняя сфера
+        pos + offset,  // Верхняя сфера  
+        m_fHullRadius  // Радиус
+    );
 }
 
 // === НЕЛИНЕЙНАЯ ИНТЕРПОЛЯЦИЯ КАК В HL1 ===
@@ -117,8 +133,6 @@ float Player::GetDuckFraction() const {
 
 glm::vec3 Player::GetCurrentViewOffset() const {
     float frac = GetDuckFraction();
-    // Интерполяция между стоячим и сидячим view offset
-    // VEC_VIEW = (0, 28, 0), VEC_DUCK_VIEW = (0, 12, 0)
     return glm::mix(VEC_VIEW, VEC_DUCK_VIEW, frac);
 }
 
@@ -158,7 +172,7 @@ void Player::handleInput(float deltaTime) {
         m_bDidAutoJump = false;
     }
 
-    // === ПРИСЯД ===
+    // === ПРИСЯД (упрощенно) ===
     if (currentButtons & 32) {
         // Зажали Ctrl - начинаем присяд
         if ((m_afButtonPressed & 32) && !IsDucking()) {
@@ -168,29 +182,8 @@ void Player::handleInput(float deltaTime) {
     else {
         // Отпустили Ctrl - пытаемся встать
         if (IsDucking() || IsFullyDucked()) {
-            // Проверяем, можем ли встать (нет ли препятствия сверху)
-            // Разница в высоте hull: 36 - 18 = 18 юнитов
-            float hullDiff = VEC_HULL_MAX.y - VEC_DUCK_HULL_MAX.y; // 18
-
-            glm::vec3 testPos = position;
-            testPos.y += hullDiff; // Проверяем на высоте стоячего hull
-
-            // Временно ставим стоячий hull для проверки
-            glm::vec3 oldMin = m_vecHullMin;
-            glm::vec3 oldMax = m_vecHullMax;
-            m_vecHullMin = VEC_HULL_MIN;
-            m_vecHullMax = VEC_HULL_MAX;
-
-            bool canStand = !checkCollisionMesh(testPos);
-
-            // Восстанавливаем hull
-            m_vecHullMin = oldMin;
-            m_vecHullMax = oldMax;
-
-            if (canStand) {
-                StopDuck();
-            }
-            // Иначе остаемся сидеть (hull не меняется)
+            StopDuck();
+            // Проверка возможности встать теперь в методе Duck()
         }
     }
 }
@@ -200,41 +193,58 @@ void Player::handleInput(float deltaTime) {
 void Player::Duck(float deltaTime) {
     float currentTime = (float)glfwGetTime();
     float elapsed = currentTime - m_flDuckTime;
-    float frac = GetDuckFraction();
 
     if (IsDucking()) {
         // === ПРИСЕДАЕМ ===
+        if (elapsed >= TIME_TO_DUCK && m_fHullHeight > m_fDuckHullHeight) {
+            float oldHeight = m_fHullHeight;
+            m_fHullHeight = m_fDuckHullHeight; // 36
 
-        // Меняем hull ТОЛЬКО когда полностью сели
-        if (elapsed >= TIME_TO_DUCK && m_vecHullMax.y > VEC_DUCK_HULL_MAX.y) {
-            // Меняем hull на сидячий
-            m_vecHullMin = VEC_DUCK_HULL_MIN;
-            m_vecHullMax = VEC_DUCK_HULL_MAX;
-
-            // Опускаем origin на разницу в hull min
-            // VEC_DUCK_HULL_MIN.y - VEC_HULL_MIN.y = -18 - (-36) = 18
+            // На земле опускаем origin, чтобы ноги остались на месте
+            // В воздухе центр масс не смещается - игрок просто "собирает ноги"
             if (onGround) {
-                float originShift = VEC_DUCK_HULL_MIN.y - VEC_HULL_MIN.y; // 18
-                position.y -= originShift;
+                float shift = (oldHeight - m_fHullHeight) * 0.5f; // (72-36)/2 = 18
+                position.y -= shift;
             }
         }
     }
     else {
         // === ВСТАЕМ ===
+        if (elapsed >= TIME_TO_DUCK && m_fHullHeight < VEC_HULL_HEIGHT) {
+            float newHeight = VEC_HULL_HEIGHT; // 72
+            float heightDiff = newHeight - m_fHullHeight; // 36
+            float shift = heightDiff * 0.5f; // 18
 
-        // Меняем hull ТОЛЬКО когда полностью встали
-        if (elapsed >= TIME_TO_DUCK && m_vecHullMax.y < VEC_HULL_MAX.y) {
-            // Меняем hull на стоячий
-            m_vecHullMin = VEC_HULL_MIN;
-            m_vecHullMax = VEC_HULL_MAX;
-
-            // Поднимаем origin обратно
+            // Проверяем, есть ли место сверху (только если на земле)
+            // В воздухе встаем без проверки - иначе игрок застрянет в воздухе
             if (onGround) {
-                float originShift = VEC_HULL_MIN.y - VEC_DUCK_HULL_MIN.y; // 18
-                position.y += originShift;
+                glm::vec3 testPos = position;
+                testPos.y += shift; // Куда сдвинется центр при вставании
+
+                // Сохраняем текущую высоту, проверяем с новой
+                float savedHeight = m_fHullHeight;
+                m_fHullHeight = newHeight;
+                bool canStand = !checkCollisionMesh(testPos);
+                m_fHullHeight = savedHeight;
+
+                if (!canStand) {
+                    // Не можем встать - возвращаем флаг присяда
+                    m_afPhysicsFlags |= PFLAG_DUCKING;
+                    return;
+                }
+
+                // Поднимаем origin на 18 единиц
+                position.y += shift;
             }
+
+            m_fHullHeight = newHeight;
         }
     }
+
+    // Обновляем m_vecHullMin/Max для совместимости с другими системами (опционально)
+    float halfHeight = m_fHullHeight * 0.5f;
+    m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, -m_fHullRadius);
+    m_vecHullMax = glm::vec3(m_fHullRadius, halfHeight, m_fHullRadius);
 }
 
 void Player::Jump() {
@@ -372,8 +382,8 @@ void Player::PostThink(float deltaTime) {
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
     if (!meshCollider) return false;
-    AABB box = getPlayerAABB(pos);
-    return meshCollider->intersectAABB(box);
+    Capsule capsule = getPlayerCapsule(pos);
+    return meshCollider->intersectCapsule(capsule);
 }
 
 bool Player::checkOnGround() const {
