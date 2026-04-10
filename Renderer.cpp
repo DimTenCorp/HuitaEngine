@@ -62,7 +62,11 @@ bool GBuffer::create(int w, int h) {
 
     glGenTextures(1, &depthTex);
     glBindTexture(GL_TEXTURE_2D, depthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
 
     unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
@@ -332,6 +336,8 @@ bool Renderer::init(int width, int height) {
     createQuadMesh();
 
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthRange(0.0f, 1.0f);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
@@ -420,6 +426,7 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
     stats.reset();
     gBuffer.bindForWriting();
     glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
+    glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
@@ -427,7 +434,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     if (!worldLoaded) return;
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f);
+        (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
     geometryPass(view, projection);
     lightingPass(viewPos);
@@ -436,6 +443,8 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     gBuffer.bindForWriting();
     glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     geometryShader->bind();
@@ -462,7 +471,7 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
     (void)viewPos; // Unused in simplified version
 
     GBuffer::unbind();
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
 
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
