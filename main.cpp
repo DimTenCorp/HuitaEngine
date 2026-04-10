@@ -145,7 +145,7 @@ bool initSystems(WADLoader& wadLoader) {
     if (!g_bspLoader || !g_player || !g_meshCollider) return false;
 
     // Загружаем BSP
-    if (!g_bspLoader->load("maps/de_pasan.bsp", wadLoader)) {
+    if (!g_bspLoader->load("maps/huita1.bsp", wadLoader)) {
         std::cerr << "Failed to load BSP" << std::endl;
         return false;
     }
