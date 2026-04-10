@@ -406,7 +406,12 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     if (worldVAO == 0 || !lmManager) return;
 
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / (float)screenHeight, 0.1f, 1000.0f);
+        (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+
+    // Включаем тест глубины и очистку
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glClear(GL_DEPTH_BUFFER_BIT);
 
     lightmappedShader->bind();
     lightmappedShader->setMat4("model", glm::mat4(1.0f));
