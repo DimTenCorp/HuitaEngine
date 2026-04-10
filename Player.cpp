@@ -378,11 +378,97 @@ void Player::CheckFalling(float deltaTime) {
     }
 }
 
+// Проверка нахождения в жидкости по треугольникам с флагом isLiquid
+void Player::CheckLiquid() {
+    if (!meshCollider) {
+        m_bInLiquid = false;
+        m_flLiquidDepth = 0.0f;
+        return;
+    }
+
+    const auto& triangles = meshCollider->getTriangles();
+    glm::vec3 playerPos = position;
+    float playerHeight = m_fHullHeight;
+    float playerRadius = m_fHullRadius;
+
+    // Ищем ближайший жидкий треугольник под игроком
+    float highestLiquidSurface = -10000.0f;
+    bool foundLiquid = false;
+
+    for (const auto& tri : triangles) {
+        if (!tri.isLiquid) continue;
+
+        // Проверяем, находится ли игрок над этим треугольником
+        // Проекция позиции игрока на плоскость треугольника
+        glm::vec3 center = (tri.v0 + tri.v1 + tri.v2) / 3.0f;
+        float distToCenter = glm::distance(glm::vec3(playerPos.x, 0, playerPos.z), 
+                                            glm::vec3(center.x, 0, center.z));
+
+        if (distToCenter > playerRadius + 50.0f) continue; // Слишком далеко
+
+        // Проверяем высоту поверхности жидкости
+        // Для упрощения считаем что поверхность жидкости - это верхняя точка треугольника
+        float liquidHeight = glm::max(tri.v0.y, glm::max(tri.v1.y, tri.v2.y));
+
+        // Игрок в жидкости если его ноги ниже поверхности жидкости
+        float feetHeight = playerPos.y - playerHeight * 0.5f;
+        
+        if (feetHeight < liquidHeight && playerPos.y > liquidHeight - playerHeight) {
+            if (liquidHeight > highestLiquidSurface) {
+                highestLiquidSurface = liquidHeight;
+                foundLiquid = true;
+                m_liquidSurface = glm::vec3(playerPos.x, liquidHeight, playerPos.z);
+            }
+        }
+    }
+
+    m_bInLiquid = foundLiquid;
+    if (foundLiquid) {
+        // Вычисляем глубину погружения (0.0 - не погружен, 1.0 - полностью погружен)
+        float feetHeight = playerPos.y - playerHeight * 0.5f;
+        float headHeight = playerPos.y + playerHeight * 0.5f;
+        
+        if (highestLiquidSurface >= headHeight) {
+            m_flLiquidDepth = 1.0f; // Полностью под водой
+        }
+        else if (highestLiquidSurface <= feetHeight) {
+            m_flLiquidDepth = 0.0f; // Не в воде
+            m_bInLiquid = false;
+        }
+        else {
+            m_flLiquidDepth = (highestLiquidSurface - feetHeight) / playerHeight;
+        }
+    }
+    else {
+        m_flLiquidDepth = 0.0f;
+    }
+}
+
 void Player::PreThink(float deltaTime) {
+    // Проверяем жидкости перед движением
+    CheckLiquid();
 }
 
 void Player::PostThink(float deltaTime) {
     CheckFalling(deltaTime);
+    
+    // Применяем эффекты жидкостии
+    if (m_bInLiquid) {
+        // Замедление в жидкостии
+        velocity *= 0.9f;
+        
+        // Плавное всплытие если игрок не двигается
+        if (velocity.y > -50.0f && velocity.y < 50.0f) {
+            velocity.y += 100.0f * deltaTime; // Всплытие
+        }
+        
+        // Уменьшаем гравитацию в жидкостии
+        gravity = 400.0f; // Половина обычной гравитации
+    }
+    else {
+        // Возвращаем нормальную гравитацию
+        gravity = 800.0f;
+    }
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {

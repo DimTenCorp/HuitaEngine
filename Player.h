@@ -165,5 +165,5 @@ public:
     // Жидкости
     bool IsInLiquid() const { return m_bInLiquid; }
     float GetLiquidDepth() const { return m_flLiquidDepth; }
-    void CheckLiquid(const MeshCollider* collider);
+    void CheckLiquid();  // Проверка жидкостии (использует meshCollider из члена класса)
 };

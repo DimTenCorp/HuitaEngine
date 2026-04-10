@@ -182,13 +182,26 @@ bool initSystems(WADLoader& wadLoader) {
     std::vector<int> faceTextureIndices;
     const auto& drawCalls = g_bspLoader->getDrawCalls();
     const auto& indices = g_bspLoader->getMeshIndices();
+    const auto& texInfos = g_bspLoader->getTexInfos();
+    
+    // Подсчитываем количество жидких текстур для отладки
+    int liquidTexCount = 0;
+    for (size_t i = 0; i < texInfos.size(); i++) {
+        if (g_bspLoader->isTextureLiquid(static_cast<int>(i))) {
+            liquidTexCount++;
+        }
+    }
+    std::cout << "[LIQUID] Found " << liquidTexCount << " liquid textures in BSP" << std::endl;
     
     // Для каждого draw call определяем текстуру и проставляем её всем треугольникам
-    size_t indexOffset = 0;
+    // Ключевое исправление: используем информацию из BSP faces для правильного сопоставления
+    size_t totalTriangles = 0;
+    size_t liquidTriangles = 0;
+    
     for (const auto& drawCall : drawCalls) {
         int texIndex = -1;
-        // Находим индекс текстуры в массиве BSP
-        for (size_t i = 0; i < g_bspLoader->getTexInfos().size(); i++) {
+        // Находим индекс текстуры в массиве BSP по texture ID
+        for (size_t i = 0; i < texInfos.size(); i++) {
             if (g_bspLoader->getTextureID(i) == drawCall.texID) {
                 texIndex = static_cast<int>(i);
                 break;
@@ -199,10 +212,16 @@ bool initSystems(WADLoader& wadLoader) {
         size_t numTriangles = drawCall.indexCount / 3;
         for (size_t t = 0; t < numTriangles; t++) {
             faceTextureIndices.push_back(texIndex);
+            totalTriangles++;
+            if (texIndex >= 0 && g_bspLoader->isTextureLiquid(texIndex)) {
+                liquidTriangles++;
+            }
         }
-        
-        indexOffset += drawCall.indexCount;
     }
+    
+    std::cout << "[COLLIDER] Built faceTextureIndices with " << faceTextureIndices.size() 
+              << " entries for " << totalTriangles << " triangles" << std::endl;
+    std::cout << "[LIQUID] Found " << liquidTriangles << " triangles with liquid texture (prefix !)" << std::endl;
     
     g_meshCollider->buildFromBSP(vertices, indices, faceTextureIndices, g_bspLoader);
     std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount()
