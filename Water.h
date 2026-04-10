@@ -106,6 +106,7 @@ public:
     // Получение текущего цветового фильтра
     glm::vec3 getUnderwaterColor() const { return underwaterColor; }
     float getUnderwaterFogDensity() const { return underwaterFogDensity; }
+    float getCurrentTime() const { return currentTime; }
 
 private:
     float currentTime;

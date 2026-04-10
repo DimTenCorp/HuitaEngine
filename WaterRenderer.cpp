@@ -496,7 +496,7 @@ void WaterRenderer::renderUnderwaterEffect(int screenWidth, int screenHeight) {
     underwaterShader->bind();
     underwaterShader->setVec3("underwaterColor", waterManager.getUnderwaterColor());
     underwaterShader->setFloat("fogDensity", waterManager.getUnderwaterFogDensity());
-    underwaterShader->setFloat("time", waterManager.currentTime);
+    underwaterShader->setFloat("time", waterManager.getCurrentTime());
     
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);

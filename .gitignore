@@ -1,46 +1,70 @@
 ```
-# Build artifacts
+# Compiled and build artifacts
+*.o
 *.obj
 *.exe
 *.dll
-*.lib
-*.pdb
-*.ilk
-*.exp
-*.sdf
-*.opensdf
-*.vcxproj.user
-ipch/
-*.aps
-*.ncb
-*.opt
-*.plg
-*.clw
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
+*.so
+*.a
+*.out
+build/
+dist/
 
 # Dependencies
+venv/
+.venv/
 node_modules/
-vendor/
+__pycache__/
+*.egg-info/
+.Python
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
+*.swo
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Editor files
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
-# OS generated files
+# System files
 .DS_Store
 Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```
