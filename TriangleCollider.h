@@ -6,6 +6,10 @@
 #include <algorithm>
 #include "AABB.h"
 
+// Forward declarations
+struct BSPVertex;
+class BSPLoader;
+
 struct Triangle {
     glm::vec3 v0, v1, v2;
     glm::vec3 normal;
@@ -30,8 +34,6 @@ struct SweepResult {
     float distance = 0.0f;
 };
 
-// Forward declaration
-struct BSPVertex;
 // Capsule defined in AABB.h, no need to forward declare
 
 class MeshCollider {
