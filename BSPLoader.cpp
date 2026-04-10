@@ -11,10 +11,8 @@
 #include "WADLoader.h"
 #include "TriangleCollider.h"
 
-static const float BSP_SCALE = 0.025f;
-
 static glm::vec3 convertPosition(const glm::vec3& bspPos) {
-    return glm::vec3(-bspPos.x * BSP_SCALE, bspPos.z * BSP_SCALE, bspPos.y * BSP_SCALE);
+    return glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
 }
 
 static glm::vec3 convertNormal(const glm::vec3& bspNormal) {
@@ -52,7 +50,7 @@ bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
     size_t count = lump.length / (3 * sizeof(float));
 
     vertices.resize(count);
-    originalVertices.resize(count);  // <-- НОВОЕ
+    originalVertices.resize(count);
 
     fseek(file, lump.offset, SEEK_SET);
     for (size_t i = 0; i < count; i++) {
@@ -61,9 +59,9 @@ bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
         fread(&y, sizeof(float), 1, file);
         fread(&z, sizeof(float), 1, file);
 
-        glm::vec3 original(x, y, z);           // Оригинальная BSP позиция
-        originalVertices[i] = original;         // Сохраняем для lightmap
-        vertices[i] = convertPosition(original); // Конвертируем для рендера
+        glm::vec3 original(x, y, z);
+        originalVertices[i] = original;
+        vertices[i] = convertPosition(original); // Только перестановка осей!
     }
     return true;
 }
@@ -113,7 +111,7 @@ bool BSPLoader::loadPlanes(FILE* file, const BSPHeader& header) {
         fread(&dist, sizeof(float), 1, file);
         fread(&type, sizeof(int), 1, file);
         planes[i].normal = convertNormal(glm::vec3(nx, ny, nz));
-        planes[i].dist = dist * BSP_SCALE;
+        planes[i].dist = dist;
         planes[i].type = type;
     }
     return true;
@@ -126,17 +124,10 @@ bool BSPLoader::loadModels(FILE* file, const BSPHeader& header) {
     models.resize(count);
     fseek(file, lump.offset, SEEK_SET);
     fread(models.data(), sizeof(BSPModel), count, file);
-    for (auto& model : models) {
-        glm::vec3 minBSP(model.min[0], model.min[1], model.min[2]);
-        glm::vec3 maxBSP(model.max[0], model.max[1], model.max[2]);
-        glm::vec3 originBSP(model.origin[0], model.origin[1], model.origin[2]);
-        glm::vec3 minConv = convertPosition(minBSP);
-        glm::vec3 maxConv = convertPosition(maxBSP);
-        glm::vec3 originConv = convertPosition(originBSP);
-        model.min[0] = minConv.x; model.min[1] = minConv.y; model.min[2] = minConv.z;
-        model.max[0] = maxConv.x; model.max[1] = maxConv.y; model.max[2] = maxConv.z;
-        model.origin[0] = originConv.x; model.origin[1] = originConv.y; model.origin[2] = originConv.z;
-    }
+
+    // Убрать конвертацию min/max/origin - оставить как есть!
+    // Или только перестановку осей если нужно
+
     if (!models.empty()) {
         worldBounds.min = glm::vec3(models[0].min[0], models[0].min[1], models[0].min[2]);
         worldBounds.max = glm::vec3(models[0].max[0], models[0].max[1], models[0].max[2]);
@@ -448,12 +439,10 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
             if (key == "origin") {
                 float ox = 0, oy = 0, oz = 0;
                 int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
-                if (parsed != 3) {
-                    std::cerr << "[BSP] Failed to parse origin: \"" << value << "\"\n";
-                    entity.origin = glm::vec3(0);
-                }
-                else {
-                    entity.origin = convertPosition(glm::vec3(ox, oy, oz));
+                if (parsed == 3) {
+                    // БЫЛО: entity.origin = convertPosition(glm::vec3(ox, oy, oz));
+                    // СТАЛО: только перестановка осей
+                    entity.origin = glm::vec3(-ox, oz, oy);
                 }
             }
 
@@ -479,142 +468,118 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
 
     for (int i = 0; i < subModel.numFaces; i++) {
         int faceIdx = subModel.firstFace + i;
-        if (faceIdx < 0 || faceIdx >= (int)faces.size()) {
-            std::cerr << "[BSP] Invalid face index: " << faceIdx << std::endl;
-            continue;
-        }
+        if (faceIdx < 0 || faceIdx >= (int)faces.size()) continue;
 
         const BSPFace& face = faces[faceIdx];
         if (face.numEdges < 3) continue;
+        if (face.planeNum >= planes.size()) continue;
+        if (face.texInfo >= texInfos.size()) continue;
 
-        if (face.planeNum >= planes.size()) {
-            std::cerr << "[BSP] Plane index out of range: " << face.planeNum << std::endl;
-            continue;
-        }
+        // НОРМАЛЬ - из BSP plane, конвертируем как в HL1
+        glm::vec3 bspNormal = planes[face.planeNum].normal;
+        if (face.side != 0) bspNormal = -bspNormal;
+        glm::vec3 worldNormal = convertNormal(bspNormal);
 
-        if (face.texInfo >= texInfos.size()) {
-            std::cerr << "[BSP] TexInfo index out of range: " << face.texInfo << std::endl;
-            continue;
-        }
+        const BSPTexInfo& texInfo = texInfos[face.texInfo];
 
-        glm::vec3 normal = planes[face.planeNum].normal;
-        if (face.side != 0) {
-            normal = -normal;
-        }
-
-        std::vector<glm::vec3> faceVerts;
-        faceVerts.reserve(face.numEdges);
+        // Собираем вершины фейса (используем ОРИГИНАЛЬНЫЕ BSP вершины!)
+        std::vector<glm::vec3> faceBspVerts;
+        faceBspVerts.reserve(face.numEdges);
 
         for (int j = 0; j < face.numEdges; j++) {
             int edgeIdx = face.firstEdge + j;
-            if (edgeIdx < 0 || edgeIdx >= (int)surfEdges.size()) {
-                std::cerr << "[BSP] Invalid surfEdge index: " << edgeIdx << std::endl;
-                break;
-            }
+            if (edgeIdx < 0 || edgeIdx >= (int)surfEdges.size()) break;
 
             int surfEdge = surfEdges[edgeIdx];
             unsigned short vindex;
 
             if (surfEdge >= 0) {
-                if (surfEdge >= (int)edges.size()) {
-                    std::cerr << "[BSP] Edge index out of range: " << surfEdge
-                        << " (max: " << edges.size() << ")" << std::endl;
-                    break;
-                }
+                if (surfEdge >= (int)edges.size()) break;
                 vindex = edges[surfEdge].v[0];
             }
             else {
                 int negEdge = -surfEdge;
-                if (negEdge < 0 || negEdge >= (int)edges.size()) {
-                    std::cerr << "[BSP] Negative edge index out of range: " << negEdge
-                        << " (max: " << edges.size() << ")" << std::endl;
-                    break;
-                }
+                if (negEdge < 0 || negEdge >= (int)edges.size()) break;
                 vindex = edges[negEdge].v[1];
             }
 
-            if (vindex >= vertices.size()) {
-                std::cerr << "[BSP] Vertex index out of range: " << vindex
-                    << " (max: " << vertices.size() << ")" << std::endl;
-                continue;
-            }
+            if (vindex >= originalVertices.size()) continue;
 
-            faceVerts.push_back(vertices[vindex]);
+            // ВАЖНО: используем ОРИГИНАЛЬНУЮ вершину для правильного расчёта UV
+            faceBspVerts.push_back(originalVertices[vindex]);
         }
 
-        if (faceVerts.size() < 3) continue;
+        if (faceBspVerts.size() < 3) continue;
 
+        // Размеры текстуры
+        int texIdx = texInfo.textureIndex;
+        if (texIdx < 0 || texIdx >= (int)glTextureIds.size()) texIdx = 0;
+
+        GLuint textureID = glTextureIds[texIdx];
+        int texWidth = textureDimensions[texIdx].x;
+        int texHeight = textureDimensions[texIdx].y;
+        if (texWidth <= 0 || texHeight <= 0) {
+            texWidth = texHeight = 256;
+        }
+
+        // Создаём вершины меша
+        std::vector<BSPVertex> faceMeshVerts;
+        faceMeshVerts.reserve(faceBspVerts.size());
+
+        for (const auto& bspPos : faceBspVerts) {
+            BSPVertex v;
+
+            // ПОЗИЦИЯ - конвертируем для рендера
+            v.position = convertPosition(bspPos);
+
+            // НОРМАЛЬ
+            v.normal = worldNormal;
+
+            // ТЕКСТУРНЫЕ UV - считаем в BSP пространстве (как в HL1)
+            // s = dot(vertex, s_axis) + s_offset
+            float s = bspPos.x * texInfo.s[0] + bspPos.y * texInfo.s[1]
+                + bspPos.z * texInfo.s[2] + texInfo.s[3];
+            float t = bspPos.x * texInfo.t[0] + bspPos.y * texInfo.t[1]
+                + bspPos.z * texInfo.t[2] + texInfo.t[3];
+
+            v.texCoord = glm::vec2(s / texWidth, t / texHeight);
+
+            faceMeshVerts.push_back(v);
+        }
+
+        // AABB для фейса (в мировых координатах)
         AABB faceBounds;
-        faceBounds.min = faceBounds.max = faceVerts[0];
-        for (const auto& v : faceVerts) {
-            faceBounds.min = glm::min(faceBounds.min, v);
-            faceBounds.max = glm::max(faceBounds.max, v);
+        faceBounds.min = faceBounds.max = faceMeshVerts[0].position;
+        for (const auto& v : faceMeshVerts) {
+            faceBounds.min = glm::min(faceBounds.min, v.position);
+            faceBounds.max = glm::max(faceBounds.max, v.position);
         }
-        float epsilon = 0.1f * BSP_SCALE;
+        float epsilon = 0.1f;
         faceBounds.min -= glm::vec3(epsilon);
         faceBounds.max += glm::vec3(epsilon);
         faceBoundingBoxes.push_back(faceBounds);
 
-        const BSPTexInfo& texInfo = texInfos[face.texInfo];
-        int texIdx = texInfo.textureIndex;
-
-        if (texIdx < 0 || texIdx >= (int)glTextureIds.size()) {
-            texIdx = 0;
-        }
-
-        GLuint textureID = glTextureIds[texIdx];
-
-        int texWidth = textureDimensions[texIdx].x;
-        int texHeight = textureDimensions[texIdx].y;
-
-        if (texWidth <= 0 || texHeight <= 0) {
-            texWidth = 256;
-            texHeight = 256;
-        }
-
-        glm::vec3 s_vec(texInfo.s[0], texInfo.s[1], texInfo.s[2]);
-        glm::vec3 t_vec(texInfo.t[0], texInfo.t[1], texInfo.t[2]);
-
-        std::vector<glm::vec2> texCoords;
-        texCoords.reserve(faceVerts.size());
-
-        for (const auto& pos : faceVerts) {
-            // Для текстурных координат нужна обратная конвертация
-            // т.к. texInfo.s/t работают в оригинальном BSP пространстве
-            glm::vec3 originalBSPPos(
-                -pos.x / BSP_SCALE,
-                pos.z / BSP_SCALE,
-                pos.y / BSP_SCALE
-            );
-
-            float u = glm::dot(originalBSPPos, s_vec) + texInfo.s[3];
-            float v = glm::dot(originalBSPPos, t_vec) + texInfo.t[3];
-
-            u = u / (float)texWidth;
-            v = v / (float)texHeight;
-
-            texCoords.push_back(glm::vec2(u, v));
-        }
-
+        // Добавляем вершины в меш
         unsigned int faceStartVertex = baseVertex;
-
-        for (size_t j = 0; j < faceVerts.size(); j++) {
-            BSPVertex v;
-            v.position = faceVerts[j];
-            v.normal = normal;
-            v.texCoord = texCoords[j];
+        for (auto& v : faceMeshVerts) {
             meshVertices.push_back(v);
         }
 
+        // Триангуляция (fan)
         unsigned int startIdxOffset = (unsigned int)meshIndices.size();
-        for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
+        for (size_t j = 1; j + 1 < faceMeshVerts.size(); j++) {
             meshIndices.push_back(faceStartVertex);
             meshIndices.push_back(faceStartVertex + (unsigned int)j + 1);
             meshIndices.push_back(faceStartVertex + (unsigned int)j);
         }
 
-        drawCalls.push_back({ textureID, startIdxOffset, (unsigned int)((faceVerts.size() - 2) * 3) });
-        baseVertex += (unsigned int)faceVerts.size();
+        drawCalls.push_back({
+            textureID,
+            startIdxOffset,
+            (unsigned int)((faceMeshVerts.size() - 2) * 3)
+            });
+
+        baseVertex += (unsigned int)faceMeshVerts.size();
     }
 }
 

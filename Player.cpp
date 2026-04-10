@@ -4,35 +4,36 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include "TriangleCollider.h"
 
+AABB Player::getPlayerAABB(const glm::vec3& pos) const {
+    return AABB{
+        pos + m_vecHullMin,
+        pos + m_vecHullMax
+    };
+}
+
 Player::Player() {
-    position = glm::vec3(0.0f, 2.0f, 0.0f);
+    position = glm::vec3(0.0f, 200.0f, 0.0f);
     velocity = glm::vec3(0.0f);
 
-    // HL: Initialize hull sizes (Quake/Half-Life style)
-    m_vecStandMin = glm::vec3(-16.0f, -36.0f, -16.0f) / 32.0f;  // Scale to meters roughly
-    m_vecStandMax = glm::vec3(16.0f, 36.0f, 16.0f) / 32.0f;
-    m_vecDuckMin = glm::vec3(-16.0f, -18.0f, -16.0f) / 32.0f;
-    m_vecDuckMax = glm::vec3(16.0f, 18.0f, 16.0f) / 32.0f;
-    m_vecViewStand = glm::vec3(0.0f, 28.0f, 0.0f) / 32.0f;
-    m_vecViewDuck = glm::vec3(0.0f, 12.0f, 0.0f) / 32.0f;
-
-    size = glm::vec3(0.2f, 0.6f, 0.2f);  // Keep old for compatibility
+    // Начинаем со стоячего hull
+    m_vecHullMin = VEC_HULL_MIN;
+    m_vecHullMax = VEC_HULL_MAX;
 
     onGround = false;
-    speed = 6.0f;			// HL: sv_maxspeed equivalent
-    jumpForce = 8.0f;		// HL: sqrt(2 * gravity * height)
-    gravity = 25.0f;		// HL: sv_gravity
-    friction = 0.5f;		// HL: sv_friction
+    speed = 200.0f;
+    jumpForce = 270.0f;
+    gravity = 800.0f;
+    friction = 4.0f;
 
     yaw = -90.0f;
     pitch = 0.0f;
 
     noclipMode = false;
-    noclipSpeed = 12.0f;
+    noclipSpeed = 300.0f;
 
-    // HL: Initialize physics state
     m_afPhysicsFlags = 0;
     m_flFallVelocity = 0.0f;
     m_flDuckTime = 0.0f;
@@ -44,59 +45,90 @@ Player::Player() {
     m_afButtonPressed = 0;
     m_afButtonReleased = 0;
     m_chTextureType = 0;
+
+    m_bAutoJump = false;
+    m_bDidAutoJump = false;
+    m_nBunnyHopFrames = 0;
+
+    stepHeight = 18.0f;
 }
 
-void Player::GetHullSize(glm::vec3& outMin, glm::vec3& outMax) const {
-    if (IsFullyDucked()) {
-        outMin = m_vecDuckMin;
-        outMax = m_vecDuckMax;
-    }
-    else {
-        outMin = m_vecStandMin;
-        outMax = m_vecStandMax;
+// === НЕЛИНЕЙНАЯ ИНТЕРПОЛЯЦИЯ КАК В HL1 ===
+// S-curve для более быстрого начала и замедления в конце
+float Player::UTIL_SplineFraction(float value, float scale) const {
+    value = value * scale;
+    float valueSquared = value * value;
+    // 3x^2 - 2x^3 - кубический сплайн
+    return 3.0f * valueSquared - 2.0f * valueSquared * value;
+}
+
+// === СИСТЕМА ПРИСЯДА ===
+
+void Player::StartDuck() {
+    if (!(m_afPhysicsFlags & PFLAG_DUCKING)) {
+        m_afPhysicsFlags |= PFLAG_DUCKING;
+        m_flDuckTime = (float)glfwGetTime();
     }
 }
 
-float Player::GetViewOffset() const {
-    if (IsFullyDucked()) {
-        return m_vecViewDuck.y;
+void Player::StopDuck() {
+    if (m_afPhysicsFlags & PFLAG_DUCKING) {
+        m_afPhysicsFlags &= ~PFLAG_DUCKING;
+        m_flDuckTime = (float)glfwGetTime();
     }
-    return m_vecViewStand.y;
+}
+
+bool Player::IsDucking() const {
+    return (m_afPhysicsFlags & PFLAG_DUCKING) != 0;
 }
 
 bool Player::IsFullyDucked() const {
-    if (!(m_afPhysicsFlags & PFLAG_DUCKING)) return false;
-    float duckTime = glfwGetTime() - m_flDuckTime;
-    return duckTime >= TIME_TO_DUCK;
+    float currentTime = (float)glfwGetTime();
+    float elapsed = currentTime - m_flDuckTime;
+
+    // Полностью сидим если:
+    // 1. Мы в процессе присяда и прошло TIME_TO_DUCK
+    // 2. ИЛИ мы не в процессе присяда, но hull еще сидячий (вставаем)
+    if (IsDucking()) {
+        return elapsed >= TIME_TO_DUCK;
+    }
+    else {
+        // При вставании - считаем "сидячим" пока не прошло TIME_TO_DUCK
+        return elapsed < TIME_TO_DUCK;
+    }
 }
 
-glm::vec3 Player::getMin(const glm::vec3& pos) const {
-    glm::vec3 hullMin, hullMax;
-    GetHullSize(hullMin, hullMax);
-    return pos + hullMin;
+float Player::GetDuckFraction() const {
+    float currentTime = (float)glfwGetTime();
+    float elapsed = currentTime - m_flDuckTime;
+
+    if (IsDucking()) {
+        // Присядаем: 0 -> 1
+        if (elapsed >= TIME_TO_DUCK) return 1.0f;
+        // Нелинейная интерполяция для более "резкого" ощущения
+        return UTIL_SplineFraction(elapsed, 1.0f / TIME_TO_DUCK);
+    }
+    else {
+        // Встаем: 1 -> 0
+        if (elapsed >= TIME_TO_DUCK) return 0.0f;
+        return 1.0f - UTIL_SplineFraction(elapsed, 1.0f / TIME_TO_DUCK);
+    }
 }
 
-glm::vec3 Player::getMax(const glm::vec3& pos) const {
-    glm::vec3 hullMin, hullMax;
-    GetHullSize(hullMin, hullMax);
-    return pos + hullMax;
+glm::vec3 Player::GetCurrentViewOffset() const {
+    float frac = GetDuckFraction();
+    // Интерполяция между стоячим и сидячим view offset
+    // VEC_VIEW = (0, 28, 0), VEC_DUCK_VIEW = (0, 12, 0)
+    return glm::mix(VEC_VIEW, VEC_DUCK_VIEW, frac);
 }
 
-AABB Player::getPlayerAABB(const glm::vec3& pos) const {
-    AABB box;
-    box.min = getMin(pos);
-    box.max = getMax(pos);
-    return box;
-}
-
-// ========== HL-STYLE INPUT ==========
+// === ОБРАБОТКА ВВОДА ===
 
 void Player::handleInput(float deltaTime) {
     if (noclipMode) return;
 
     GLFWwindow* window = glfwGetCurrentContext();
 
-    // HL-style button tracking
     int currentButtons = 0;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) currentButtons |= 1;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) currentButtons |= 2;
@@ -111,114 +143,120 @@ void Player::handleInput(float deltaTime) {
     m_afButtonReleased = buttonsChanged & (~currentButtons);
     m_afButtonLast = currentButtons;
 
-    // BHOP: Space для прыжка (edge detection или autohop)
+    // Autohop
     if (m_bAutoJump && (currentButtons & 16)) {
-        // Autohop mode - прыгаем каждый кадр когда можно
         if (onGround && !m_bDidAutoJump) {
             Jump();
             m_bDidAutoJump = true;
         }
     }
     else if (m_afButtonPressed & 16) {
-        // Обычный прыжок по нажатию
         Jump();
     }
 
-    // Сбрасываем флаг autohop когда не на земле
     if (!onGround) {
         m_bDidAutoJump = false;
     }
 
-    // HL: Duck handling
-    if (currentButtons & 32) {  // CTRL pressed
+    // === ПРИСЯД ===
+    if (currentButtons & 32) {
+        // Зажали Ctrl - начинаем присяд
         if ((m_afButtonPressed & 32) && !IsDucking()) {
             StartDuck();
         }
     }
     else {
-        if (IsDucking()) {
-            // Try to unduck - check if there's room
+        // Отпустили Ctrl - пытаемся встать
+        if (IsDucking() || IsFullyDucked()) {
+            // Проверяем, можем ли встать (нет ли препятствия сверху)
+            // Разница в высоте hull: 36 - 18 = 18 юнитов
+            float hullDiff = VEC_HULL_MAX.y - VEC_DUCK_HULL_MAX.y; // 18
+
             glm::vec3 testPos = position;
-            testPos.y += (m_vecStandMax.y - m_vecDuckMax.y);  // Move up by duck difference
-            if (!checkCollisionMesh(testPos)) {
+            testPos.y += hullDiff; // Проверяем на высоте стоячего hull
+
+            // Временно ставим стоячий hull для проверки
+            glm::vec3 oldMin = m_vecHullMin;
+            glm::vec3 oldMax = m_vecHullMax;
+            m_vecHullMin = VEC_HULL_MIN;
+            m_vecHullMax = VEC_HULL_MAX;
+
+            bool canStand = !checkCollisionMesh(testPos);
+
+            // Восстанавливаем hull
+            m_vecHullMin = oldMin;
+            m_vecHullMax = oldMax;
+
+            if (canStand) {
                 StopDuck();
+            }
+            // Иначе остаемся сидеть (hull не меняется)
+        }
+    }
+}
+
+// === ОСНОВНАЯ ЛОГИКА ПРИСЯДА ===
+
+void Player::Duck(float deltaTime) {
+    float currentTime = (float)glfwGetTime();
+    float elapsed = currentTime - m_flDuckTime;
+    float frac = GetDuckFraction();
+
+    if (IsDucking()) {
+        // === ПРИСЕДАЕМ ===
+
+        // Меняем hull ТОЛЬКО когда полностью сели
+        if (elapsed >= TIME_TO_DUCK && m_vecHullMax.y > VEC_DUCK_HULL_MAX.y) {
+            // Меняем hull на сидячий
+            m_vecHullMin = VEC_DUCK_HULL_MIN;
+            m_vecHullMax = VEC_DUCK_HULL_MAX;
+
+            // Опускаем origin на разницу в hull min
+            // VEC_DUCK_HULL_MIN.y - VEC_HULL_MIN.y = -18 - (-36) = 18
+            if (onGround) {
+                float originShift = VEC_DUCK_HULL_MIN.y - VEC_HULL_MIN.y; // 18
+                position.y -= originShift;
             }
         }
     }
+    else {
+        // === ВСТАЕМ ===
 
-    // HL: Jump handling (edge detection like HL)
-    if (m_afButtonPressed & 16) {  // Space just pressed
-        Jump();
+        // Меняем hull ТОЛЬКО когда полностью встали
+        if (elapsed >= TIME_TO_DUCK && m_vecHullMax.y < VEC_HULL_MAX.y) {
+            // Меняем hull на стоячий
+            m_vecHullMin = VEC_HULL_MIN;
+            m_vecHullMax = VEC_HULL_MAX;
+
+            // Поднимаем origin обратно
+            if (onGround) {
+                float originShift = VEC_HULL_MIN.y - VEC_DUCK_HULL_MIN.y; // 18
+                position.y += originShift;
+            }
+        }
     }
 }
-
-// ========== HL-STYLE JUMP ==========
 
 void Player::Jump() {
-    // HL: Can't jump if on ladder
     if (m_afPhysicsFlags & PFLAG_ONLADDER) return;
-
-    // HL: Water jump check (skip)
-
-    // BHOP KEY: Прыгаем только если на земле
     if (!onGround) return;
 
-    // HL: Calculate jump velocity
-    float jumpHeight = 45.0f / 32.0f;
-
-    // Сохраняем горизонтальную скорость для BHOP
-    float horizSpeed = glm::length(glm::vec2(velocity.x, velocity.z));
-
-    // Longjump check
-    if (IsDucking() && m_fLongJump && (m_afButtonLast & 64)) {
+    // Longjump только если полностью сидим
+    if (IsFullyDucked() && m_fLongJump && (m_afButtonLast & 64)) {
         float yawRad = glm::radians(yaw);
-        velocity.x = cos(yawRad) * PLAYER_LONGJUMP_SPEED / 32.0f;
-        velocity.z = sin(yawRad) * PLAYER_LONGJUMP_SPEED / 32.0f;
-        velocity.y = sqrt(2.0f * gravity * 56.0f / 32.0f);
+        velocity.x = cos(yawRad) * PLAYER_LONGJUMP_SPEED;
+        velocity.z = sin(yawRad) * PLAYER_LONGJUMP_SPEED;
+        velocity.y = sqrt(2.0f * gravity * 56.0f);
+
+        // После longjump встаем
+        StopDuck();
     }
     else {
-        // Обычный прыжок - сохраняем текущую горизонтальную скорость!
-        velocity.y = sqrt(2.0f * gravity * jumpHeight);
+        velocity.y = sqrt(2.0f * gravity * 45.0f);
     }
 
-    // BHOP: Сбрасываем флаг земли ДО применения физики
     onGround = false;
-
-    // Небольшой бонус к скорости при perfect bhop (как в HL1)
-    // В HL1 это баг с friction, но мы сделаем честный бонус
-    if (horizSpeed > 0.1f) {
-        // Увеличиваем скорость на 5-10% при каждом прыжке (капимит ~1.7x от base speed)
-        float maxBhopSpeed = speed * 1.7f;
-        if (horizSpeed < maxBhopSpeed) {
-            float boost = 1.0f + (0.05f * (1.0f - horizSpeed / maxBhopSpeed));
-            velocity.x *= boost;
-            velocity.z *= boost;
-        }
-    }
 }
-
-// ========== HL-STYLE DUCK ==========
-
-void Player::Duck(float deltaTime) {
-    if (!IsDucking()) return;
-
-    float duckTime = glfwGetTime() - m_flDuckTime;
-
-    if (duckTime < TIME_TO_DUCK && onGround) {
-        // HL: In transition - adjust view offset smoothly
-        float duckFraction = duckTime / TIME_TO_DUCK;
-        // View offset interpolates between stand and duck
-    }
-    else {
-        // HL: Fully ducked - adjust position and hull
-        if (onGround) {
-            // When ducking on ground, origin stays same but view goes down
-            // When landing while ducking, need to adjust
-        }
-    }
-}
-
-// ========== HL-STYLE MOVEMENT ==========
 
 void Player::WalkMove(float deltaTime) {
     float yawRad = glm::radians(yaw);
@@ -236,11 +274,11 @@ void Player::WalkMove(float deltaTime) {
     float wishspeed = glm::length(wishvel);
     glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    // HL friction - ТОЛЬКО НА ЗЕМЛЕ! (ключевой момент для BHOP)
+    // Friction
     if (onGround) {
         float currentspeed = glm::length(glm::vec2(velocity.x, velocity.z));
         if (currentspeed > 0.001f) {
-            float drop = currentspeed * 4.0f * deltaTime;
+            float drop = currentspeed * friction * deltaTime;
             float newspeed = currentspeed - drop;
             if (newspeed < 0) newspeed = 0;
             if (newspeed > 0) {
@@ -250,11 +288,19 @@ void Player::WalkMove(float deltaTime) {
             }
         }
     }
-    // В воздухе НЕТ friction - скорость сохраняется!
 
-    // HL acceleration - сильнее на земле, слабее в воздухе
-    float accel = onGround ? 10.0f : 0.3f; // В воздухе почти нет ускорения
-    float maxSpeed = (m_afButtonLast & 64) ? speed * 1.5f : speed;
+    // Acceleration
+    float accel = onGround ? 10.0f : 0.3f;
+    float maxSpeed = speed;
+
+    // Сидя - 1/3 скорости
+    if (IsFullyDucked()) {
+        maxSpeed = speed * 0.333f;
+    }
+    // Бег
+    else if (m_afButtonLast & 64) {
+        maxSpeed = speed * 1.5f;
+    }
 
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = maxSpeed - currentspeed;
@@ -271,49 +317,25 @@ void Player::FlyMove(float deltaTime) {
     glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
     glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
 
-    // Получаем wish direction
     glm::vec3 wishvel(0.0f);
     GLFWwindow* window = glfwGetCurrentContext();
 
-    bool forwardPressed = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-    bool backPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-    bool leftPressed = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
-    bool rightPressed = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
-
-    if (forwardPressed) wishvel += forward;
-    if (backPressed) wishvel -= forward;
-    if (leftPressed) wishvel -= right;
-    if (rightPressed) wishvel += right;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishvel += forward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishvel -= forward;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishvel -= right;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishvel += right;
 
     float wishspeed = glm::length(wishvel);
-    glm::vec3 wishdir;
+    glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    if (wishspeed > 0.001f) {
-        wishdir = wishvel / wishspeed;
-    }
-    else {
-        // КЛЮЧЕВОЙ МОМЕНТ: если не нажаты клавиши, 
-        // но нажаты только A или D - движемся вперёд!
-        if ((leftPressed || rightPressed) && !forwardPressed && !backPressed) {
-            wishdir = forward; // Вперёд по взгляду!
-            wishspeed = 30.0f / 32.0f;
-        }
-        else {
-            wishdir = glm::vec3(0.0f);
-            wishspeed = 0.0f;
-        }
-    }
-
-    // HL air acceleration
-    float airAccel = 10.0f; // sv_airaccelerate
-
+    // Air acceleration
+    float airAccel = 10.0f;
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = wishspeed - currentspeed;
 
     if (addspeed > 0) {
         float accelspeed = airAccel * wishspeed * deltaTime;
         if (accelspeed > addspeed) accelspeed = addspeed;
-
         velocity.x += accelspeed * wishdir.x;
         velocity.z += accelspeed * wishdir.z;
     }
@@ -321,31 +343,19 @@ void Player::FlyMove(float deltaTime) {
     velocity.y -= gravity * deltaTime;
 }
 
-// ========== FALL DAMAGE (HL-STYLE) ==========
-
 void Player::CheckFalling(float deltaTime) {
-    // HL: Track fall velocity when in air
     if (!onGround) {
         if (velocity.y < 0) {
             m_flFallVelocity = -velocity.y;
         }
     }
     else {
-        // HL: Just landed
-        if (m_flFallVelocity > PLAYER_FALL_PUNCH_THRESHOLD / 32.0f) {
-            // HL: Fall impact
+        if (m_flFallVelocity > PLAYER_FALL_PUNCH_THRESHOLD) {
             float fallDamage = 0.0f;
-
-            if (m_flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED / 32.0f) {
-                // Calculate damage
-                fallDamage = (m_flFallVelocity * 32.0f - PLAYER_MAX_SAFE_FALL_SPEED) * DAMAGE_FOR_FALL_SPEED;
-
-                // HL: Play fall pain sound (removed as requested)
-                // HL: Screen punch
-                // pitch = m_flFallVelocity * 0.013f;  // HL formula
+            if (m_flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED) {
+                fallDamage = (m_flFallVelocity - PLAYER_MAX_SAFE_FALL_SPEED) * DAMAGE_FOR_FALL_SPEED;
                 if (fallDamage > 0) {
                     std::cout << "Fall damage: " << fallDamage << std::endl;
-                    // Apply damage to player here
                 }
             }
         }
@@ -353,27 +363,11 @@ void Player::CheckFalling(float deltaTime) {
     }
 }
 
-// ========== PRE/POST THINK (HL-STYLE) ==========
-
 void Player::PreThink(float deltaTime) {
-    // HL: Check ladder, water, etc. here
-    // Simplified: just track buttons
 }
 
 void Player::PostThink(float deltaTime) {
-    // HL: Fall damage, footsteps, etc.
     CheckFalling(deltaTime);
-}
-
-// ========== COLLISION (your existing + HL integration) ==========
-
-bool Player::checkCollision(const glm::vec3& pos, const AABB& box) {
-    glm::vec3 pMin = getMin(pos);
-    glm::vec3 pMax = getMax(pos);
-
-    return (pMin.x < box.max.x && pMax.x > box.min.x &&
-        pMin.y < box.max.y && pMax.y > box.min.y &&
-        pMin.z < box.max.z && pMax.z > box.min.z);
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
@@ -384,64 +378,13 @@ bool Player::checkCollisionMesh(const glm::vec3& pos) const {
 
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
-    // HL-style ground check: trace down slightly
     glm::vec3 testPos = position;
-    testPos.y -= 0.05f;
+    testPos.y -= 0.5f;
     return checkCollisionMesh(testPos);
 }
 
-glm::vec3 Player::ClipVelocity(const glm::vec3& in, const glm::vec3& normal, float overbounce) {
-    float backoff = glm::dot(in, normal) * overbounce;
-    glm::vec3 out = in - normal * backoff;
-
-    // HL: если скорость слишком маленькая - обнуляем
-    if (out.length() < 0.001f) {
-        return glm::vec3(0.0f);
-    }
-
-    return out;
-}
-
-bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& outPos) {
-    // Пробуем прямой путь
-    if (!checkCollisionMesh(end)) {
-        outPos = end;
-        return true;
-    }
-
-    // Находим нормаль столкновения (упрощенно - проверяем оси)
-    glm::vec3 move = end - start;
-
-    // Пробуем только X
-    if (std::abs(move.x) > 0.001f) {
-        glm::vec3 testX = start;
-        testX.x += move.x;
-        if (!checkCollisionMesh(testX)) {
-            outPos = testX;
-            return true;
-        }
-    }
-
-    // Пробуем только Z  
-    if (std::abs(move.z) > 0.001f) {
-        glm::vec3 testZ = start;
-        testZ.z += move.z;
-        if (!checkCollisionMesh(testZ)) {
-            outPos = testZ;
-            return true;
-        }
-    }
-
-    return false;
-
-}
-
 bool Player::stepSlideMove(float deltaTime, int axis) {
-    float moveAmount = 0.0f;
-    if (axis == 0) moveAmount = velocity.x * deltaTime;
-    else if (axis == 2) moveAmount = velocity.z * deltaTime;
-    else return false;
-
+    float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
     if (std::abs(moveAmount) < 0.0001f) return true;
 
     glm::vec3 startPos = position;
@@ -449,64 +392,49 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
     if (axis == 0) moveDir.x = moveAmount;
     else moveDir.z = moveAmount;
 
-    // 1. Пробуем обычное движение (для склонов - sliding)
+    // Try normal move
     glm::vec3 newPos = startPos + moveDir;
-
-    // Проверяем коллизию
     if (!checkCollisionMesh(newPos)) {
         position = newPos;
         return true;
     }
 
-    // 2. Есть коллизия - пробуем step up ТОЛЬКО если на земле
-    if (!onGround) {
-        return false; // В воздухе не делаем step
-    }
+    if (!onGround) return false;
 
-    // HL-style step: вверх на stepHeight
+    // Try step up
     glm::vec3 stepUp = startPos;
     stepUp.y += stepHeight;
 
-    // Проверяем место над головой
     if (checkCollisionMesh(stepUp)) {
-        return false; // Не влезаем
+        return false;
     }
 
-    // Двигаем в сторону на высоте ступеньки
-    glm::vec3 stepOver = stepUp;
-    stepOver.x += moveDir.x;
-    stepOver.z += moveDir.z;
-
+    glm::vec3 stepOver = stepUp + moveDir;
     if (checkCollisionMesh(stepOver)) {
-        return false; // Стена на уровне ступеньки
+        return false;
     }
 
-    // Спускаемся вниз на stepHeight (не сканируем!)
     glm::vec3 stepDown = stepOver;
     stepDown.y -= stepHeight;
 
-    // Проверяем, есть ли там пол (одна проверка!)
     if (checkCollisionMesh(stepDown)) {
-        // Есть коллизия внизу - значит есть пол, встаём на stepHeight над ним
-        // Находим точную высоту одним движением вверх
-        glm::vec3 finalPos = stepDown;
-        finalPos.y += 0.02f; // Чуть выше пола
+        position = stepDown;
+        position.y += 0.5f;
+        onGround = true;
+        velocity.y = 0.0f;
+        return true;
+    }
 
-        // Проверяем что не застряли
-        if (!checkCollisionMesh(finalPos)) {
-            position = finalPos;
+    for (int i = 1; i <= 5; i++) {
+        glm::vec3 testPos = stepOver;
+        testPos.y -= stepHeight * (i / 5.0f);
+        if (checkCollisionMesh(testPos)) {
+            position = testPos;
+            position.y += 0.5f;
             onGround = true;
             velocity.y = 0.0f;
             return true;
         }
-    }
-
-    // Нет пола под step - пробуем скользить по склону
-    // Упрощенно: пробуем позицию между start и end по Y
-    glm::vec3 slidePos = startPos + moveDir * 0.5f;
-    if (!checkCollisionMesh(slidePos)) {
-        position = slidePos;
-        return true;
     }
 
     return false;
@@ -514,7 +442,6 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
     if (axis == 1) {
-        // Вертикальная ось
         glm::vec3 newPos = position;
         newPos.y += velocity.y * deltaTime;
 
@@ -533,95 +460,31 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // Горизонтальная ось - НЕ используем stepSlideMove, делаем по-нормальному
-    float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
-
-    if (std::abs(moveAmount) < 0.0001f) return;
-
-    glm::vec3 moveDir(0.0f);
-    if (axis == 0) moveDir.x = moveAmount;
-    else moveDir.z = moveAmount;
-
-    glm::vec3 newPos = position + moveDir;
-
-    // Пробуем прямое движение
-    if (!checkCollisionMesh(newPos)) {
-        position = newPos;
-        return;
+    if (!stepSlideMove(deltaTime, axis)) {
+        if (axis == 0) velocity.x = 0;
+        else velocity.z = 0;
     }
-
-    // Есть коллизия - пробуем step up (только на земле!)
-    if (onGround) {
-        // Вверх на stepHeight
-        glm::vec3 upPos = position;
-        upPos.y += stepHeight;
-
-        if (!checkCollisionMesh(upPos)) {
-            // В сторону наверху
-            glm::vec3 sidePos = upPos + moveDir;
-
-            if (!checkCollisionMesh(sidePos)) {
-                // Вниз до пола (просто -stepHeight, без цикла)
-                glm::vec3 downPos = sidePos;
-                downPos.y -= stepHeight;
-
-                // Проверяем что внизу есть что-то
-                if (checkCollisionMesh(downPos)) {
-                    // Ставим чуть выше
-                    position = downPos;
-                    position.y += 0.02f;
-                    return;
-                }
-
-                // Пробуем промежуточные позиции (максимум 5 шагов, не 100!)
-                for (int i = 1; i <= 5; i++) {
-                    glm::vec3 testPos = sidePos;
-                    testPos.y -= stepHeight * (i / 5.0f);
-                    if (checkCollisionMesh(testPos)) {
-                        position = testPos;
-                        position.y += 0.02f;
-                        onGround = true;
-                        velocity.y = 0.0f;
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    // Не получилось - останавливаем скорость по этой оси
-    if (axis == 0) velocity.x = 0;
-    else velocity.z = 0;
 }
 
 void Player::CategorizePosition() {
-    // HL: Determine if on ground, in air, on ladder, etc.
-    if (checkOnGround()) {
-        onGround = true;
-    }
-    else {
-        onGround = false;
-    }
+    onGround = checkOnGround();
 }
 
-// ========== MAIN UPDATE (HL-STYLE FLOW) ==========
-
 void Player::moveWithCollision(float deltaTime) {
-    // HL: Pre-think
     PreThink(deltaTime);
-
-    // HL: Categorize position
     CategorizePosition();
 
-    // HL: Apply movement based on state
     if (onGround) {
-        if (m_nBunnyHopFrames < 3) { // 3 кадра окна для perfect bhop
+        if (m_nBunnyHopFrames < 3) {
             m_nBunnyHopFrames++;
         }
     }
     else {
         m_nBunnyHopFrames = 0;
     }
+
+    // Обрабатываем присяд ДО движения
+    Duck(deltaTime);
 
     if (onGround) {
         WalkMove(deltaTime);
@@ -630,20 +493,15 @@ void Player::moveWithCollision(float deltaTime) {
         FlyMove(deltaTime);
     }
 
-    Duck(deltaTime);
-
-    // Apply movement with collision
     bool groundBelow = checkOnGround();
     if (onGround && !groundBelow && velocity.y > 0) {
         onGround = false;
     }
 
-    // Resolve collisions per axis
     resolveCollisionAxis(deltaTime, 0);
     resolveCollisionAxis(deltaTime, 2);
     resolveCollisionAxis(deltaTime, 1);
 
-    // Check ground after movement
     if (!onGround && velocity.y <= 0) {
         if (checkOnGround()) {
             onGround = true;
@@ -651,15 +509,15 @@ void Player::moveWithCollision(float deltaTime) {
         }
     }
 
-    // HL: Ground snap (prevent micro-bouncing)
-    if (onGround && std::abs(velocity.y) < 0.01f) {
+    // Ground snap
+    if (onGround && std::abs(velocity.y) < 1.0f) {
         glm::vec3 testPos = position;
-        for (int i = 0; i < 15; i++) {
-            testPos.y -= 0.01f;
+        for (int i = 0; i < 20; i++) {
+            testPos.y -= 1.0f;
             if (checkCollisionMesh(testPos)) {
-                float groundHeight = testPos.y + 0.01f + 0.001f;
+                float groundHeight = testPos.y + 1.0f + 0.5f;
                 float diff = position.y - groundHeight;
-                if (diff > 0.001f && diff < 0.05f) {
+                if (diff > 0.01f && diff < 10.0f) {
                     position.y = groundHeight;
                 }
                 break;
@@ -667,11 +525,8 @@ void Player::moveWithCollision(float deltaTime) {
         }
     }
 
-    // HL: Post-think (fall damage, etc.)
     PostThink(deltaTime);
 }
-
-// ========== NOCLIP (unchanged) ==========
 
 void Player::moveNoclip(float deltaTime) {
     glm::vec3 wishDir(0.0f);
@@ -700,8 +555,6 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
-// ========== MAIN UPDATE ENTRY ==========
-
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
     yaw = cameraYaw;
     pitch = cameraPitch;
@@ -717,12 +570,8 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     }
 }
 
-// ========== CAMERA ==========
-
 glm::vec3 Player::getEyePosition() const {
-    // HL: Position + view offset based on duck state
-    float viewOffset = GetViewOffset();
-    return glm::vec3(position.x, position.y + viewOffset, position.z);
+    return position + GetCurrentViewOffset();
 }
 
 void Player::getViewMatrix(float* matrix) const {

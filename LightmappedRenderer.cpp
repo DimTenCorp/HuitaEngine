@@ -181,9 +181,8 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     const auto& texInfos = bsp.getTexInfos();
     const auto& surfEdges = bsp.getSurfEdges();
     const auto& edges = bsp.getEdges();
-    const auto& originalVertices = bsp.getOriginalVertices();
+    const auto& originalVertices = bsp.getOriginalVertices();  // BSP space!
     const auto& planes = bsp.getPlanes();
-    const auto& drawCalls = bsp.getDrawCalls();
 
     if (faces.empty() || originalVertices.empty()) {
         std::cerr << "LightmappedRenderer: Empty BSP data" << std::endl;
@@ -191,10 +190,10 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     }
 
     struct LMVertex {
-        glm::vec3 position;
+        glm::vec3 position;      // World space (converted)
         glm::vec3 normal;
-        glm::vec2 texCoord;
-        glm::vec2 lightmapCoord;
+        glm::vec2 texCoord;      // Texture UV
+        glm::vec2 lightmapCoord; // Lightmap UV (atlas space)
     };
 
     std::vector<LMVertex> lmVertices;
@@ -214,11 +213,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         const FaceLightmap& lm = lmManager.getFaceLightmap((int)faceIdx);
         const BSPTexInfo& tex = texInfos[face.texInfo];
 
-        // Получаем нормаль из BSP и КОНВЕРТИРУЕМ как в BSPLoader
+        // Нормаль из BSP plane
         glm::vec3 bspNormal = planes[face.planeNum].normal;
         if (face.side != 0) bspNormal = -bspNormal;
-
-        // Конвертируем нормаль: как в BSPLoader::convertNormal
         glm::vec3 worldNormal = glm::vec3(-bspNormal.x, bspNormal.z, bspNormal.y);
         worldNormal = glm::normalize(worldNormal);
 
@@ -227,8 +224,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         int texWidth = texDim.x > 0 ? texDim.x : 256;
         int texHeight = texDim.y > 0 ? texDim.y : 256;
 
-        // Собираем BSP позиции для этого фейса
+        // Собираем BSP вершины для этого фейса
         std::vector<glm::vec3> bspPositions;
+        bspPositions.reserve(face.numEdges);
 
         for (int j = 0; j < face.numEdges; j++) {
             int surfEdgeIdx = face.firstEdge + j;
@@ -248,45 +246,44 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             }
 
             if (vIdx < 0 || vIdx >= (int)originalVertices.size()) continue;
-
             bspPositions.push_back(originalVertices[vIdx]);
         }
 
         if (bspPositions.size() < 3) { skippedFaces++; continue; }
 
-        // Создаем вершины
+        // Создаём вершины с правильными UV
         std::vector<LMVertex> faceVerts;
+        faceVerts.reserve(bspPositions.size());
 
-        for (size_t j = 0; j < bspPositions.size(); j++) {
-            const glm::vec3& origPos = bspPositions[j];
-
+        for (const auto& bspPos : bspPositions) {
             LMVertex v;
 
-            // Позиция в мире (конвертированная)
-            v.position = glm::vec3(-origPos.x * 0.025f, origPos.z * 0.025f, origPos.y * 0.025f);
-
-            // Нормаль (уже сконвертированная)
+            // Позиция в мировом пространстве
+            v.position = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
             v.normal = worldNormal;
 
-            // Текстурные координаты (используем оригинальную BSP позицию!)
-            float s = origPos.x * tex.s[0] + origPos.y * tex.s[1] + origPos.z * tex.s[2] + tex.s[3];
-            float t = origPos.x * tex.t[0] + origPos.y * tex.t[1] + origPos.z * tex.t[2] + tex.t[3];
-
+            // ТЕКСТУРНЫЕ UV - в BSP пространстве
+            float s = bspPos.x * tex.s[0] + bspPos.y * tex.s[1] + bspPos.z * tex.s[2] + tex.s[3];
+            float t = bspPos.x * tex.t[0] + bspPos.y * tex.t[1] + bspPos.z * tex.t[2] + tex.t[3];
             v.texCoord = glm::vec2(s / texWidth, t / texHeight);
 
-            // Lightmap координаты
+            // LIGHTMAP UV - как в HL1!
             if (lm.valid && lm.width > 0 && lm.height > 0) {
-                float lmU = (s / 16.0f) - floor(lm.minS / 16.0f);
-                float lmV = (t / 16.0f) - floor(lm.minT / 16.0f);
+                // s/16 - floor(minS/16) = позиция внутри lightmap
+                float lmU = (s / 16.0f) - std::floor(lm.minS / 16.0f);
+                float lmV = (t / 16.0f) - std::floor(lm.minT / 16.0f);
 
-                // Добавляем 0.5 для центрирования
+                // Нормализуем к [0,1] внутри lightmap
+                // +0.5 для центрирования пикселя
                 lmU = (lmU + 0.5f) / (float)lm.width;
                 lmV = (lmV + 0.5f) / (float)lm.height;
 
+                // Маппим в атлас
                 v.lightmapCoord.x = lm.uvMin.x + lmU * (lm.uvMax.x - lm.uvMin.x);
                 v.lightmapCoord.y = lm.uvMin.y + lmV * (lm.uvMax.y - lm.uvMin.y);
             }
             else {
+                // Нет lightmap - используем белый пиксель из атласа
                 v.lightmapCoord = glm::vec2(0.001f, 0.001f);
             }
 
@@ -309,7 +306,6 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         }
 
         unsigned int indexCount = (unsigned int)(lmIndices.size() - startIndex);
-
         GLuint texID = bsp.getTextureID(tex.textureIndex);
 
         faceDrawCalls.push_back({ texID, startIndex, indexCount, (int)faceIdx });

@@ -45,7 +45,7 @@ namespace {
 
     BSPLoader* g_bspLoader = nullptr;
     MeshCollider* g_meshCollider = nullptr;
-    LightmapManager* g_lightmapManager = nullptr;       
+    LightmapManager* g_lightmapManager = nullptr;
     LightmappedRenderer* g_lmRenderer = nullptr;
 
     float g_lightmapIntensity = 4.0f;
