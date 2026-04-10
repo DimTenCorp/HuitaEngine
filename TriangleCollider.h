@@ -30,6 +30,7 @@ struct SweepResult {
 
 // Forward declaration
 struct BSPVertex;
+struct Capsule;
 
 class MeshCollider {
 private:
