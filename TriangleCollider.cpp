@@ -1,5 +1,7 @@
 ﻿#include "TriangleCollider.h"
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/compatibility.hpp>
 #include <cmath>
 #include <limits>
 #include "BSPLoader.h"

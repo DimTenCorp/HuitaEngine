@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/compatibility.hpp>
 #include <vector>
 #include <algorithm>
 #include "AABB.h"
@@ -30,7 +32,7 @@ struct SweepResult {
 
 // Forward declaration
 struct BSPVertex;
-struct Capsule;
+// Capsule defined in AABB.h, no need to forward declare
 
 class MeshCollider {
 private:
