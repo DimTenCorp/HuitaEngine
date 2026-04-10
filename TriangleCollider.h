@@ -8,13 +8,15 @@ struct Triangle {
     glm::vec3 v0, v1, v2;
     glm::vec3 normal;
     AABB bounds;
+    bool isLiquid;  // Флаг жидкости для треугольника
 
-    Triangle() = default;
+    Triangle() : isLiquid(false) {}
     Triangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
         v0 = a; v1 = b; v2 = c;
         normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
         bounds.min = glm::min(glm::min(v0, v1), v2);
         bounds.max = glm::max(glm::max(v0, v1), v2);
+        isLiquid = false;
     }
 };
 
@@ -50,7 +52,9 @@ public:
     MeshCollider() = default;
 
     void buildFromBSP(const std::vector<BSPVertex>& vertices,
-        const std::vector<unsigned int>& indices);
+        const std::vector<unsigned int>& indices,
+        const std::vector<int>& faceTextureIndices,
+        const BSPLoader* bspLoader);
 
     // Старые AABB методы (оставим для совместимости)
     bool intersectAABB(const AABB& box) const;

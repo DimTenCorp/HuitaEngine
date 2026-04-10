@@ -86,6 +86,11 @@ private:
     float m_fHullHeight;      // Текущая полная высота капсулы
     float m_fDuckHullHeight;
 
+    // Жидкости
+    bool m_bInLiquid;         // Находимся ли мы в жидкости
+    float m_flLiquidDepth;    // Глубина погружения (0-1)
+    glm::vec3 m_liquidSurface; // Поверхность жидкости
+
 public:
     Player();
 
@@ -156,4 +161,9 @@ public:
     float GetFallVelocity() const { return m_flFallVelocity; }
     bool IsLongJumpEnabled() const { return m_fLongJump; }
     void EnableLongJump(bool enable) { m_fLongJump = enable; }
+
+    // Жидкости
+    bool IsInLiquid() const { return m_bInLiquid; }
+    float GetLiquidDepth() const { return m_flLiquidDepth; }
+    void CheckLiquid(const MeshCollider* collider);
 };

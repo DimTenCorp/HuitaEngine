@@ -4,7 +4,9 @@
 #include "BSPLoader.h"
 
 void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
-    const std::vector<unsigned int>& indices) {
+    const std::vector<unsigned int>& indices,
+    const std::vector<int>& faceTextureIndices,
+    const BSPLoader* bspLoader) {
     triangles.clear();
 
     if (indices.empty()) return;
@@ -25,6 +27,15 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
         Triangle tri(v0, v1, v2);
         if (glm::length(tri.normal) < 0.001f) continue;
+
+        // Определяем, является ли треугольник жидкостью
+        tri.isLiquid = false;
+        if (bspLoader && i < faceTextureIndices.size()) {
+            int texIndex = faceTextureIndices[i / 3];
+            if (texIndex >= 0) {
+                tri.isLiquid = bspLoader->isTextureLiquid(texIndex);
+            }
+        }
 
         triangles.push_back(tri);
     }

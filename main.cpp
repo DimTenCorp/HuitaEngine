@@ -175,9 +175,36 @@ bool initSystems(WADLoader& wadLoader) {
         g_lightmapManager->debugPrintLightmapInfo();
     }
 
-    // Строим коллизии
+    // Строим коллизии с информацией о жидкостях
     const auto& vertices = g_bspLoader->getMeshVertices();
-    g_meshCollider->buildFromBSP(vertices, g_bspLoader->getMeshIndices());
+    
+    // Создаем маппинг индексов вершин в индексы текстур для каждого треугольника
+    std::vector<int> faceTextureIndices;
+    const auto& drawCalls = g_bspLoader->getDrawCalls();
+    const auto& indices = g_bspLoader->getMeshIndices();
+    
+    // Для каждого draw call определяем текстуру и проставляем её всем треугольникам
+    size_t indexOffset = 0;
+    for (const auto& drawCall : drawCalls) {
+        int texIndex = -1;
+        // Находим индекс текстуры в массиве BSP
+        for (size_t i = 0; i < g_bspLoader->getTexInfos().size(); i++) {
+            if (g_bspLoader->getTextureID(i) == drawCall.texID) {
+                texIndex = static_cast<int>(i);
+                break;
+            }
+        }
+        
+        // Проставляем этот индекс текстуры всем треугольникам этого draw call
+        size_t numTriangles = drawCall.indexCount / 3;
+        for (size_t t = 0; t < numTriangles; t++) {
+            faceTextureIndices.push_back(texIndex);
+        }
+        
+        indexOffset += drawCall.indexCount;
+    }
+    
+    g_meshCollider->buildFromBSP(vertices, indices, faceTextureIndices, g_bspLoader);
     std::cout << "Mesh collider built with " << g_meshCollider->getTriangleCount()
         << " triangles" << std::endl;
 

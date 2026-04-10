@@ -53,6 +53,11 @@ Player::Player() {
     m_nBunnyHopFrames = 0;
 
     stepHeight = 18.0f;
+
+    // Инициализация жидкостей
+    m_bInLiquid = false;
+    m_flLiquidDepth = 0.0f;
+    m_liquidSurface = glm::vec3(0.0f);
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
