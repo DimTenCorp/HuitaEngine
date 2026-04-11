@@ -9,6 +9,23 @@ CFuncWater::CFuncWater()
     // и поверхность на высоте Y=128
 }
 
+void CFuncWater::initFromBounds(const AABB& modelBounds) {
+    // Инициализируем зону воды напрямую из границ модели браша
+    bounds = modelBounds;
+    
+    // Верхняя граница воды - это максимальная Y координата
+    topHeight = bounds.max.y;
+    
+    // Вычисляем центр для позиции сущности
+    glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
+    setPosition(center);
+    
+    std::cout << "[func_water] Created water zone from brush bounds: mins(" 
+              << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z 
+              << ") maxs(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z 
+              << ") surface at Y=" << topHeight << std::endl;
+}
+
 void CFuncWater::initFromProperties(const std::unordered_map<std::string, std::string>& props) {
     // Читаем параметры из BSP сущности
     // В Half-Life func_water обычно задается через brush entity с ключевыми точками
@@ -50,7 +67,7 @@ void CFuncWater::initFromProperties(const std::unordered_map<std::string, std::s
     
     setPosition(origin);
     
-    std::cout << "[func_water] Created water zone: mins(" 
+    std::cout << "[func_water] Created water zone from properties: mins(" 
               << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z 
               << ") maxs(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z 
               << ") surface at Y=" << topHeight << std::endl;

@@ -591,8 +591,34 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
-    buildSubmodelMesh(models[0]);
+    // Собираем индексы моделей, которые являются func_water
+    std::vector<int> waterModelIndices;
+    for (const auto& entity : entities) {
+        if (entity.classname == "func_water" && !entity.model.empty() && entity.model[0] == '*') {
+            try {
+                int modelIdx = std::stoi(entity.model.substr(1));
+                if (modelIdx > 0 && modelIdx < (int)models.size()) {
+                    waterModelIndices.push_back(modelIdx);
+                }
+            }
+            catch (...) {}
+        }
+    }
 
+    // Функция для проверки, является ли модель водой
+    auto isWaterModel = [&waterModelIndices](int idx) -> bool {
+        for (int waterIdx : waterModelIndices) {
+            if (waterIdx == idx) return true;
+        }
+        return false;
+    };
+
+    // Добавляем основную модель мира (если это не вода)
+    if (!isWaterModel(0)) {
+        buildSubmodelMesh(models[0]);
+    }
+
+    // Обрабатываем остальные модели
     for (const auto& entity : entities) {
         if (entity.model.empty() || entity.model == "*0") continue;
         if (entity.classname.find("func_") == std::string::npos &&
@@ -610,6 +636,13 @@ void BSPLoader::buildMesh() {
         }
 
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
+        
+        // Пропускаем модели func_water - они не добавляются в коллайдер
+        if (entity.classname == "func_water") {
+            std::cout << "[BSP] Skipping func_water model *" << modelIndex << " from collision mesh" << std::endl;
+            continue;
+        }
+        
         buildSubmodelMesh(models[modelIndex]);
     }
 

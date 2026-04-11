@@ -91,6 +91,7 @@ private:
     // Вода
     float m_flWaterLevel;     // Уровень воды (0-3, как в HL)
     float m_flSwimTime;       // Время плавания
+    bool m_bWasInWater;       // Было ли состояние "в воде" в предыдущем кадре
 
 public:
     Player();
