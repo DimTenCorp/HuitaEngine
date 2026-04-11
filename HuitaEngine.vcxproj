@@ -269,6 +269,7 @@
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
+    <ClCompile Include="WaterEntity.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AABB.h" />
@@ -287,6 +288,7 @@
     <ClInclude Include="Shader.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
+    <ClInclude Include="WaterEntity.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="pch.h" />
