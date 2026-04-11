@@ -74,7 +74,7 @@ bool Engine::initGLFW() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(width, height, "HL Engine - BSP Viewer", nullptr, nullptr);
+    window = glfwCreateWindow(width, height, "HuitaEngine", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create window\n";
         glfwTerminate();
