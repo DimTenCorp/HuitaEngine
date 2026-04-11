@@ -261,6 +261,7 @@ void Engine::loadMap(const std::string& mapPath) {
     if (bspLoader->findPlayerStart(spawnPos, spawnAngles)) {
         if (game && game->getPlayer()) {
             game->getPlayer()->setPosition(spawnPos);
+            game->getPlayer()->setBSPLoader(bspLoader.get());  // Set BSP loader for water checks
             game->setViewAngles(spawnAngles.y, spawnAngles.x);  // <- это важно
         }
     }
@@ -268,6 +269,7 @@ void Engine::loadMap(const std::string& mapPath) {
         auto bounds = bspLoader->getWorldBounds();
         if (game && game->getPlayer()) {
             game->getPlayer()->setPosition(glm::vec3(0.0f, bounds.min.y + 100.0f, 0.0f));
+            game->getPlayer()->setBSPLoader(bspLoader.get());  // Set BSP loader for water checks
         }
         std::cout << "[SPAWN] Using fallback position\n";
     }

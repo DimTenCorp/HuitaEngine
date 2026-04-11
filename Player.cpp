@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "Player.h"
+#include "BSPLoader.h"
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -526,30 +527,41 @@ void Player::CheckWaterLevel() {
     waistPos.y = waistY;
     headPos.y = headY;
 
-    // Check water level by testing points from bottom to top
-    bool feetInWater = checkCollisionMesh(feetPos);
-    bool waistInWater = checkCollisionMesh(waistPos);
-    bool headInWater = checkCollisionMesh(headPos);
+    // Check water level using BSP water volumes (func_water, func_lava, func_slime)
+    int feetWaterType = WATER_TYPE_NONE;
+    int waistWaterType = WATER_TYPE_NONE;
+    int headWaterType = WATER_TYPE_NONE;
+    
+    bool feetInWater = false;
+    bool waistInWater = false;
+    bool headInWater = false;
+    
+    if (bspLoader) {
+        feetInWater = bspLoader->isPointInWater(feetPos, feetWaterType);
+        waistInWater = bspLoader->isPointInWater(waistPos, waistWaterType);
+        headInWater = bspLoader->isPointInWater(headPos, headWaterType);
+    } else {
+        // Fallback to old collision-based check if no BSP loader
+        feetInWater = checkCollisionMesh(feetPos);
+        waistInWater = checkCollisionMesh(waistPos);
+        headInWater = checkCollisionMesh(headPos);
+    }
 
     // Determine water level (HL1 style)
     if (headInWater) {
         m_iWaterLevel = WATERLEVEL_HEAD;  // Head underwater - drowning!
+        m_iWaterType = headWaterType;
     }
     else if (waistInWater) {
         m_iWaterLevel = WATERLEVEL_WAIST; // Waist deep - can water jump
+        m_iWaterType = waistWaterType;
     }
     else if (feetInWater) {
         m_iWaterLevel = WATERLEVEL_FEET;  // Just feet in water
+        m_iWaterType = feetWaterType;
     }
     else {
         m_iWaterLevel = WATERLEVEL_NONE;  // Not in water
-    }
-
-    // Default to water type (can be extended for slime/lava)
-    if (m_iWaterLevel > WATERLEVEL_NONE) {
-        m_iWaterType = WATER_TYPE_WATER;
-    }
-    else {
         m_iWaterType = WATER_TYPE_NONE;
     }
 }

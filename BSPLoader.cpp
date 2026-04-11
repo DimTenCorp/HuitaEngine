@@ -649,6 +649,7 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 
     fclose(file);
     buildMesh();
+    buildWaterVolumes();  // Build water volumes after loading entities
     printStats();
     return !meshVertices.empty();
 }
@@ -742,4 +743,81 @@ void BSPLoader::debugPrintEntities() const {
         }
         std::cout << std::endl;
     }
+}
+
+// Build water volumes from func_water, func_lava, func_slime entities
+void BSPLoader::buildWaterVolumes() {
+    waterVolumes.clear();
+    
+    for (const auto& entity : entities) {
+        int waterType = WATER_TYPE_NONE;
+        
+        // Determine water type from classname
+        if (entity.classname == "func_water" || 
+            entity.classname == "func_water_pool") {
+            waterType = WATER_TYPE_WATER;
+        }
+        else if (entity.classname == "func_slime") {
+            waterType = WATER_TYPE_SLIME;
+        }
+        else if (entity.classname == "func_lava") {
+            waterType = WATER_TYPE_LAVA;
+        }
+        
+        if (waterType == WATER_TYPE_NONE) {
+            continue;  // Not a water entity
+        }
+        
+        // Get model bounds (water entities use brush models like *1, *2, etc.)
+        std::string modelName = entity.model;
+        if (modelName.empty() || modelName[0] != '*') {
+            std::cerr << "[BSP] Water entity without brush model: " << entity.classname << std::endl;
+            continue;
+        }
+        
+        int modelIndex = std::stoi(modelName.substr(1));
+        if (modelIndex < 0 || modelIndex >= (int)models.size()) {
+            std::cerr << "[BSP] Invalid model index for water entity: " << modelName << std::endl;
+            continue;
+        }
+        
+        const BSPModel& model = models[modelIndex];
+        
+        // Convert BSP model bounds to world coordinates (same as vertex conversion)
+        glm::vec3 bspMin(model.min[0], model.min[1], model.min[2]);
+        glm::vec3 bspMax(model.max[0], model.max[1], model.max[2]);
+        
+        // Apply coordinate conversion (-x, z, y)
+        glm::vec3 worldMin(-bspMax.x, bspMin.y, bspMin.z);
+        glm::vec3 worldMax(-bspMin.x, bspMax.y, bspMax.z);
+        
+        // Add entity origin offset if present
+        worldMin += entity.origin;
+        worldMax += entity.origin;
+        
+        BSPWaterVolume volume;
+        volume.bounds.min = worldMin;
+        volume.bounds.max = worldMax;
+        volume.waterType = waterType;
+        
+        waterVolumes.push_back(volume);
+    }
+    
+    std::cout << "[BSP] Built " << waterVolumes.size() << " water volumes" << std::endl;
+}
+
+// Check if a point is inside any water volume
+bool BSPLoader::isPointInWater(const glm::vec3& point, int& outWaterType) const {
+    outWaterType = WATER_TYPE_NONE;
+    
+    for (const auto& volume : waterVolumes) {
+        if (point.x >= volume.bounds.min.x && point.x <= volume.bounds.max.x &&
+            point.y >= volume.bounds.min.y && point.y <= volume.bounds.max.y &&
+            point.z >= volume.bounds.min.z && point.z <= volume.bounds.max.z) {
+            outWaterType = volume.waterType;
+            return true;
+        }
+    }
+    
+    return false;
 }

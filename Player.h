@@ -6,6 +6,18 @@
 #include <GLFW/glfw3.h>
 
 class MeshCollider;
+class BSPLoader;
+
+// Water level constants (defined here for Player access)
+#define WATERLEVEL_NONE     0   // Не в воде
+#define WATERLEVEL_FEET     1   // Ноги в воде
+#define WATERLEVEL_WAIST    2   // По пояс в воде
+#define WATERLEVEL_HEAD     3   // Голова под водой
+
+#define WATER_TYPE_NONE     0
+#define WATER_TYPE_WATER    1
+#define WATER_TYPE_SLIME    2
+#define WATER_TYPE_LAVA     3
 
 // HL Physics flags
 #define PFLAG_ONLADDER      (1<<0)
@@ -39,18 +51,6 @@ class MeshCollider;
 #define VEC_HULL_RADIUS     16.0f
 #define VEC_HULL_HEIGHT     72.0f  // Полная высота = 72 (от -36 до +36)
 #define VEC_DUCK_HULL_HEIGHT 36.0f
-
-// Water levels (как в HL1)
-#define WATERLEVEL_NONE     0   // Не в воде
-#define WATERLEVEL_FEET     1   // Ноги в воде
-#define WATERLEVEL_WAIST    2   // По пояс в воде
-#define WATERLEVEL_HEAD     3   // Голова под водой
-
-// Water types
-#define WATER_TYPE_NONE     0
-#define WATER_TYPE_WATER    1
-#define WATER_TYPE_SLIME    2
-#define WATER_TYPE_LAVA     3
 
 // Drowning
 #define PLAYER_AIRTIME      12.0f  // Секунд воздуха
@@ -103,6 +103,8 @@ private:
     float m_fHullHeight;      // Текущая полная высота капсулы
     float m_fDuckHullHeight;
 
+    const BSPLoader* bspLoader = nullptr;  // Reference to BSP loader for water volume checks
+
     // Water system (HL1 style)
     int m_iWaterLevel;        // 0 = none, 1 = feet, 2 = waist, 3 = head
     int m_iWaterType;         // 0 = none, 1 = water, 2 = slime, 3 = lava
@@ -115,6 +117,8 @@ private:
 
 public:
     Player();
+
+    void setBSPLoader(const BSPLoader* loader) { bspLoader = loader; }
 
     void update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider);
     void handleInput(float deltaTime);
