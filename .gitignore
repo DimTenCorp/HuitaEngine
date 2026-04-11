@@ -1,4 +1,4 @@
-```cpp
+```
 # Compiled files
 *.o
 *.obj
@@ -8,10 +8,9 @@
 *.a
 *.out
 
-# Build directories
+# Build artifacts
 build/
 dist/
-target/
 
 # Dependencies
 node_modules/
@@ -20,14 +19,15 @@ venv/
 __pycache__/
 .mypy_cache/
 .pytest_cache/
+target/
 .gradle/
-.cargo/
 
-# Editors
+# Editor/IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
 # System files
 .DS_Store
@@ -63,8 +63,4 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```

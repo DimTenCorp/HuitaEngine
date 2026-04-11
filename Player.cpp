@@ -679,8 +679,6 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
 void Player::ApplyWaterPhysics(float deltaTime) {
     if (!IsInWater()) return;
     
-    std::cout << "[WATER] Applying water physics! Level=" << m_flWaterLevel << std::endl;
-    
     // ВАЖНО: В воде игрок НЕ на земле - он плавает
     onGround = false;
     
