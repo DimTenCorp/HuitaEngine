@@ -656,6 +656,11 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
             SetInWater(true);
             m_flWaterLevel = 3.0f;
         }
+        
+        std::cout << "[WATER] In water! Level=" << m_flWaterLevel 
+                  << " surface=" << waterSurface 
+                  << " feetY=" << feetY 
+                  << " headY=" << headY << std::endl;
     } else {
         SetInWater(false);
         m_flWaterLevel = 0;
@@ -664,6 +669,8 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
 
 void Player::ApplyWaterPhysics(float deltaTime) {
     if (!IsInWater()) return;
+    
+    std::cout << "[WATER] Applying water physics! Level=" << m_flWaterLevel << std::endl;
     
     // Гравитация в воде меньше (игрок медленнее тонет/всплывает)
     float waterGravity = gravity * 0.5f;

@@ -53,12 +53,13 @@ void Game::update(float deltaTime) {
     auto* collider = Engine::getInstance()->getCollider();
     auto& waterZones = Engine::getInstance()->getWaterZones();
     
+    // Сначала проверяем воду и устанавливаем флаги
+    player->CheckWater(waterZones);
+    
+    // Затем обновляем игрока (внутри применится водная физика если он в воде)
     if (collider) {
         player->update(deltaTime, yaw, pitch, collider);
     }
-    
-    // Check water zones and apply water physics
-    player->CheckWater(waterZones);
 
     hud->update(deltaTime, player->getPosition());
 }
