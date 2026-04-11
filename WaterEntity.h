@@ -14,7 +14,10 @@ public:
     CFuncWater();
     virtual ~CFuncWater() {}
 
-    // Инициализация из параметров BSP сущности
+    // Инициализация из AABB модели браша
+    void initFromBounds(const AABB& modelBounds);
+    
+    // Инициализация из параметров BSP сущности (устаревший метод)
     void initFromProperties(const std::unordered_map<std::string, std::string>& props);
 
     // Проверка нахождения точки внутри воды
