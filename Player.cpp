@@ -59,6 +59,7 @@ Player::Player() {
     // Инициализация воды
     m_flWaterLevel = 0.0f;
     m_flSwimTime = 0.0f;
+    m_bWasInWater = false;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -633,6 +634,8 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
     
     // Определяем уровень воды (0-3 как в HL)
     // 0 - не в воде, 1 - ноги, 2 - пояс, 3 - голова/полностью
+    bool currentlyInWater = inWater;
+    
     if (inWater) {
         float feetY = position.y + m_vecHullMin.y;
         float headY = position.y + m_vecHullMax.y;
@@ -641,6 +644,7 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
             // Ноги выше воды - не в воде
             SetInWater(false);
             m_flWaterLevel = 0;
+            currentlyInWater = false;
         } else if (headY >= waterSurface) {
             // Голова над водой - частичное погружение
             SetInWater(true);
@@ -656,15 +660,20 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
             SetInWater(true);
             m_flWaterLevel = 3.0f;
         }
-        
-        std::cout << "[WATER] In water! Level=" << m_flWaterLevel 
-                  << " surface=" << waterSurface 
-                  << " feetY=" << feetY 
-                  << " headY=" << headY << std::endl;
     } else {
         SetInWater(false);
         m_flWaterLevel = 0;
     }
+    
+    // Логирование только при входе/выходе из воды
+    if (currentlyInWater && !m_bWasInWater) {
+        std::cout << "[WATER] Entered water! Level=" << m_flWaterLevel 
+                  << " surface=" << waterSurface << std::endl;
+    } else if (!currentlyInWater && m_bWasInWater) {
+        std::cout << "[WATER] Exited water!" << std::endl;
+    }
+    
+    m_bWasInWater = currentlyInWater;
 }
 
 void Player::ApplyWaterPhysics(float deltaTime) {
