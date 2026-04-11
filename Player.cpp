@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "Player.h"
+#include "BSPLoader.h"
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -54,6 +55,16 @@ Player::Player() {
     m_nBunnyHopFrames = 0;
 
     stepHeight = 18.0f;
+
+    // Water system initialization (HL1 style)
+    m_iWaterLevel = WATERLEVEL_NONE;
+    m_iWaterType = WATER_TYPE_NONE;
+    m_flAirFinished = 0.0f;
+    m_flDrownDamage = PLAYER_DROWN_DAMAGE_INITIAL;
+    m_flIdrownDmg = 0.0f;
+    m_flIdrownRestored = 0.0f;
+    m_flPainFinished = 0.0f;
+    m_bInWater = false;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -379,6 +390,14 @@ void Player::PreThink(float deltaTime) {
 
 void Player::PostThink(float deltaTime) {
     CheckFalling(deltaTime);
+    
+    // Water physics and drowning
+    WaterMove(deltaTime);
+    
+    // Check for water jump (jumping out of water)
+    if (m_iWaterLevel == WATERLEVEL_WAIST) {
+        CheckWaterJump();
+    }
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
@@ -479,11 +498,208 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
 void Player::CategorizePosition() {
     onGround = checkOnGround();
+    
+    // Update water level based on position
+    CheckWaterLevel();
+}
+
+// ============================================================================
+// WATER SYSTEM - Half-Life 1 Style
+// ============================================================================
+
+void Player::CheckWaterLevel() {
+    if (!meshCollider) {
+        m_iWaterLevel = WATERLEVEL_NONE;
+        m_iWaterType = WATER_TYPE_NONE;
+        return;
+    }
+
+    glm::vec3 feetPos = position;
+    glm::vec3 waistPos = position;
+    glm::vec3 headPos = position;
+
+    // Calculate water check points based on hull height
+    float feetY = position.y + m_vecHullMin.y;      // Bottom of hull
+    float waistY = position.y;                       // Center of hull  
+    float headY = position.y + m_vecHullMax.y;       // Top of hull
+
+    feetPos.y = feetY;
+    waistPos.y = waistY;
+    headPos.y = headY;
+
+    // Check water level using BSP water volumes (func_water, func_lava, func_slime)
+    int feetWaterType = WATER_TYPE_NONE;
+    int waistWaterType = WATER_TYPE_NONE;
+    int headWaterType = WATER_TYPE_NONE;
+    
+    bool feetInWater = false;
+    bool waistInWater = false;
+    bool headInWater = false;
+    
+    if (bspLoader) {
+        feetInWater = bspLoader->isPointInWater(feetPos, feetWaterType);
+        waistInWater = bspLoader->isPointInWater(waistPos, waistWaterType);
+        headInWater = bspLoader->isPointInWater(headPos, headWaterType);
+    } else {
+        // Fallback to old collision-based check if no BSP loader
+        feetInWater = checkCollisionMesh(feetPos);
+        waistInWater = checkCollisionMesh(waistPos);
+        headInWater = checkCollisionMesh(headPos);
+    }
+
+    // Determine water level (HL1 style)
+    if (headInWater) {
+        m_iWaterLevel = WATERLEVEL_HEAD;  // Head underwater - drowning!
+        m_iWaterType = headWaterType;
+    }
+    else if (waistInWater) {
+        m_iWaterLevel = WATERLEVEL_WAIST; // Waist deep - can water jump
+        m_iWaterType = waistWaterType;
+    }
+    else if (feetInWater) {
+        m_iWaterLevel = WATERLEVEL_FEET;  // Just feet in water
+        m_iWaterType = feetWaterType;
+    }
+    else {
+        m_iWaterLevel = WATERLEVEL_NONE;  // Not in water
+        m_iWaterType = WATER_TYPE_NONE;
+    }
+}
+
+void Player::WaterMove(float deltaTime) {
+    // Skip if in noclip mode
+    if (noclipMode) {
+        return;
+    }
+
+    // waterlevel 0 - not in water
+    // waterlevel 1 - feet in water
+    // waterlevel 2 - waist in water  
+    // waterlevel 3 - head in water
+
+    if (m_iWaterLevel != WATERLEVEL_HEAD) {
+        // Not fully underwater - reset air timer
+        if (m_flAirFinished < glfwGetTime()) {
+            // Play 'up for air' sound when surfacing
+            // (sound implementation would go here)
+        }
+
+        m_flAirFinished = glfwGetTime() + PLAYER_AIRTIME;
+        m_flDrownDamage = PLAYER_DROWN_DAMAGE_INITIAL;
+
+        // If we took drowning damage, restore it slowly
+        if (m_flIdrownDmg > m_flIdrownRestored) {
+            // Restore health over time (simplified)
+            m_flIdrownRestored += deltaTime * 5.0f;
+            if (m_flIdrownRestored > m_flIdrownDmg) {
+                m_flIdrownRestored = m_flIdrownDmg;
+            }
+        }
+    }
+    else {
+        // Fully underwater - drowning logic
+        if (m_flAirFinished < glfwGetTime()) {
+            // Drowning!
+            if (m_flPainFinished < glfwGetTime()) {
+                // Take drowning damage
+                m_flDrownDamage += 1.0f;
+                if (m_flDrownDamage > PLAYER_DROWN_DAMAGE_MAX) {
+                    m_flDrownDamage = PLAYER_DROWN_DAMAGE_MAX;
+                }
+
+                // Apply damage (simplified - just track it)
+                m_flIdrownDmg += m_flDrownDamage;
+                m_flPainFinished = glfwGetTime() + 1.0f;
+
+                // In a real game, you'd call TakeDamage here
+                std::cout << "Drowning! Damage: " << m_flDrownDamage << std::endl;
+            }
+        }
+    }
+
+    // Handle entering/leaving water
+    if (m_iWaterLevel == WATERLEVEL_NONE) {
+        if (m_bInWater) {
+            // Just left water - play exit sound
+            // (sound implementation would go here)
+            std::cout << "Left water" << std::endl;
+            m_bInWater = false;
+        }
+        return;
+    }
+
+    // Make bubble sounds when underwater
+    if (m_iWaterLevel >= WATERLEVEL_WAIST) {
+        int air = (int)(m_flAirFinished - glfwGetTime());
+        // Random bubble sound chance (simplified)
+        if (rand() % 32 == 0 && rand() % (int)PLAYER_AIRTIME >= air) {
+            // Bubble sound would play here
+        }
+    }
+
+    // Handle water type damage (lava/slime)
+    if (m_iWaterType == WATER_TYPE_LAVA) {
+        // Lava damage
+        // (would apply burn damage based on water level)
+    }
+    else if (m_iWaterType == WATER_TYPE_SLIME) {
+        // Slime damage
+        // (would apply acid damage)
+    }
+
+    // Entering water sound
+    if (!m_bInWater && m_iWaterLevel > WATERLEVEL_NONE) {
+        if (m_iWaterType == WATER_TYPE_WATER) {
+            // Play water entry sound
+            std::cout << "Entered water" << std::endl;
+        }
+        m_bInWater = true;
+    }
+
+    // Water drag on velocity (HL1 style: velocity -= 0.8 * waterlevel * frametime * velocity)
+    if (m_iWaterLevel > WATERLEVEL_NONE) {
+        float dragAmount = 0.8f * m_iWaterLevel * deltaTime;
+        velocity = velocity * (1.0f - dragAmount);
+    }
+}
+
+void Player::CheckWaterJump() {
+    // Check if player can jump out of water
+    // This is called when waterlevel == 2 (waist deep)
+    
+    if (!onGround) {
+        // Already jumping/falling
+        return;
+    }
+
+    // Check if player is facing a wall they can jump onto
+    // (simplified - full HL1 implementation would trace forward and up)
+    
+    GLFWwindow* window = glfwGetCurrentContext();
+    bool jumpPressed = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+    
+    if (jumpPressed) {
+        // Perform water jump - launch player forward and up
+        float yawRad = glm::radians(yaw);
+        glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
+        
+        // HL1 water jump velocity
+        velocity.x = forward.x * 200.0f;
+        velocity.z = forward.z * 200.0f;
+        velocity.y = 250.0f;  // Upward boost
+        
+        onGround = false;
+        
+        std::cout << "Water jump!" << std::endl;
+    }
 }
 
 void Player::moveWithCollision(float deltaTime) {
     PreThink(deltaTime);
     CategorizePosition();
+
+    // Check water level before movement
+    CheckWaterLevel();
 
     if (onGround) {
         if (m_nBunnyHopFrames < 3) {
@@ -497,11 +713,31 @@ void Player::moveWithCollision(float deltaTime) {
     // Обрабатываем присяд ДО движения
     Duck(deltaTime);
 
-    if (onGround) {
-        WalkMove(deltaTime);
+    // Water affects movement
+    if (m_iWaterLevel >= WATERLEVEL_WAIST) {
+        // Underwater - reduced gravity and friction
+        FlyMove(deltaTime);
+        
+        // Apply water drag
+        float dragFactor = 0.5f; // Water resistance
+        velocity *= (1.0f - dragFactor * deltaTime);
+    }
+    else if (m_iWaterLevel == WATERLEVEL_FEET) {
+        // Feet in water - slight friction
+        if (onGround) {
+            WalkMove(deltaTime);
+        } else {
+            FlyMove(deltaTime);
+        }
     }
     else {
-        FlyMove(deltaTime);
+        // Normal movement
+        if (onGround) {
+            WalkMove(deltaTime);
+        }
+        else {
+            FlyMove(deltaTime);
+        }
     }
 
     bool groundBelow = checkOnGround();

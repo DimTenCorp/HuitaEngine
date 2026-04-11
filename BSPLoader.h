@@ -60,6 +60,12 @@ struct BSPEntity {
     std::unordered_map<std::string, std::string> properties;
 };
 
+// Water volume structure for func_water, func_lava, func_slime
+struct BSPWaterVolume {
+    AABB bounds;
+    int waterType;  // WATER_TYPE_WATER, WATER_TYPE_SLIME, WATER_TYPE_LAVA
+};
+
 struct FaceDrawCall {
     GLuint texID;
     unsigned int indexOffset;
@@ -89,6 +95,7 @@ private:
 
     std::vector<BSPEntity> entities;
     std::vector<std::string> requiredWADs;
+    std::vector<BSPWaterVolume> waterVolumes;  // Water volumes from func_water, func_lava, func_slime
 
     bool loadVertices(FILE* file, const BSPHeader& header);
     bool loadEdges(FILE* file, const BSPHeader& header);
@@ -103,6 +110,7 @@ private:
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel);
     bool loadLighting(FILE* file, const BSPHeader& header);
+    void buildWaterVolumes();  // Build water volumes from entities
 
 public:
     BSPLoader();
@@ -116,6 +124,7 @@ public:
     const std::vector<BSPEntity>& getEntities() const { return entities; }
     const std::vector<FaceDrawCall>& getDrawCalls() const { return drawCalls; }
     const std::vector<std::string>& getRequiredWADs() const { return requiredWADs; }
+    const std::vector<BSPWaterVolume>& getWaterVolumes() const { return waterVolumes; }
 
     GLuint getDefaultTextureID() const { return defaultTextureId; }
     void cleanupTextures();
@@ -126,6 +135,9 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
+
+    // Check if point is inside any water volume
+    bool isPointInWater(const glm::vec3& point, int& outWaterType) const;
 
     std::vector<uint8_t> lightingData;
 
