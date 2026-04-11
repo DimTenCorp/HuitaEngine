@@ -8,6 +8,8 @@
 #include "LightmapManager.h"
 #include "TriangleCollider.h"
 #include "Menu.h"
+#include "WaterEntity.h"
+#include "AABB.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -202,6 +204,12 @@ void Engine::unloadCurrentMap() {
         wadLoader->init();
     }
 
+    // Очищаем зоны воды
+    for (auto* water : waterZones) {
+        delete water;
+    }
+    waterZones.clear();
+
     useLightmapped = false;
     showLightmapsOnly = false;
 
@@ -329,6 +337,52 @@ void Engine::doLoadMap(const std::string& mapPath) {
         }
         std::cout << "[SPAWN] Using fallback position\n";
     }
+
+    // === ЗАГРУЗКА ЗОН ВОДЫ (func_water) ===
+    // Теперь зоны воды создаются на основе границ моделей брашей, а не из properties
+    waterZones.clear();
+    auto waterEntities = bspLoader->getEntitiesByClass("func_water");
+    
+    for (const auto& entity : waterEntities) {
+        if (entity.model.empty() || entity.model[0] != '*') {
+            std::cerr << "[WATER] Skipping func_water without valid model: " << entity.classname << std::endl;
+            continue;
+        }
+        
+        int modelIndex = 0;
+        try {
+            modelIndex = std::stoi(entity.model.substr(1));
+        }
+        catch (...) {
+            std::cerr << "[WATER] Failed to parse model index from: " << entity.model << std::endl;
+            continue;
+        }
+        
+        if (modelIndex <= 0 || modelIndex >= (int)bspLoader->getModels().size()) {
+            std::cerr << "[WATER] Invalid model index: " << modelIndex << std::endl;
+            continue;
+        }
+        
+        // Получаем границы модели из BSP
+        const auto& models = bspLoader->getModels();
+        const BSPModel& model = models[modelIndex];
+        
+        // Создаем AABB модели с конвертацией координат (как в BSPLoader)
+        AABB modelBounds;
+        modelBounds.min = glm::vec3(-model.min[0], model.min[2], model.min[1]);
+        modelBounds.max = glm::vec3(-model.max[0], model.max[2], model.max[1]);
+        
+        // Проверяем валидность AABB
+        if (modelBounds.min.x > modelBounds.max.x) std::swap(modelBounds.min.x, modelBounds.max.x);
+        if (modelBounds.min.y > modelBounds.max.y) std::swap(modelBounds.min.y, modelBounds.max.y);
+        if (modelBounds.min.z > modelBounds.max.z) std::swap(modelBounds.min.z, modelBounds.max.z);
+        
+        // Создаем зону воды на основе границ модели
+        CFuncWater* water = new CFuncWater();
+        water->initFromBounds(modelBounds);
+        waterZones.push_back(water);
+    }
+    std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones from brush models\n";
 
     std::cout << "=== MAP LOADED ===\n\n";
 

@@ -13,6 +13,7 @@ class LightmappedRenderer;
 class LightmapManager;
 class MeshCollider;
 class Menu;
+class CFuncWater;
 
 class Engine {
 public:
@@ -33,6 +34,7 @@ public:
     LightmapManager* getLightmapManager() const { return lightmapManager.get(); }
     MeshCollider* getCollider() const { return meshCollider.get(); }
     Menu* getMenu() const { return menu.get(); }
+    const std::vector<CFuncWater*>& getWaterZones() const { return waterZones; }
 
     bool useLightmappedRenderer() const { return useLightmapped; }
     void toggleLightmappedRenderer() { useLightmapped = !useLightmapped; }
@@ -66,6 +68,7 @@ private:
     std::unique_ptr<LightmapManager> lightmapManager;
     std::unique_ptr<MeshCollider> meshCollider;
     std::unique_ptr<Menu> menu;
+    std::vector<CFuncWater*> waterZones;  // «оны воды на карте
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;

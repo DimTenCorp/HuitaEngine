@@ -29,7 +29,7 @@ void Game::processMouse(GLFWwindow* window) {
         lastX = (float)xpos;
         lastY = (float)ypos;
         firstMouse = false;
-        return;  // Ïðîïóñêàåì ïåðâûé êàäð - íå îáðàáàòûâàåì äâèæåíèå
+        return;
     }
 
     float xoffset = (float)(xpos - lastX);
@@ -51,7 +51,13 @@ void Game::update(float deltaTime) {
     processMouse(Engine::getInstance()->getWindow());
 
     auto* collider = Engine::getInstance()->getCollider();
-    if (collider) {  // Äîáàâüòå ïðîâåðêó
+    auto& waterZones = Engine::getInstance()->getWaterZones();
+    
+    // Ð¡Ð½Ð°Ñ‡Ð°Ð»Ð° Ð¿Ñ€Ð¾Ð²ÐµÑ€ÑÐµÐ¼ Ð²Ð¾Ð´Ñƒ Ð¸ ÑƒÑÑ‚Ð°Ð½Ð°Ð²Ð»Ð¸Ð²Ð°ÐµÐ¼ Ñ„Ð»Ð°Ð³Ð¸
+    player->CheckWater(waterZones);
+    
+    // Ð—Ð°Ñ‚ÐµÐ¼ Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ Ð¸Ð³Ñ€Ð¾ÐºÐ° (Ð²Ð½ÑƒÑ‚Ñ€Ð¸ Ð¿Ñ€Ð¸Ð¼ÐµÐ½Ð¸Ñ‚ÑÑ Ð²Ð¾Ð´Ð½Ð°Ñ Ñ„Ð¸Ð·Ð¸ÐºÐ° ÐµÑÐ»Ð¸ Ð¾Ð½ Ð² Ð²Ð¾Ð´Ðµ)
+    if (collider) {
         player->update(deltaTime, yaw, pitch, collider);
     }
 

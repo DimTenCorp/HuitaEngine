@@ -116,6 +116,7 @@ public:
     const std::vector<BSPEntity>& getEntities() const { return entities; }
     const std::vector<FaceDrawCall>& getDrawCalls() const { return drawCalls; }
     const std::vector<std::string>& getRequiredWADs() const { return requiredWADs; }
+    const std::vector<BSPModel>& getModels() const { return models; }
 
     GLuint getDefaultTextureID() const { return defaultTextureId; }
     void cleanupTextures();

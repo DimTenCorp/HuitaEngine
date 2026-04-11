@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include "TriangleCollider.h"
+#include "WaterEntity.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -54,6 +55,11 @@ Player::Player() {
     m_nBunnyHopFrames = 0;
 
     stepHeight = 18.0f;
+
+    // Инициализация воды
+    m_flWaterLevel = 0.0f;
+    m_flSwimTime = 0.0f;
+    m_bWasInWater = false;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -578,6 +584,11 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     }
     else {
         moveWithCollision(deltaTime);
+        
+        // Применяем водную физику если в воде
+        if (IsInWater()) {
+            ApplyWaterPhysics(deltaTime);
+        }
     }
 }
 
@@ -594,4 +605,148 @@ void Player::getViewMatrix(float* matrix) const {
 
     glm::mat4 view = glm::lookAt(eye, eye + front, glm::vec3(0.0f, 1.0f, 0.0f));
     memcpy(matrix, glm::value_ptr(view), sizeof(glm::mat4));
+}
+// === ВОДНАЯ ФИЗИКА ===
+
+void Player::SetInWater(bool inWater) {
+    if (inWater) {
+        m_afPhysicsFlags |= PFLAG_INWATER;
+    } else {
+        m_afPhysicsFlags &= ~PFLAG_INWATER;
+    }
+}
+
+void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
+    // Получаем капсулу игрока
+    Capsule capsule = getPlayerCapsule(position);
+    
+    bool inWater = false;
+    float waterSurface = 0.0f;
+    
+    // Проверяем все зоны воды
+    for (const auto* water : waterZones) {
+        if (water->intersectsCapsule(capsule)) {
+            inWater = true;
+            waterSurface = water->getTopHeight();
+            break;
+        }
+    }
+    
+    // Определяем уровень воды (0-3 как в HL)
+    // 0 - не в воде, 1 - ноги, 2 - пояс, 3 - голова/полностью
+    bool currentlyInWater = inWater;
+    
+    if (inWater) {
+        float feetY = position.y + m_vecHullMin.y;
+        float headY = position.y + m_vecHullMax.y;
+        
+        if (feetY >= waterSurface) {
+            // Ноги выше воды - не в воде
+            SetInWater(false);
+            m_flWaterLevel = 0;
+            currentlyInWater = false;
+        } else if (headY >= waterSurface) {
+            // Голова над водой - частичное погружение
+            SetInWater(true);
+            if ((position.y) >= waterSurface) {
+                m_flWaterLevel = 3.0f;  // Полностью под водой
+            } else if ((position.y + m_vecHullMax.y * 0.5f) >= waterSurface) {
+                m_flWaterLevel = 2.0f;  // По пояс
+            } else {
+                m_flWaterLevel = 1.0f;  // Только ноги
+            }
+        } else {
+            // Полностью под водой
+            SetInWater(true);
+            m_flWaterLevel = 3.0f;
+        }
+    } else {
+        SetInWater(false);
+        m_flWaterLevel = 0;
+    }
+    
+    // Логирование только при входе/выходе из воды
+    if (currentlyInWater && !m_bWasInWater) {
+        std::cout << "[WATER] Entered water! Level=" << m_flWaterLevel 
+                  << " surface=" << waterSurface << std::endl;
+    } else if (!currentlyInWater && m_bWasInWater) {
+        std::cout << "[WATER] Exited water!" << std::endl;
+    }
+    
+    m_bWasInWater = currentlyInWater;
+}
+
+void Player::ApplyWaterPhysics(float deltaTime) {
+    if (!IsInWater()) return;
+    
+    // ВАЖНО: В воде игрок НЕ на земле - он плавает
+    onGround = false;
+    
+    // Гравитация в воде меньше (игрок медленнее тонет/всплывает)
+    float waterGravity = gravity * 0.3f;
+    
+    // Сопротивление воды (сильнее чем воздух)
+    // Используем экспоненциальное затухание для независимости от FPS
+    float waterDrag = 0.92f;
+    float dragFactor = powf(waterDrag, deltaTime * 60.0f); // Нормализуем к 60 FPS
+    
+    // Применяем сопротивление ко всей скорости
+    velocity *= dragFactor;
+    
+    // В воде игрок может двигаться во всех направлениях (как в полете но медленнее)
+    GLFWwindow* window = glfwGetCurrentContext();
+    float yawRad = glm::radians(yaw);
+    glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
+    glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    
+    glm::vec3 wishvel(0.0f);
+    float swimSpeed = speed * 0.6f;  // Медленнее чем ходьба
+    
+    // Горизонтальное движение
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishvel += forward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishvel -= forward;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishvel -= right;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishvel += right;
+    
+    // Пробел - всплытие, Ctrl - погружение
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        wishvel += up;
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+        wishvel -= up;
+    }
+    
+    float wishspeed = glm::length(wishvel);
+    if (wishspeed > 0) {
+        glm::vec3 wishdir = wishvel / wishspeed;
+        float accel = 15.0f;  // Ускорение в воде
+        float addspeed = swimSpeed * wishspeed - glm::dot(velocity, wishdir);
+        
+        if (addspeed > 0) {
+            float accelspeed = accel * deltaTime * swimSpeed * wishspeed;
+            if (accelspeed > addspeed) accelspeed = addspeed;
+            velocity += accelspeed * wishdir;
+        }
+    }
+    
+    // Ограничиваем максимальную скорость в воде
+    float maxSwimSpeed = swimSpeed * 1.5f;
+    if (glm::length(velocity) > maxSwimSpeed) {
+        velocity = glm::normalize(velocity) * maxSwimSpeed;
+    }
+    
+    // Если игрок не движется активно - медленно всплывает (плавучесть)
+    if (wishspeed < 0.1f && !onGround) {
+        // Добавляем небольшую силу всплытия
+        velocity.y += waterGravity * 0.5f * deltaTime;
+    }
+    else {
+        // Применяем уменьшенную гравитацию только если не всплываем активно
+        if (velocity.y < 0) {
+            velocity.y -= waterGravity * deltaTime;
+        }
+    }
+    
+    m_flSwimTime += deltaTime;
 }
