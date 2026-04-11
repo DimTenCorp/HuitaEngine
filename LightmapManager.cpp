@@ -1,4 +1,5 @@
-﻿#include "LightmapManager.h"
+﻿#include "pch.h"
+#include "LightmapManager.h"
 #include <iostream>
 #include <algorithm>
 #include <cstring>

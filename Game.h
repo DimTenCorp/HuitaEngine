@@ -1,0 +1,47 @@
+#pragma once
+#include <glm/glm.hpp>
+#include <memory>
+#include "Player.h"
+
+struct GLFWwindow;
+
+class HUD;
+
+class Game {
+public:
+    Game();
+    ~Game();
+
+    void init();
+    void update(float deltaTime);
+    void processInput(GLFWwindow* window);
+    void render(int screenWidth, int screenHeight);
+
+    Player* getPlayer() const { return player.get(); }
+    void setViewAngles(float yaw, float pitch);
+
+    void resetMouseState() { firstMouse = true; }
+
+    void setLastMousePos(float x, float y) {
+        lastX = x;
+        lastY = y;
+        firstMouse = true;  // Важно: следующий кадр должен пропуститься
+    }
+
+private:
+    std::unique_ptr<Player> player;
+    std::unique_ptr<HUD> hud;
+
+    float yaw = -90.0f;
+    float pitch = 0.0f;
+    float lastX = 640.0f;
+    float lastY = 360.0f;
+    bool firstMouse = true;
+
+    bool f1Pressed = false, f2Pressed = false, f3Pressed = false;
+    bool f5Pressed = false, f6Pressed = false;
+    bool noclipPressed = false, bhopPressed = false;
+    bool f10Pressed = false;  // Добавлено
+
+    void processMouse(GLFWwindow* window);
+};

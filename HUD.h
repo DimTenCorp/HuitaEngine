@@ -1,13 +1,14 @@
 #pragma once
 #include <glm/glm.hpp>
 
-// Стиль прицела (можно менять из кода)
+struct ImFont;
+
 struct CrosshairStyle {
-    float gap = 3.0f;           // зазор от центра
-    float length = 5.0f;        // длина линий
-    float width = 2.0f;         // толщина линий
-    float dotSize = 0.0f;       // размер точки в центре (0 чтобы убрать)
-    unsigned int color = 0xDCFFFFFF; // ABGR: белый полупрозрачный (220 alpha)
+    float gap = 3.0f;
+    float length = 5.0f;
+    float width = 2.0f;
+    float dotSize = 0.0f;
+    unsigned int color = 0xDCFFFFFF;
 };
 
 struct HUDSettings {
@@ -24,6 +25,7 @@ private:
     float fpsTimer = 0.0f;
     int frameCount = 0;
     glm::vec3 playerPos;
+    ImFont* smallFont = nullptr;
 
 public:
     HUD();

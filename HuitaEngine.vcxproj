@@ -255,11 +255,14 @@
   <ItemGroup>
     <ClCompile Include="BSPLoader.cpp" />
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Engine.cpp" />
     <ClCompile Include="Entity.cpp" />
+    <ClCompile Include="Game.cpp" />
     <ClCompile Include="HUD.cpp" />
     <ClCompile Include="LightmapManager.cpp" />
     <ClCompile Include="LightmappedRenderer.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Menu.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="Renderer.cpp" />
@@ -268,20 +271,25 @@
     <ClCompile Include="WADLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Dev\vcpkg\installed\x64-windows\include\glad\glad.h" />
     <ClInclude Include="AABB.h" />
     <ClInclude Include="BSPLoader.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Engine.h" />
     <ClInclude Include="Entity.h" />
+    <ClInclude Include="Game.h" />
     <ClInclude Include="HUD.h" />
     <ClInclude Include="LightmapManager.h" />
     <ClInclude Include="LightmappedRenderer.h" />
+    <ClInclude Include="Menu.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="pch.h" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Dima|x64'">
     <PostBuildEvent>

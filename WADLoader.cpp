@@ -1,4 +1,5 @@
 ﻿#define NOMINMAX
+#include "pch.h"
 #include "WADLoader.h"
 #include <iostream>
 #include <fstream>

@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "HUD.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -6,7 +7,21 @@
 #include <cstdio>
 #include <iostream>
 
+static const float HUD_FONT_SIZE = 14.0f;   
+
 HUD::HUD() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    smallFont = io.Fonts->AddFontFromFileTTF(
+        "res/fonts/Neogurotesuku-Regular.otf",
+        HUD_FONT_SIZE,
+        nullptr,
+        io.Fonts->GetGlyphRangesCyrillic()
+    );
+
+    if (!smallFont) {
+        smallFont = io.Fonts->AddFontDefault();
+    }
 }
 
 HUD::~HUD() {
@@ -26,17 +41,12 @@ void HUD::update(float deltaTime, const glm::vec3& position) {
 }
 
 void HUD::render(int screenWidth, int screenHeight) {
-    // �������� ��� ImGui ��������������� ����� ��������������
-    if (!ImGui::GetCurrentContext()) {
-        std::cerr << "[HUD] ImGui not initialized!\n";
-        return;
+    if (!ImGui::GetCurrentContext()) return;
+
+    if (smallFont) {
+        ImGui::PushFont(smallFont);
     }
 
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-
-    // === FPS � ������� (����� ������� ����) ===
     ImGuiWindowFlags infoFlags =
         ImGuiWindowFlags_NoBackground |
         ImGuiWindowFlags_NoDecoration |
@@ -61,13 +71,12 @@ void HUD::render(int screenWidth, int screenHeight) {
     }
 
     if (settings.showPosition) {
-        ImGui::Text("Position: (%.2f, %.2f, %.2f)",
+        ImGui::Text("Pos: (%.1f, %.1f, %.1f)",
             playerPos.x, playerPos.y, playerPos.z);
     }
 
     ImGui::End();
 
-    // === ������ (����� ������) ===
     if (settings.showCrosshair) {
         ImGuiWindowFlags crossFlags =
             ImGuiWindowFlags_NoBackground |
@@ -96,7 +105,6 @@ void HUD::render(int screenWidth, int screenHeight) {
         const CrosshairStyle& ch = settings.crosshair;
         ImU32 col = (ImU32)ch.color;
 
-        // ������������ ����� (��� �����)
         draw->AddLine(
             ImVec2(cx, cy - ch.gap - ch.length),
             ImVec2(cx, cy - ch.gap),
@@ -108,7 +116,6 @@ void HUD::render(int screenWidth, int screenHeight) {
             col, ch.width
         );
 
-        // �������������� ����� (��� �����)
         draw->AddLine(
             ImVec2(cx - ch.gap - ch.length, cy),
             ImVec2(cx - ch.gap, cy),
@@ -120,7 +127,6 @@ void HUD::render(int screenWidth, int screenHeight) {
             col, ch.width
         );
 
-        // ����� � ������ (���� ������ > 0)
         if (ch.dotSize > 0.0f) {
             draw->AddCircleFilled(ImVec2(cx, cy), ch.dotSize, col);
         }
@@ -128,6 +134,7 @@ void HUD::render(int screenWidth, int screenHeight) {
         ImGui::End();
     }
 
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (smallFont) {
+        ImGui::PopFont();
+    }
 }

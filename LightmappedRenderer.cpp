@@ -1,4 +1,5 @@
-﻿#include "LightmappedRenderer.h"
+﻿#include "pch.h"
+#include "LightmappedRenderer.h"
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>

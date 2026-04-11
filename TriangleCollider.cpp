@@ -1,4 +1,5 @@
-﻿#include "TriangleCollider.h"
+﻿#include "pch.h"
+#include "TriangleCollider.h"
 #include <cmath>
 #include <limits>
 #include "BSPLoader.h"

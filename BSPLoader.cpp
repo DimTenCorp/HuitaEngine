@@ -1,4 +1,5 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
+#include "pch.h"
 #include "BSPLoader.h"
 #include <iostream>
 #include <cstdio>
@@ -653,14 +654,10 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 }
 
 void BSPLoader::cleanupTextures() {
-    if (defaultTextureId) glDeleteTextures(1, &defaultTextureId);
-    if (!glTextureIds.empty()) {
-        for (GLuint tex : glTextureIds) {
-            if (tex != defaultTextureId && tex != 0) {
-                glDeleteTextures(1, &tex);
-            }
-        }
-    }
+    // НЕ удаляем OpenGL текстуры здесь! Ими владеет WADLoader.
+    // BSP только хранит ссылки (ID) на текстуры из кэша WADLoader.
+    // Удаление произойдёт в ~WADLoader().
+
     glTextureIds.clear();
     textureDimensions.clear();
     drawCalls.clear();
