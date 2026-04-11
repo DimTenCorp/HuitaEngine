@@ -9,7 +9,8 @@ public:
     enum class State {
         MAIN_MENU,
         MAP_SELECT,
-        CONFIRM_EXIT
+        CONFIRM_EXIT,
+        LOADING
     };
 
     Menu();
@@ -50,6 +51,11 @@ public:
     bool shouldReturnToMenu() const { return returnToMenu; }
     void clearReturnToMenuFlag() { returnToMenu = false; }
 
+    // Для экрана загрузки
+    void showLoading(const std::string& mapName);
+    void hideLoading();
+    bool isLoading() const { return currentState == State::LOADING; }
+
     // Шрифт - устанавливается ДО init()
     void setFontPath(const std::string& path) { fontPath = path; }
 
@@ -61,7 +67,7 @@ private:
     State currentState = State::MAIN_MENU;
     std::string fontPath;
 
-    bool initialized = false;  // Защита от повторной инициализации шрифтов
+    bool initialized = false;
 
     // Списки карт
     std::vector<std::string> maps;
@@ -82,8 +88,12 @@ private:
     void renderMainMenu();
     void renderMapSelect();
     void renderConfirmExit();
+    void renderLoading();  // <-- НОВЫЙ МЕТОД
 
     // Input state
     double mouseX = 0, mouseY = 0;
     bool mousePressed = false;
+
+    // Для экрана загрузки
+    std::string loadingMapName;
 };

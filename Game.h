@@ -25,7 +25,21 @@ public:
     void setLastMousePos(float x, float y) {
         lastX = x;
         lastY = y;
-        firstMouse = true;  // ¬ажно: следующий кадр должен пропуститьс€
+    }
+
+    void resetCameraAndMouse() {
+        firstMouse = true;
+        // —брасываем углы, если нужно
+        yaw = -90.0f;
+        pitch = 0.0f;
+        player->setYaw(yaw);
+        player->setPitch(pitch);
+    }
+
+    void centerMouseAt(float x, float y) {
+        lastX = x;
+        lastY = y;
+        firstMouse = false;
     }
 
 private:

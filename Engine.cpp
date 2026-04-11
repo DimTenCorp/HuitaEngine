@@ -117,7 +117,6 @@ bool Engine::initImGui() {
 bool Engine::initSystems() {
     bspLoader = std::make_unique<BSPLoader>();
     wadLoader = std::make_unique<WADLoader>();
-
     meshCollider = nullptr;
     renderer = nullptr;
     lmRenderer = nullptr;
@@ -132,8 +131,7 @@ bool Engine::initSystems() {
     menu->init(window, width, height);
 
     menu->setOnMapSelected([this](const std::string& mapPath) {
-        loadMap(mapPath);
-        hideMenu();
+        loadMap(mapPath);  // Теперь это планирует загрузку, а не выполняет сразу
         });
 
     menu->setOnExitGame([this]() {
@@ -162,14 +160,15 @@ bool Engine::initSystems() {
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
 
+    pendingLoad = false;
+    mapLoadInProgress = false;
+
     return true;
 }
 
-// ИСПРАВЛЕНО: убраны вызовы ImGui::Render()
 void Engine::unloadCurrentMap() {
     std::cout << "[ENGINE] Unloading current map resources...\n";
 
-    // Сначала сбрасываем указатели в правильном порядке
     if (game) {
         game.reset();
     }
@@ -210,8 +209,63 @@ void Engine::unloadCurrentMap() {
 }
 
 void Engine::loadMap(const std::string& mapPath) {
-    unloadCurrentMap();
+    // Просто планируем загрузку на следующий кадр
+    if (mapLoadInProgress) {
+        std::cout << "[ENGINE] Load already in progress, ignoring request\n";
+        return;
+    }
 
+    pendingMapPath = mapPath;
+    pendingLoad = true;
+    mapLoadInProgress = true;
+}
+
+void Engine::processPendingLoad() {
+    if (!pendingLoad) return;
+
+    pendingLoad = false;
+
+    // Показываем экран загрузки (рендерится на следующем кадре)
+    if (menu) {
+        // Извлекаем имя карты из пути
+        std::string mapName = pendingMapPath;
+        size_t lastSlash = mapName.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            mapName = mapName.substr(lastSlash + 1);
+        }
+        size_t dotPos = mapName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            mapName = mapName.substr(0, dotPos);
+        }
+        menu->showLoading(mapName);
+    }
+
+    // Даём возможность отрендерить экран загрузки
+    // Просто вызываем рендер одного кадра прямо здесь
+    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (menu && menu->isActive()) {
+        // Рендерим только меню в состоянии LOADING
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        menu->render();
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+
+    // Теперь реальная загрузка
+    doLoadMap(pendingMapPath);
+
+    mapLoadInProgress = false;
+    pendingMapPath.clear();
+}
+
+void Engine::doLoadMap(const std::string& mapPath) {
     std::cout << "\n=== LOADING MAP: " << mapPath << " ===\n";
 
     if (wadLoader) {
@@ -229,6 +283,10 @@ void Engine::loadMap(const std::string& mapPath) {
 
     if (!bspLoader->load(mapPath, *wadLoader)) {
         std::cerr << "[ENGINE] Failed to load map: " << mapPath << std::endl;
+        if (menu) {
+            menu->hideLoading();
+            showMenu();
+        }
         return;
     }
 
@@ -261,7 +319,7 @@ void Engine::loadMap(const std::string& mapPath) {
     if (bspLoader->findPlayerStart(spawnPos, spawnAngles)) {
         if (game && game->getPlayer()) {
             game->getPlayer()->setPosition(spawnPos);
-            game->setViewAngles(spawnAngles.y, spawnAngles.x);  // <- это важно
+            game->setViewAngles(spawnAngles.y, spawnAngles.x);
         }
     }
     else {
@@ -273,6 +331,34 @@ void Engine::loadMap(const std::string& mapPath) {
     }
 
     std::cout << "=== MAP LOADED ===\n\n";
+
+    // Скрываем экран загрузки
+    if (menu) {
+        menu->hideLoading();
+    }
+
+    // ====== ВАЖНО: настраиваем состояние мыши для игры ======
+    menuActive = false;
+    if (menu) {
+        menu->setActive(false);
+    }
+
+    // Сбрасываем состояние мыши ДО того как включаем захват
+    if (game) {
+        game->resetMouseState();
+    }
+
+    // Устанавливаем курсор в центр экрана
+        // Возвращаем мышку в центр для корректного старта
+    glfwSetCursorPos(window, width / 2.0, height / 2.0);
+    glfwPollEvents();  // Применяем позицию курсора сразу
+
+    // Центрируем мышь в Game - пропускаем логику firstMouse
+    if (game) {
+        game->centerMouseAt(width / 2.0f, height / 2.0f);
+    }
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
 void Engine::updateTime() {
@@ -300,7 +386,6 @@ void Engine::showMenu() {
     }
     if (window) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        // Не сбрасываем позицию мыши при показе меню
     }
 }
 
@@ -311,12 +396,7 @@ void Engine::hideMenu() {
     }
     if (window && game) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-        // Убираем game->resetMouseState() - он не нужен
-        // game->resetMouseState();  // <-- УДАЛИТЬ ИЛИ ЗАКОММЕНТИРОВАТЬ
-
         glfwSetCursorPos(window, width / 2.0, height / 2.0);
-
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
         game->setLastMousePos((float)xpos, (float)ypos);
@@ -326,6 +406,9 @@ void Engine::hideMenu() {
 void Engine::run() {
     while (!glfwWindowShouldClose(window)) {
         updateTime();
+
+        // Обрабатываем отложенную загрузку в первую очередь
+        processPendingLoad();
 
         if (menuActive && menu) {
             if (menu->shouldReturnToMenu()) {

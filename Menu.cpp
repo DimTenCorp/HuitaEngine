@@ -5,8 +5,6 @@
 #include <filesystem>
 #include <algorithm>
 
-//чё 
-
 namespace fs = std::filesystem;
 
 static const float MENU_FONT_SIZE = 20.0f;
@@ -93,6 +91,7 @@ void Menu::reset() {
     lastClickedMap = -1;
     returnToMenu = false;
     mousePressed = false;
+    loadingMapName.clear();
 }
 
 void Menu::setActive(bool act) {
@@ -161,11 +160,22 @@ void Menu::handleKey(int key, int action) {
             if (onReturnToGame) onReturnToGame();
         }
     }
+    // В состоянии LOADING клавиши не обрабатываем
 }
 
 void Menu::handleScroll(double xoffset, double yoffset) {
     (void)xoffset;
     (void)yoffset;
+}
+
+void Menu::showLoading(const std::string& mapName) {
+    loadingMapName = mapName;
+    currentState = State::LOADING;
+}
+
+void Menu::hideLoading() {
+    currentState = State::MAIN_MENU;
+    loadingMapName.clear();
 }
 
 void Menu::render() {
@@ -203,6 +213,9 @@ void Menu::render() {
         break;
     case State::CONFIRM_EXIT:
         renderConfirmExit();
+        break;
+    case State::LOADING:
+        renderLoading();
         break;
     }
 
@@ -295,8 +308,11 @@ void Menu::renderMapSelect() {
 
         if (clicked) {
             if (ImGui::IsMouseDoubleClicked(0)) {
+                // При двойном клике показываем экран загрузки
+                std::string fullPath = "maps/" + maps[i];
+                showLoading(displayName);
                 if (onMapSelected) {
-                    onMapSelected("maps/" + maps[i]);
+                    onMapSelected(fullPath);  // Engine сам покажет loading
                 }
             }
             else {
@@ -323,8 +339,15 @@ void Menu::renderMapSelect() {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
         if (ImGui::Button(u8"ЗАГРУЗИТЬ", ImVec2(buttonWidth, buttonHeight))) {
+            // При клике на кнопку показываем экран загрузки
+            std::string displayName = maps[selectedMapIndex];
+            size_t dotPos = displayName.find_last_of('.');
+            if (dotPos != std::string::npos) {
+                displayName = displayName.substr(0, dotPos);
+            }
+            showLoading(displayName);
             if (onMapSelected) {
-                onMapSelected("maps/" + maps[selectedMapIndex]);
+                onMapSelected("maps/" + maps[selectedMapIndex]);  // Engine сам покажет loading
             }
         }
         ImGui::PopStyleColor(2);
@@ -408,6 +431,83 @@ void Menu::renderConfirmExit() {
     ImGui::PopStyleColor(2);
 
     ImGui::PopStyleVar();
+}
+
+void Menu::renderLoading() {
+    // Просто тёмный фон - никаких кнопок
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    // Очищаем весь экран тёмным фоном
+    drawList->AddRectFilled(
+        ImVec2(0, 0),
+        ImVec2((float)width, (float)height),
+        IM_COL32(10, 10, 15, 255)
+    );
+
+    // Прямоугольник с округлёнными краями внизу справа
+    float boxWidth = 200.0f;
+    float boxHeight = 60.0f;
+    float boxX = width - boxWidth - 30.0f;   // Отступ 30px справа
+    float boxY = height - boxHeight - 30.0f; // Отступ 30px снизу
+    float rounding = 10.0f;
+
+    // Тень
+    drawList->AddRectFilled(
+        ImVec2(boxX + 2, boxY + 2),
+        ImVec2(boxX + boxWidth + 2, boxY + boxHeight + 2),
+        IM_COL32(0, 0, 0, 100),
+        rounding
+    );
+
+    // Основной прямоугольник
+    drawList->AddRectFilled(
+        ImVec2(boxX, boxY),
+        ImVec2(boxX + boxWidth, boxY + boxHeight),
+        IM_COL32(30, 30, 40, 220),
+        rounding
+    );
+
+    // Обводка
+    drawList->AddRect(
+        ImVec2(boxX, boxY),
+        ImVec2(boxX + boxWidth, boxY + boxHeight),
+        IM_COL32(80, 80, 100, 255),
+        rounding, 0, 1.5f
+    );
+
+    // Текст загрузки
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+
+    // Анимированные точки
+    static float timer = 0.0f;
+    timer += 0.016f; // Примерно на кадр
+    int dots = ((int)(timer * 2.0f) % 4);
+    std::string loadingText = "Loading";
+    for (int i = 0; i < dots; i++) loadingText += ".";
+    for (int i = dots; i < 3; i++) loadingText += " ";
+
+    // Центрируем текст внутри бокса
+    ImVec2 textSize = ImGui::CalcTextSize(loadingText.c_str());
+    ImGui::SetCursorPos(ImVec2(
+        boxX + (boxWidth - textSize.x) * 0.5f,
+        boxY + (boxHeight - textSize.y) * 0.5f
+    ));
+    ImGui::Text("%s", loadingText.c_str());
+
+    // Название карты (чуть меньше)
+    if (!loadingMapName.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 200, 255));
+        std::string mapText = loadingMapName;
+        ImVec2 mapTextSize = ImGui::CalcTextSize(mapText.c_str());
+        ImGui::SetCursorPos(ImVec2(
+            boxX + (boxWidth - mapTextSize.x) * 0.5f,
+            boxY + boxHeight - 22.0f
+        ));
+        ImGui::Text("%s", mapText.c_str());
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::PopStyleColor();
 }
 
 void Menu::setOnMapSelected(std::function<void(const std::string&)> callback) {

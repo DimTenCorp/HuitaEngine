@@ -25,13 +25,11 @@ void Game::processMouse(GLFWwindow* window) {
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
 
-    // НЕ сбрасываем если мы уже установили lastX/lastY
-    // firstMouse сбрасывается только при init или reset
     if (firstMouse) {
         lastX = (float)xpos;
         lastY = (float)ypos;
         firstMouse = false;
-        return;  // Важно: пропускаем этот кадр
+        return;  // Пропускаем первый кадр - не обрабатываем движение
     }
 
     float xoffset = (float)(xpos - lastX);

@@ -45,8 +45,11 @@ public:
 
     float getDeltaTime() const { return deltaTime; }
 
-    void loadMap(const std::string& mapPath);
-    void unloadCurrentMap();  // <-- НОВЫЙ МЕТОД
+    void loadMap(const std::string& mapPath);  // Запланировать загрузку карты
+    void unloadCurrentMap();
+
+    int getWidth() const { return width; }
+    int getHeight() const { return height; }
 
 private:
     static Engine* instance;
@@ -71,6 +74,11 @@ private:
     float lightmapIntensity = 1.0f;
     bool menuActive = true;
 
+    // Для отложенной загрузки
+    bool pendingLoad = false;
+    std::string pendingMapPath;
+    bool mapLoadInProgress = false;
+
     bool initGLFW();
     bool initGLAD();
     bool initImGui();
@@ -78,6 +86,6 @@ private:
 
     void updateTime();
     void render();
-
-    void handleMenuReturn();
+    void processPendingLoad();  // Обработка отложенной загрузки
+    void doLoadMap(const std::string& mapPath);  // Реальная загрузка
 };
