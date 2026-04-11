@@ -32,7 +32,7 @@ struct Capsule {
     glm::vec3 b;        // Верхняя точка (центр верхней сферы)
     float radius;
 
-    Capsule() : radius(0.0f) {}
+    Capsule() : a(0.0f), b(0.0f), radius(0.0f) {}
     Capsule(const glm::vec3& start, const glm::vec3& end, float r)
         : a(start), b(end), radius(r) {
     }

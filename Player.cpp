@@ -393,6 +393,93 @@ bool Player::checkCollisionMesh(const glm::vec3& pos) const {
     return meshCollider->intersectCapsule(capsule);
 }
 
+// Проверка столкновений с AABB (для совместимости)
+bool Player::checkCollision(const glm::vec3& pos, const AABB& box) {
+    Capsule capsule = getPlayerCapsule(pos);
+    
+    // Находим ближайшую точку на AABB к капсуле
+    glm::vec3 closest = glm::clamp(capsule.getCenter(), box.min, box.max);
+    
+    // Проверяем расстояние от центра капсулы до ближайшей точки
+    float dist = glm::length(capsule.getCenter() - closest);
+    
+    // Также нужно проверить расстояние от линии капсулы до коробки
+    // Упрощенная проверка: если центр капсулы внутри AABB или близко
+    return dist <= capsule.radius;
+}
+
+// Отскок от поверхности
+glm::vec3 Player::ClipVelocity(const glm::vec3& in, const glm::vec3& normal, float overbounce) {
+    float backoff = glm::dot(in, normal) * overbounce;
+    return in - normal * backoff;
+}
+
+// Попытка перемещения с проверкой столкновений
+bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& outPos) {
+    glm::vec3 delta = end - start;
+    float length = glm::length(delta);
+    
+    if (length < 0.001f) {
+        outPos = start;
+        return true;
+    }
+    
+    glm::vec3 dir = delta / length;
+    
+    // Step test - проверяем несколько точек вдоль пути
+    int steps = (int)(length / 4.0f) + 1;
+    
+    for (int i = 0; i <= steps; i++) {
+        float t = (float)i / (float)steps;
+        glm::vec3 testPos = start + dir * (length * t);
+        
+        if (checkCollisionMesh(testPos)) {
+            // Столкновение - возвращаем предыдущую позицию
+            if (i > 0) {
+                t = (float)(i - 1) / (float)steps;
+                outPos = start + dir * (length * t);
+            } else {
+                outPos = start;
+            }
+            return false;
+        }
+    }
+    
+    outPos = end;
+    return true;
+}
+
+// Движение со скольжением вдоль стен (HL-style)
+void Player::WalkMove_Sliding(float deltaTime) {
+    WalkMove(deltaTime);
+    
+    // После обычного движения, если есть столкновение - скользим вдоль стен
+    glm::vec3 originalVel = velocity;
+    glm::vec3 newPos = position + velocity * deltaTime;
+    
+    if (checkCollisionMesh(newPos)) {
+        // Столкновение - пытаемся скользить
+        // В HL это делается через ClipVelocity
+        
+        // Проверяем оси по отдельности
+        glm::vec3 testX = position + glm::vec3(velocity.x * deltaTime, 0, 0);
+        if (!checkCollisionMesh(testX)) {
+            position = testX;
+        } else {
+            velocity.x = 0;
+        }
+        
+        glm::vec3 testZ = position + glm::vec3(0, 0, velocity.z * deltaTime);
+        if (!checkCollisionMesh(testZ)) {
+            position = testZ;
+        } else {
+            velocity.z = 0;
+        }
+    } else {
+        position = newPos;
+    }
+}
+
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
     glm::vec3 testPos = position;
