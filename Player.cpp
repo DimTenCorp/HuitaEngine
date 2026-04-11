@@ -672,8 +672,11 @@ void Player::ApplyWaterPhysics(float deltaTime) {
     
     std::cout << "[WATER] Applying water physics! Level=" << m_flWaterLevel << std::endl;
     
+    // ВАЖНО: В воде игрок НЕ на земле - он плавает
+    onGround = false;
+    
     // Гравитация в воде меньше (игрок медленнее тонет/всплывает)
-    float waterGravity = gravity * 0.5f;
+    float waterGravity = gravity * 0.3f;
     
     // Сопротивление воды (сильнее чем воздух)
     float waterDrag = 0.92f;
@@ -681,54 +684,58 @@ void Player::ApplyWaterPhysics(float deltaTime) {
     // Применяем сопротивление ко всей скорости
     velocity *= waterDrag;
     
-    // Если игрок не на земле и не прыгает - медленно всплывает
-    if (!onGround && velocity.y < 0) {
-        // Замедляем падение
-        if (velocity.y > -50.0f) {
-            velocity.y = -50.0f;  // Максимальная скорость падения в воде
-        }
-    }
-    
-    // Уменьшаем гравитацию в воде
-    if (!onGround) {
-        velocity.y -= waterGravity * deltaTime;
-    }
-    
     // В воде игрок может двигаться во всех направлениях (как в полете но медленнее)
-    if (m_flWaterLevel >= 2.0f) {
-        // Если по пояс или глубже - добавляем возможность "плавать"
-        float swimSpeed = speed * 0.6f;  // Медленнее чем ходьба
+    GLFWwindow* window = glfwGetCurrentContext();
+    float yawRad = glm::radians(yaw);
+    glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
+    glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    
+    glm::vec3 wishvel(0.0f);
+    float swimSpeed = speed * 0.6f;  // Медленнее чем ходьба
+    
+    // Горизонтальное движение
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishvel += forward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishvel -= forward;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishvel -= right;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishvel += right;
+    
+    // Пробел - всплытие, Ctrl - погружение
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        wishvel += up;
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+        wishvel -= up;
+    }
+    
+    float wishspeed = glm::length(wishvel);
+    if (wishspeed > 0) {
+        glm::vec3 wishdir = wishvel / wishspeed;
+        float accel = 15.0f;  // Ускорение в воде
+        float addspeed = swimSpeed * wishspeed - glm::dot(velocity, wishdir);
         
-        GLFWwindow* window = glfwGetCurrentContext();
-        float yawRad = glm::radians(yaw);
-        glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
-        glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
-        
-        glm::vec3 wishvel(0.0f);
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishvel += forward;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishvel -= forward;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishvel -= right;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishvel += right;
-        
-        // Пробел - всплытие, Ctrl - погружение
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-            wishvel.y += 1.0f;
+        if (addspeed > 0) {
+            float accelspeed = accel * deltaTime * swimSpeed * wishspeed;
+            if (accelspeed > addspeed) accelspeed = addspeed;
+            velocity += accelspeed * wishdir;
         }
-        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
-            wishvel.y -= 1.0f;
-        }
-        
-        float wishspeed = glm::length(wishvel);
-        if (wishspeed > 0) {
-            glm::vec3 wishdir = wishvel / wishspeed;
-            float accel = 15.0f;  // Ускорение в воде
-            float addspeed = swimSpeed * wishspeed - glm::dot(velocity, wishdir);
-            
-            if (addspeed > 0) {
-                float accelspeed = accel * deltaTime * swimSpeed * wishspeed;
-                if (accelspeed > addspeed) accelspeed = addspeed;
-                velocity += accelspeed * wishdir;
-            }
+    }
+    
+    // Ограничиваем максимальную скорость в воде
+    float maxSwimSpeed = swimSpeed * 1.5f;
+    if (glm::length(velocity) > maxSwimSpeed) {
+        velocity = glm::normalize(velocity) * maxSwimSpeed;
+    }
+    
+    // Если игрок не движется активно - медленно всплывает (плавучесть)
+    if (wishspeed < 0.1f && !onGround) {
+        // Добавляем небольшую силу всплытия
+        velocity.y += waterGravity * 0.5f * deltaTime;
+    }
+    else {
+        // Применяем уменьшенную гравитацию только если не всплываем активно
+        if (velocity.y < 0) {
+            velocity.y -= waterGravity * deltaTime;
         }
     }
     
