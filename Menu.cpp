@@ -1,11 +1,11 @@
-#include "pch.h"
+Ôªø#include "pch.h"
 #include "Menu.h"
 #include "imgui.h"
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
 
-//˜∏ 
+//—á—ë 
 
 namespace fs = std::filesystem;
 
@@ -224,17 +224,17 @@ void Menu::renderMainMenu() {
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY));
-    if (ImGui::Button(u8"Õ¿◊¿“‹ »√–”", ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(u8"–ù–ê–ß–ê–¢–¨ –ò–ì–†–£", ImVec2(0, buttonHeight))) {
         currentState = State::MAP_SELECT;
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + buttonHeight + spacing));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 150));
-    ImGui::Button(u8"Õ¿—“–Œ… »", ImVec2(0, buttonHeight));
+    ImGui::Button(u8"–ù–ê–°–¢–†–û–ô–ö–ò", ImVec2(0, buttonHeight));
     ImGui::PopStyleColor();
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + (buttonHeight + spacing) * 2));
-    if (ImGui::Button(u8"¬€’Œƒ", ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(u8"–í–´–•–û–î", ImVec2(0, buttonHeight))) {
         if (onExitGame) onExitGame();
     }
 
@@ -247,7 +247,7 @@ void Menu::renderMapSelect() {
 
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
     ImGui::SetCursorPos(ImVec2(center.x - 100, center.y));
-    ImGui::Text(u8"¬€¡Œ–  ¿–“€");
+    ImGui::Text(u8"–í–´–ë–û–† –ö–ê–†–¢–´");
     ImGui::PopStyleColor();
 
     float listX = width * 0.5f - 200.0f;
@@ -322,7 +322,7 @@ void Menu::renderMapSelect() {
     if (selectedMapIndex >= 0) {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-        if (ImGui::Button(u8"«¿√–”«»“‹", ImVec2(buttonWidth, buttonHeight))) {
+        if (ImGui::Button(u8"–ó–ê–ì–†–£–ó–ò–¢–¨", ImVec2(buttonWidth, buttonHeight))) {
             if (onMapSelected) {
                 onMapSelected("maps/" + maps[selectedMapIndex]);
             }
@@ -333,14 +333,14 @@ void Menu::renderMapSelect() {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 50, 50, 150));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(50, 50, 50, 150));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(50, 50, 50, 150));
-        ImGui::Button(u8"«¿√–”«»“‹", ImVec2(buttonWidth, buttonHeight));
+        ImGui::Button(u8"–ó–ê–ì–†–£–ó–ò–¢–¨", ImVec2(buttonWidth, buttonHeight));
         ImGui::PopStyleColor(3);
     }
 
     ImGui::SetCursorPos(ImVec2(width * 0.5f + 10.0f, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(60, 60, 60, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 100, 200));
-    if (ImGui::Button(u8"Õ¿«¿ƒ", ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(u8"–ù–ê–ó–ê–î", ImVec2(buttonWidth, buttonHeight))) {
         currentState = State::MAIN_MENU;
         selectedMapIndex = -1;
     }
@@ -350,7 +350,7 @@ void Menu::renderMapSelect() {
 
     ImGui::SetCursorPos(ImVec2(width * 0.5f - 150, height - 30.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-    ImGui::Text(u8"ƒ‚ÓÈÌÓÈ ÍÎËÍ ‰Îˇ ·˚ÒÚÓÈ Á‡„ÛÁÍË");
+    ImGui::Text(u8"–î–≤–æ–π–Ω–æ–π –∫–ª–∏–∫ –¥–ª—è –±—ã—Å—Ç—Ä–æ–π –∑–∞–≥—Ä—É–∑–∫–∏");
     ImGui::PopStyleColor();
 }
 
@@ -382,7 +382,7 @@ void Menu::renderConfirmExit() {
 
     ImGui::SetCursorPos(ImVec2(dialogX + 20, dialogY + 30));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-    ImGui::Text(u8"¬˚ÈÚË ‚ „Î‡‚ÌÓÂ ÏÂÌ˛?");
+    ImGui::Text(u8"–í—ã–π—Ç–∏ –≤ –≥–ª–∞–≤–Ω–æ–µ –º–µ–Ω—é?");
     ImGui::PopStyleColor();
 
     float buttonY = dialogY + 90;
@@ -394,7 +394,7 @@ void Menu::renderConfirmExit() {
     ImGui::SetCursorPos(ImVec2(dialogX + 60, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-    if (ImGui::Button(u8"ƒ¿", ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(u8"–î–ê", ImVec2(buttonWidth, buttonHeight))) {
         returnToMenu = true;
     }
     ImGui::PopStyleColor(2);
@@ -402,7 +402,7 @@ void Menu::renderConfirmExit() {
     ImGui::SetCursorPos(ImVec2(dialogX + dialogWidth - 60 - buttonWidth, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-    if (ImGui::Button(u8"Õ≈“", ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(u8"–ù–ï–¢", ImVec2(buttonWidth, buttonHeight))) {
         if (onReturnToGame) onReturnToGame();
     }
     ImGui::PopStyleColor(2);
