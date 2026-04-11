@@ -679,10 +679,12 @@ void Player::ApplyWaterPhysics(float deltaTime) {
     float waterGravity = gravity * 0.3f;
     
     // Сопротивление воды (сильнее чем воздух)
+    // Используем экспоненциальное затухание для независимости от FPS
     float waterDrag = 0.92f;
+    float dragFactor = powf(waterDrag, deltaTime * 60.0f); // Нормализуем к 60 FPS
     
     // Применяем сопротивление ко всей скорости
-    velocity *= waterDrag;
+    velocity *= dragFactor;
     
     // В воде игрок может двигаться во всех направлениях (как в полете но медленнее)
     GLFWwindow* window = glfwGetCurrentContext();
