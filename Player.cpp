@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include "TriangleCollider.h"
+#include "WaterEntity.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
