@@ -6,6 +6,7 @@
 #include <GLFW/glfw3.h>
 
 class MeshCollider;
+class CFuncWater;
 
 // HL Physics flags
 #define PFLAG_ONLADDER      (1<<0)
@@ -14,6 +15,7 @@ class MeshCollider;
 #define PFLAG_DUCKING       (1<<3)
 #define PFLAG_USING         (1<<4)
 #define PFLAG_OBSERVER      (1<<5)
+#define PFLAG_INWATER       (1<<6)  // Игрок в воде
 
 // HL Fall damage
 #define PLAYER_FATAL_FALL_SPEED     1024.0f
@@ -86,6 +88,10 @@ private:
     float m_fHullHeight;      // Текущая полная высота капсулы
     float m_fDuckHullHeight;
 
+    // Вода
+    float m_flWaterLevel;     // Уровень воды (0-3, как в HL)
+    float m_flSwimTime;       // Время плавания
+
 public:
     Player();
 
@@ -156,4 +162,10 @@ public:
     float GetFallVelocity() const { return m_flFallVelocity; }
     bool IsLongJumpEnabled() const { return m_fLongJump; }
     void EnableLongJump(bool enable) { m_fLongJump = enable; }
+
+    // Вода
+    void SetInWater(bool inWater);
+    bool IsInWater() const { return (m_afPhysicsFlags & PFLAG_INWATER) != 0; }
+    void CheckWater(const std::vector<CFuncWater*>& waterZones);
+    void ApplyWaterPhysics(float deltaTime);
 };

@@ -8,6 +8,7 @@
 #include "LightmapManager.h"
 #include "TriangleCollider.h"
 #include "Menu.h"
+#include "WaterEntity.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -202,6 +203,12 @@ void Engine::unloadCurrentMap() {
         wadLoader->init();
     }
 
+    // Î÷èùàåì çîíû âîäû
+    for (auto* water : waterZones) {
+        delete water;
+    }
+    waterZones.clear();
+
     useLightmapped = false;
     showLightmapsOnly = false;
 
@@ -329,6 +336,16 @@ void Engine::doLoadMap(const std::string& mapPath) {
         }
         std::cout << "[SPAWN] Using fallback position\n";
     }
+
+    // === ÇÀÃĞÓÇÊÀ ÇÎÍ ÂÎÄÛ (func_water) ===
+    waterZones.clear();
+    auto waterEntities = bspLoader->getEntitiesByClass("func_water");
+    for (const auto& entity : waterEntities) {
+        CFuncWater* water = new CFuncWater();
+        water->initFromProperties(entity.properties);
+        waterZones.push_back(water);
+    }
+    std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
     std::cout << "=== MAP LOADED ===\n\n";
 
