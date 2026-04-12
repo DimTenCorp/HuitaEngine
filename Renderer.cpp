@@ -710,6 +710,10 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
         // Проверяем, является ли поверхность водой (флаг isWater уже установлен в BSPLoader)
         bool isWater = dc.isWater;
         
+        if (isWater) {
+            std::cout << "[Renderer] Rendering water surface with time=" << waterTime << std::endl;
+        }
+        
         // Передаем параметры воды в шейдер
         transparentShader->setFloat("uTime", isWater ? waterTime : 0.0f);
         transparentShader->setBool("isWater", isWater);

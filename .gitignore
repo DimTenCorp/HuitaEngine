@@ -1,3 +1,4 @@
+```
 # Compiled and build artifacts
 *.o
 *.obj
@@ -8,113 +9,37 @@
 *.out
 
 # Dependencies
+node_modules/
 venv/
 .venv/
 __pycache__/
-node_modules/
+.mypy_cache/
+.pytest_cache/
 dist/
 build/
 target/
 .gradle/
 
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment
 .env
 .env.local
 *.env.*
 
-# Logs and temp files
-*.log
-*.tmp
-
-# Coverage reports
+# Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Python specific
-*.pyc
-__pycache__/
-.mypy_cache/
-.pytest_cache/
-
-# Java specific
-*.class
-*.jar
-
-# C/C++ specific
-*.a
-*.o
-*.obj
-*.so
-*.dylib
-*.dll
-*.exe
-*.out
-*.a
-*.lib
-*.sln
-*.vcxproj*
-*.user
-*.userosscache
-*.suo
-*.cproject
-*.launch
-.deps/
-.libs/
-
-# Build directories
-cmake-build-*/
-build/
-dist/
-target/
-out/
-bin/
-obj/
-
-# IDE specific
-.vs/
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# System
 .DS_Store
 Thumbs.db
-
-# Temp files
-*.tmp
-*.temp
-*.bak
-*.backup
-
-# Archives
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+```

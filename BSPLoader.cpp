@@ -570,6 +570,7 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         // Проверяем префикс "!" в имени текстуры (например, !waterblue)
         if (!dc.textureName.empty() && dc.textureName[0] == '!') {
             dc.isWater = true;
+            std::cout << "[BSP] Found water texture: " << dc.textureName << std::endl;
         }
 
         // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
