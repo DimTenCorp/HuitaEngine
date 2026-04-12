@@ -415,23 +415,23 @@ void Renderer::initTransparentShader() {
             // Анимация воды в стиле Quake/Half-Life: многослойные волны
             if (isWater) {
                 // Первая волна - основная, медленная
-                float wave1 = sin(uv.x * 8.0 + uTime * 1.5) * 0.03;
-                float wave2 = cos(uv.y * 6.0 + uTime * 1.2) * 0.025;
+                float wave1 = sin(uv.x * 12.0 + uTime * 2.0) * 0.04;
+                float wave2 = cos(uv.y * 8.0 + uTime * 1.5) * 0.035;
                 
                 // Вторая волна - перпендикулярная
-                float wave3 = sin(uv.y * 10.0 + uTime * 2.0) * 0.02;
-                float wave4 = cos(uv.x * 7.0 + uTime * 1.8) * 0.015;
+                float wave3 = sin(uv.y * 15.0 + uTime * 2.5) * 0.03;
+                float wave4 = cos(uv.x * 10.0 + uTime * 2.2) * 0.025;
                 
                 // Третья волна - диагональная для сложности
-                float wave5 = sin((uv.x + uv.y) * 5.0 + uTime * 1.0) * 0.015;
-                float wave6 = cos((uv.x - uv.y) * 4.0 + uTime * 0.8) * 0.01;
+                float wave5 = sin((uv.x + uv.y) * 7.0 + uTime * 1.8) * 0.025;
+                float wave6 = cos((uv.x - uv.y) * 6.0 + uTime * 1.3) * 0.02;
                 
                 // Комбинируем все волны
                 uv.x += wave1 + wave3 + wave5;
                 uv.y += wave2 + wave4 + wave6;
                 
                 // Добавляем легкое искажение по времени для эффекта "переливания"
-                float ripple = sin(uTime * 3.0) * 0.005;
+                float ripple = sin(uTime * 4.0) * 0.008;
                 uv.x += ripple;
                 uv.y += ripple;
             }
@@ -446,10 +446,10 @@ void Renderer::initTransparentShader() {
             // Добавляем голубоватый оттенок и эффект глубины для воды
             if (isWater) {
                 // Легкий голубой тинт
-                texColor.rgb = mix(texColor.rgb, texColor.rgb * vec3(0.75, 0.88, 1.0), 0.25);
+                texColor.rgb = mix(texColor.rgb, texColor.rgb * vec3(0.7, 0.85, 1.0), 0.3);
                 
                 // Небольшое усиление яркости для эффекта мокрой поверхности
-                texColor.rgb *= 1.05;
+                texColor.rgb *= 1.08;
             }
             
             FragColor = vec4(texColor.rgb, texColor.a * uAlpha);
@@ -700,7 +700,7 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
             currentTex = dc.texID;
         }
 
-        // Для воды с префиксом "!" используем специальную анимацию
+        // Для воды используем специальную анимацию
         // Передаем время в шейдер для анимации волн
         static float waterTime = 0.0f;
         waterTime += 0.016f;  // Примерно 60 FPS
@@ -708,8 +708,8 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
         float alpha = dc.renderamt / 255.0f;
         alpha = std::max(0.05f, std::min(1.0f, alpha));
         
-        // Проверяем, является ли текстура водой (префикс "!")
-        bool isWater = dc.isWater && !dc.textureName.empty() && dc.textureName[0] == '!';
+        // Проверяем, является ли поверхность водой (флаг isWater уже установлен в BSPLoader)
+        bool isWater = dc.isWater;
         
         // Передаем параметры воды в шейдер
         transparentShader->setFloat("uTime", isWater ? waterTime : 0.0f);

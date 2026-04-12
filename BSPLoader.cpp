@@ -570,15 +570,15 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         // Проверяем префикс "!" в имени текстуры (например, !waterblue)
         if (!dc.textureName.empty() && dc.textureName[0] == '!') {
             dc.isWater = true;
-            dc.isTransparent = true;  // Вода с префиксом ! тоже прозрачная
         }
 
         // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
+        // Вода всегда прозрачна
         dc.isTransparent = (rendermode == 2) ||
             (rendermode == 5) ||
             (rendermode == 1 && renderamt < 255) ||
             (rendermode == 3) ||
-            dc.isWater;  // Вода всегда прозрачна
+            dc.isWater;
 
         drawCalls.push_back(dc);
         baseVertex += (unsigned int)faceMeshVerts.size();
