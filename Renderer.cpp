@@ -654,6 +654,9 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
 void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
     if (transparentDrawCalls.empty() || !transparentShader) return;
 
+    // Обновляем время воды один раз за кадр в начале функции
+    static float waterTime = 0.0f;
+    waterTime += 0.016f;  // Примерно 60 FPS
     // Сортируем прозрачные объекты от дальних к ближним
     struct SortedDrawCall {
         FaceDrawCall dc;
@@ -700,10 +703,6 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
             currentTex = dc.texID;
         }
 
-        // Для воды используем специальную анимацию
-        // Передаем время в шейдер для анимации волн
-        static float waterTime = 0.0f;
-        waterTime += 0.016f;  // Примерно 60 FPS
         
         float alpha = dc.renderamt / 255.0f;
         alpha = std::max(0.05f, std::min(1.0f, alpha));
