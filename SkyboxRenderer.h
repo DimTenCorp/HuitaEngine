@@ -24,10 +24,10 @@ public:
 private:
     std::unique_ptr<Shader> shader;
 
-    GLuint skyTextures[6] = { 0,0,0,0,0,0 };
-    bool texturesLoaded[6] = { false,false,false,false,false,false };
+    // Используем кубическую текстуру для правильного скайбокса
+    GLuint cubeMapTexture = 0;
 
-    GLuint vao = 0, vbo = 0;
+    GLuint vao = 0, vbo = 0, ebo = 0;
     int vertexCount = 0;
 
     bool loaded = false;

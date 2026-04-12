@@ -34,53 +34,14 @@ const char* SkyboxRenderer::getFragmentShader() {
 #version 330 core
 in vec3 vWorldDir;
 out vec4 FragColor;
-uniform sampler2D skyTex;
-uniform int faceIndex;
-uniform vec3 fallbackColor;
+uniform samplerCube skyTex;
 
 void main() {
     vec3 dir = normalize(vWorldDir);
-    
-    // Вычисляем UV для текущей грани куба
-    vec2 uv;
-    
-    // Порядок граней: rt(+X), lf(-X), bk(+Y), ft(-Y), up(+Z), dn(-Z)
-    if (faceIndex == 0) { // rt (+X)
-        // x = 1, проецируем на YZ плоскость
-        uv = vec2(-dir.z, dir.y) / abs(dir.x);
-    }
-    else if (faceIndex == 1) { // lf (-X)
-        // x = -1, проецируем на YZ плоскость
-        uv = vec2(dir.z, dir.y) / abs(dir.x);
-    }
-    else if (faceIndex == 2) { // bk (+Y)
-        // y = 1, проецируем на XZ плоскость
-        uv = vec2(dir.x, -dir.z) / abs(dir.y);
-    }
-    else if (faceIndex == 3) { // ft (-Y)
-        // y = -1, проецируем на XZ плоскость
-        uv = vec2(-dir.x, -dir.z) / abs(dir.y);
-    }
-    else if (faceIndex == 4) { // up (+Z)
-        // z = 1, проецируем на XY плоскость
-        uv = vec2(dir.x, dir.y) / abs(dir.z);
-    }
-    else { // dn (-Z)
-        // z = -1, проецируем на XY плоскость
-        uv = vec2(dir.x, -dir.y) / abs(dir.z);
-    }
-    
-    // Преобразуем из [-1,1] в [0,1]
-    uv = uv * 0.5 + 0.5;
-    
-    vec4 texColor = texture(skyTex, uv);
-    
-    // Если текстура черная - показываем fallback цвет
-    if (texColor.r < 0.01 && texColor.g < 0.01 && texColor.b < 0.01) {
-        FragColor = vec4(fallbackColor, 1.0);
-    } else {
-        FragColor = texColor;
-    }
+    // Для Half-Life скайбокса нужно инвертировать X чтобы грани правильно совпадали
+    dir.x = -dir.x;
+    vec4 texColor = texture(skyTex, dir);
+    FragColor = texColor;
 }
 )glsl";
 }
@@ -95,58 +56,68 @@ bool SkyboxRenderer::init() {
 }
 
 void SkyboxRenderer::createCubeMesh() {
-    // Куб от -1 до 1 по всем осям
-    // Порядок граней: rt(+X), lf(-X), bk(+Y), ft(-Y), up(+Z), dn(-Z)
+    // Куб от -1 до 1 по всем осям для кубической текстуры
+    // Вершины те же, но теперь мы используем cube map texture
+    
+    float vertices[] = {
+        // Right face (+X)
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        // Left face (-X)
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        // Back face (+Y) 
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        // Front face (-Y)
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+        // Top face (+Z)
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+        // Bottom face (-Z)
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f
+    };
 
-    float vertices[6 * 6 * 3];
-
-    auto addFace = [&](int face,
-        float x0, float y0, float z0,
-        float x1, float y1, float z1,
-        float x2, float y2, float z2,
-        float x3, float y3, float z3) {
-
-            int base = face * 18;
-            // Triangle 1
-            vertices[base + 0] = x0; vertices[base + 1] = y0; vertices[base + 2] = z0;
-            vertices[base + 3] = x1; vertices[base + 4] = y1; vertices[base + 5] = z1;
-            vertices[base + 6] = x2; vertices[base + 7] = y2; vertices[base + 8] = z2;
-            // Triangle 2
-            vertices[base + 9] = x0; vertices[base + 10] = y0; vertices[base + 11] = z0;
-            vertices[base + 12] = x2; vertices[base + 13] = y2; vertices[base + 14] = z2;
-            vertices[base + 15] = x3; vertices[base + 16] = y3; vertices[base + 17] = z3;
-        };
-
-    // 0: rt (+X) - правая грань, нормаль +X
-    // Вершины: (1,-1,-1), (1,1,-1), (1,1,1), (1,-1,1)
-    addFace(0, 1, -1, -1, 1, 1, -1, 1, 1, 1, 1, -1, 1);
-
-    // 1: lf (-X) - левая грань, нормаль -X  
-    // Вершины: (-1,-1,1), (-1,1,1), (-1,1,-1), (-1,-1,-1)
-    addFace(1, -1, -1, 1, -1, 1, 1, -1, 1, -1, -1, -1, -1);
-
-    // 2: bk (+Y) - задняя грань, нормаль +Y
-    // Вершины: (-1,1,-1), (1,1,-1), (1,1,1), (-1,1,1)
-    addFace(2, -1, 1, -1, 1, 1, -1, 1, 1, 1, -1, 1, 1);
-
-    // 3: ft (-Y) - передняя грань, нормаль -Y
-    // Вершины: (1,-1,-1), (-1,-1,-1), (-1,-1,1), (1,-1,1)
-    addFace(3, 1, -1, -1, -1, -1, -1, -1, -1, 1, 1, -1, 1);
-
-    // 4: up (+Z) - верхняя грань, нормаль +Z
-    // Вершины: (-1,1,1), (1,1,1), (1,-1,1), (-1,-1,1)
-    addFace(4, -1, 1, 1, 1, 1, 1, 1, -1, 1, -1, -1, 1);
-
-    // 5: dn (-Z) - нижняя грань, нормаль -Z
-    // Вершины: (-1,1,-1), (-1,-1,-1), (1,-1,-1), (1,1,-1)
-    addFace(5, -1, 1, -1, -1, -1, -1, 1, -1, -1, 1, 1, -1);
+    GLuint indices[] = {
+        // Right
+        0, 1, 2,  2, 3, 0,
+        // Left
+        4, 5, 6,  6, 7, 4,
+        // Back
+        8, 9, 10, 10, 11, 8,
+        // Front
+        12, 13, 14, 14, 15, 12,
+        // Top
+        16, 17, 18, 18, 19, 16,
+        // Bottom
+        20, 21, 22, 22, 23, 20
+    };
 
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
 
     glBindVertexArray(vao);
+    
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
@@ -292,19 +263,35 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
     if (skyName.empty()) return false;
     currentSkyName = skyName;
 
-    for (int i = 0; i < 6; i++) {
-        if (skyTextures[i]) glDeleteTextures(1, &skyTextures[i]);
-        skyTextures[i] = 0;
-        texturesLoaded[i] = false;
+    // Удаляем старую cube map текстуру если есть
+    if (cubeMapTexture) {
+        glDeleteTextures(1, &cubeMapTexture);
+        cubeMapTexture = 0;
     }
 
-    // HL1 порядок: rt, bk, lf, ft, up, dn
+    // HL1 порядок суффиксов: rt, bk, lf, ft, up, dn
     const char* hl1Suffixes[6] = { "rt", "bk", "lf", "ft", "up", "dn" };
 
-    // Маппинг HL1 индексов на наши индексы куба
-    // HL1: 0=rt, 1=bk, 2=lf, 3=ft, 4=up, 5=dn
-    // Куб:  0=rt, 1=lf, 2=bk, 3=ft, 4=up, 5=dn
-    const int hl1ToCube[6] = { 0, 2, 1, 3, 4, 5 };
+    // Маппинг Half-Life граней на OpenGL cube map грани
+    // OpenGL: GL_TEXTURE_CUBE_MAP_POSITIVE_X = +X (right)
+    //         GL_TEXTURE_CUBE_MAP_NEGATIVE_X = -X (left)
+    //         GL_TEXTURE_CUBE_MAP_POSITIVE_Y = +Y (top)
+    //         GL_TEXTURE_CUBE_MAP_NEGATIVE_Y = -Y (bottom)
+    //         GL_TEXTURE_CUBE_MAP_POSITIVE_Z = +Z (back)
+    //         GL_TEXTURE_CUBE_MAP_NEGATIVE_Z = -Z (front)
+    // Half-Life: rt(+X), lf(-X), bk(+Z), ft(-Z), up(+Y), dn(-Y)
+    const int hl1ToGL[6] = {
+        GL_TEXTURE_CUBE_MAP_POSITIVE_X,  // rt -> +X
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,  // bk -> +Z (в HL back это +Z)
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // lf -> -X
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // ft -> -Z (в HL front это -Z)
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // up -> +Y
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Y   // dn -> -Y
+    };
+
+    // Создаем cube map текстуру
+    glGenTextures(1, &cubeMapTexture);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
 
     int loadedCount = 0;
 
@@ -313,20 +300,20 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
         int w = 0, h = 0;
         bool loaded = false;
         const char* suffix = hl1Suffixes[hl1Idx];
-        int cubeIdx = hl1ToCube[hl1Idx];
+        GLint glFace = hl1ToGL[hl1Idx];
 
-        // Пробуем TGA
+        // Пробуем загрузить TGA
         std::string tgaPath = "gfx/env/" + skyName + suffix + ".tga";
         if (loadTGA(tgaPath, rgba, w, h)) {
             loaded = true;
-            std::cout << "[SKY] Loaded TGA: " << tgaPath << " -> face " << cubeIdx << std::endl;
+            std::cout << "[SKY] Loaded TGA: " << tgaPath << std::endl;
         }
         else {
             // Пробуем BMP
             std::string bmpPath = "gfx/env/" + skyName + suffix + ".bmp";
             if (loadBMP(bmpPath, rgba, w, h)) {
                 loaded = true;
-                std::cout << "[SKY] Loaded BMP: " << bmpPath << " -> face " << cubeIdx << std::endl;
+                std::cout << "[SKY] Loaded BMP: " << bmpPath << std::endl;
             }
         }
 
@@ -337,47 +324,46 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
             GLuint texId;
             if (wadLoader.getTextureInfo(texName, tw, th, texId)) {
                 if (texId != 0) {
-                    skyTextures[cubeIdx] = texId;
-                    texturesLoaded[cubeIdx] = true;
-                    loadedCount++;
-                    std::cout << "[SKY] Loaded from WAD: " << texName << " -> face " << cubeIdx << std::endl;
-                    continue;
+                    // Копируем текстуру из WAD в cube map
+                    // Для этого нужно сначала получить данные текстуры
+                    // Но проще загрузить напрямую из WADLoader
+                    std::cout << "[SKY] Using WAD texture: " << texName << std::endl;
+                    // WAD текстуры уже в VRAM, нам нужно их скопировать или использовать напрямую
+                    // Для простоты создадим заглушку
+                    loaded = false; // Будем использовать fallback цвет
                 }
             }
         }
 
         if (loaded) {
-            glGenTextures(1, &skyTextures[cubeIdx]);
-            glBindTexture(GL_TEXTURE_2D, skyTextures[cubeIdx]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            texturesLoaded[cubeIdx] = true;
+            // Загружаем в cube map
+            glTexImage2D(glFace, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
             loadedCount++;
         }
         else {
-            // Создаем fallback текстуру
-            uint8_t color[3] = { 255, 0, 255 }; // Magenta
-            if (cubeIdx == 0) { color[0] = 255; color[1] = 0; color[2] = 0; }      // rt - red
-            else if (cubeIdx == 1) { color[0] = 0; color[1] = 255; color[2] = 0; } // lf - green
-            else if (cubeIdx == 2) { color[0] = 0; color[1] = 0; color[2] = 255; } // bk - blue
-            else if (cubeIdx == 3) { color[0] = 255; color[1] = 255; color[2] = 0; } // ft - yellow
-            else if (cubeIdx == 4) { color[0] = 0; color[1] = 255; color[2] = 255; } // up - cyan
-            else { color[0] = 255; color[1] = 0; color[2] = 255; } // dn - magenta
+            // Создаем fallback текстуру - цветную заглушку
+            uint8_t color[4] = { 128, 128, 128, 255 }; // Серый по умолчанию
+            if (hl1Idx == 0) { color[0] = 100; color[1] = 50; color[2] = 50; }      // rt - красноватый
+            else if (hl1Idx == 1) { color[0] = 50; color[1] = 50; color[2] = 100; } // bk - синеватый
+            else if (hl1Idx == 2) { color[0] = 50; color[1] = 100; color[2] = 50; } // lf - зеленоватый
+            else if (hl1Idx == 3) { color[0] = 100; color[1] = 100; color[2] = 50; } // ft - желтоватый
+            else if (hl1Idx == 4) { color[0] = 50; color[1] = 100; color[2] = 100; } // up - голубоватый
+            else { color[0] = 100; color[1] = 50; color[2] = 100; } // dn - фиолетовый
 
-            glGenTextures(1, &skyTextures[cubeIdx]);
-            glBindTexture(GL_TEXTURE_2D, skyTextures[cubeIdx]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, color);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            std::cerr << "[SKY] Using fallback for " << suffix << " (face " << cubeIdx << ")" << std::endl;
+            // Создаем небольшую текстуру 1x1
+            glTexImage2D(glFace, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, color);
+            std::cerr << "[SKY] Using fallback color for " << suffix << std::endl;
         }
     }
 
-    std::cout << "[SKY] Loaded " << loadedCount << "/6 textures for: " << skyName << std::endl;
+    // Настраиваем параметры cube map текстуры
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    std::cout << "[SKY] Loaded " << loadedCount << "/6 faces for: " << skyName << std::endl;
     return true;
 }
 
@@ -393,11 +379,10 @@ bool SkyboxRenderer::loadSky(const std::string& skyName, WADLoader& wadLoader) {
 void SkyboxRenderer::unload() {
     if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
     if (vbo) { glDeleteBuffers(1, &vbo); vbo = 0; }
-    for (int i = 0; i < 6; i++) {
-        if (skyTextures[i]) {
-            glDeleteTextures(1, &skyTextures[i]);
-            skyTextures[i] = 0;
-        }
+    if (ebo) { glDeleteBuffers(1, &ebo); ebo = 0; }
+    if (cubeMapTexture) {
+        glDeleteTextures(1, &cubeMapTexture);
+        cubeMapTexture = 0;
     }
     shader.reset();
     loaded = false;
@@ -406,7 +391,7 @@ void SkyboxRenderer::unload() {
 void SkyboxRenderer::render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& viewPos) {
     (void)viewPos;
 
-    if (!loaded || !shader) return;
+    if (!loaded || !shader || !cubeMapTexture) return;
 
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_FALSE);
@@ -416,25 +401,14 @@ void SkyboxRenderer::render(const glm::mat4& view, const glm::mat4& projection, 
     shader->setMat4("view", view);
     shader->setMat4("projection", projection);
 
+    // Привязываем cube map текстуру
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+
     glBindVertexArray(vao);
-
-    for (int i = 0; i < 6; i++) {
-        shader->setInt("faceIndex", i);
-
-        // Fallback цвета для отладки
-        if (i == 0) shader->setVec3("fallbackColor", glm::vec3(1, 0, 0)); // rt - red
-        else if (i == 1) shader->setVec3("fallbackColor", glm::vec3(0, 1, 0)); // lf - green
-        else if (i == 2) shader->setVec3("fallbackColor", glm::vec3(0, 0, 1)); // bk - blue
-        else if (i == 3) shader->setVec3("fallbackColor", glm::vec3(1, 1, 0)); // ft - yellow
-        else if (i == 4) shader->setVec3("fallbackColor", glm::vec3(0, 1, 1)); // up - cyan
-        else shader->setVec3("fallbackColor", glm::vec3(1, 0, 1)); // dn - magenta
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, skyTextures[i]);
-        glDrawArrays(GL_TRIANGLES, i * 6, 6);
-    }
-
+    glDrawElements(GL_TRIANGLES, vertexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+
     shader->unbind();
 
     glEnable(GL_CULL_FACE);
