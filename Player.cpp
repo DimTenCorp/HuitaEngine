@@ -54,7 +54,7 @@ Player::Player() {
     m_bDidAutoJump = false;
     m_nBunnyHopFrames = 0;
 
-    stepHeight = 18.0f;
+    stepHeight = 12.0f;
 
     // Инициализация воды
     m_flWaterLevel = 0.0f;
@@ -179,18 +179,15 @@ void Player::handleInput(float deltaTime) {
         m_bDidAutoJump = false;
     }
 
-    // === ПРИСЯД (упрощенно) ===
+    // === ПРИСЯД (без изменений) ===
     if (currentButtons & 32) {
-        // Зажали Ctrl - начинаем присяд
         if ((m_afButtonPressed & 32) && !IsDucking()) {
             StartDuck();
         }
     }
     else {
-        // Отпустили Ctrl - пытаемся встать
         if (IsDucking() || IsFullyDucked()) {
             StopDuck();
-            // Проверка возможности встать теперь в методе Duck()
         }
     }
 }
@@ -258,8 +255,9 @@ void Player::Jump() {
     if (m_afPhysicsFlags & PFLAG_ONLADDER) return;
     if (!onGround) return;
 
-    // Longjump только если полностью сидим
-    if (IsFullyDucked() && m_fLongJump && (m_afButtonLast & 64)) {
+    // Longjump: полностью сидим + Shift НЕ зажат (теперь "бег" по умолчанию)
+    // Или если хочешь оставить логику "longjump только когда бежишь":
+    if (IsFullyDucked() && m_fLongJump && !(m_afButtonLast & 64)) {
         float yawRad = glm::radians(yaw);
         velocity.x = cos(yawRad) * PLAYER_LONGJUMP_SPEED;
         velocity.z = sin(yawRad) * PLAYER_LONGJUMP_SPEED;
@@ -310,14 +308,17 @@ void Player::WalkMove(float deltaTime) {
     float accel = onGround ? 10.0f : 0.3f;
     float maxSpeed = speed;
 
-    // Сидя - 1/3 скорости
+    // === ИНВЕРТИРОВАННАЯ ЛОГИКА СКОРОСТИ ===
+    // Сидя - всё ещё 1/3 скорости (это не меняем)
     if (IsFullyDucked()) {
         maxSpeed = speed * 0.333f;
     }
-    // Бег
-    else if (m_afButtonLast & 64) {
+    // Теперь: просто W = бег (1.5x), Shift+W = ходьба (1.0x)
+    else if (!(m_afButtonLast & 64)) {  // Shift НЕ зажат - бежим
         maxSpeed = speed * 1.5f;
     }
+    // Если Shift зажат - обычная скорость (speed * 1.0, ничего не меняем)
+    // else { maxSpeed = speed; } - это по умолчанию
 
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = maxSpeed - currentspeed;
@@ -330,7 +331,6 @@ void Player::WalkMove(float deltaTime) {
 
     float horizSpeed = glm::length(glm::vec2(velocity.x, velocity.z));
     if (horizSpeed < 0.5f && onGround) {
-        // Проверяем, есть ли ввод от игрока
         GLFWwindow* window = glfwGetCurrentContext();
         bool hasInput = (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
@@ -507,9 +507,9 @@ void Player::WalkMove_Sliding(float deltaTime) {
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
 
-    // Проверяем на 3 единицы ниже (было 0.5)
-    // Это важно для склонов, чтобы не терять контакт с землей
-    for (float offset = 1.0f; offset <= 3.0f; offset += 1.0f) {
+    // Проверяем несколько точек вниз для надёжности
+    // На пологих склонах важно найти контакт с поверхностью
+    for (float offset = 0.5f; offset <= 4.0f; offset += 0.5f) {
         glm::vec3 testPos = position;
         testPos.y -= offset;
         if (checkCollisionMesh(testPos)) {
@@ -577,23 +577,17 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 }
 
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
-    if (axis == 1) { // Y-ось (вертикальное движение)
+    if (axis == 1) { // Y-ось - без изменений, работает хорошо
         glm::vec3 newPos = position;
         newPos.y += velocity.y * deltaTime;
 
         if (!checkCollisionMesh(newPos)) {
-            // Нет коллизии - просто двигаемся
             position.y = newPos.y;
             return;
         }
 
-        // Есть коллизия по Y
         if (velocity.y > 0) {
-            // Движемся вверх - ударились головой
             velocity.y = 0;
-
-            // Позиционируемся точно под потолком
-            // Ищем ближайшую точку сверху где нет коллизии
             float testY = newPos.y;
             for (int i = 0; i < 20; i++) {
                 glm::vec3 testPos = position;
@@ -605,33 +599,27 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
             }
         }
         else if (velocity.y < 0) {
-            // Падаем вниз - приземлились
-            // Ищем точную высоту пола бинарным поиском для точности
-            float minY = newPos.y;  // Точно внутри коллизии (ниже пола)
-            float maxY = position.y;  // Точно над полом (текущая позиция)
+            float minY = newPos.y;
+            float maxY = position.y;
 
-            // Уточняем позицию пола
             for (int i = 0; i < 10; i++) {
                 float midY = (minY + maxY) * 0.5f;
                 glm::vec3 testPos = position;
                 testPos.y = midY;
 
                 if (checkCollisionMesh(testPos)) {
-                    minY = midY;  // Всё ещё внутри - опускаем min
+                    minY = midY;
                 }
                 else {
-                    maxY = midY;  // Снаружи - поднимаем max
+                    maxY = midY;
                 }
             }
 
-            // Ставим игрока чуть над полом (maxY - точка над полом)
-            position.y = maxY + 0.01f;  // Минимальный зазор чтобы не застрять
+            position.y = maxY + 0.01f;
             onGround = true;
             velocity.y = 0;
         }
         else {
-            // velocity.y == 0 но есть коллизия - значит застряли
-            // Выталкиваем вверх
             glm::vec3 escapePos = position;
             for (int i = 1; i <= 20; i++) {
                 escapePos.y = position.y + i * 0.5f;
@@ -644,7 +632,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // Горизонтальные оси (X и Z) - без изменений
+    // === ГОРИЗОНТАЛЬНЫЕ ОСИ (X и Z) - ИСПРАВЛЕНО ===
     float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
     if (std::abs(moveAmount) < 0.0001f) return;
 
@@ -654,44 +642,73 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
     glm::vec3 targetPos = position + moveDir;
 
+    // Сначала пробуем двигаться без подъёма
     if (!checkCollisionMesh(targetPos)) {
         position = targetPos;
         return;
     }
 
+    // Столкновение - пробуем подняться НА МИНИМАЛЬНУЮ высоту препятствия
+    // вместо сразу stepHeight
     if (onGround) {
-        // Пытаемся подняться на ступеньку
-        glm::vec3 stepPos = position;
-        stepPos.y += stepHeight;
-        stepPos += moveDir;
+        // Ищем минимальную высоту подъёма бинарным поиском
+        float minStep = 0.0f;
+        float maxStep = stepHeight; // Максимум - обычная высота ступеньки
 
-        if (!checkCollisionMesh(stepPos)) {
-            // Ищем землю под ступенькой
-            float foundY = -1.0f;
-            for (float down = 1.0f; down <= stepHeight + 4.0f; down += 1.0f) {
-                glm::vec3 downPos = stepPos;
-                downPos.y -= down;
-                if (checkCollisionMesh(downPos)) {
-                    foundY = downPos.y + 0.05f; // Минимальный зазор
-                    break;
+        glm::vec3 bestPos = position;
+        bool found = false;
+
+        // Сначала проверим, можно ли вообще подняться
+        glm::vec3 highPos = position;
+        highPos.y += maxStep;
+        highPos += moveDir;
+
+        if (!checkCollisionMesh(highPos)) {
+            // Можно подняться - ищем минимальную высоту
+            for (int i = 0; i < 8; i++) {
+                float midStep = (minStep + maxStep) * 0.5f;
+                glm::vec3 testPos = position;
+                testPos.y += midStep;
+                testPos += moveDir;
+
+                if (checkCollisionMesh(testPos)) {
+                    // Всё ещё внутри - нужно выше
+                    minStep = midStep;
+                }
+                else {
+                    // Можно пройти - запоминаем и пробуем ниже
+                    maxStep = midStep;
+                    bestPos = testPos;
+                    found = true;
                 }
             }
 
-            if (foundY > 0) {
-                position.y = foundY;
-                position.x = stepPos.x;
-                position.z = stepPos.z;
-                velocity.y = 0;
+            if (found) {
+                // Проверяем, есть ли пол под нами на новой позиции
+                // чтобы не повиснуть в воздухе на крутом склоне
+                bool hasGround = false;
+                for (float down = 0.5f; down <= stepHeight + 2.0f; down += 0.5f) {
+                    glm::vec3 groundTest = bestPos;
+                    groundTest.y -= down;
+                    if (checkCollisionMesh(groundTest)) {
+                        hasGround = true;
+                        // Прилипаем к полу если разница небольшая
+                        float groundY = groundTest.y + 0.01f;
+                        if (std::abs(bestPos.y - groundY) < 4.0f) {
+                            bestPos.y = groundY;
+                        }
+                        break;
+                    }
+                }
+
+                position = bestPos;
+                velocity.y = 0; // Гасим вертикальную скорость
                 return;
             }
-
-            position = stepPos;
-            onGround = false;
-            return;
         }
     }
 
-    // Столкновение - останавливаем скорость по этой оси
+    // Не удалось подняться - останавливаем скорость по этой оси
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }

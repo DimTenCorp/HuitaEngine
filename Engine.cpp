@@ -92,7 +92,7 @@ bool Engine::initGLFW() {
     }
 
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(0);
+    glfwSwapInterval(1);
 
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
