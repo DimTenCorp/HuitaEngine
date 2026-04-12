@@ -309,6 +309,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
     defaultTextureId = wadLoader.getDefaultTexture();
     glTextureIds.reserve(numTextures);
+    textureNames.reserve(numTextures);
     textureDimensions.reserve(numTextures);
 
     int foundCount = 0;
@@ -317,6 +318,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
     for (int i = 0; i < numTextures; ++i) {
         if (offsets[i] == -1 || offsets[i] < 0 || offsets[i] >= (int)lump.length) {
             glTextureIds.push_back(defaultTextureId);
+            textureNames.push_back("");
             textureDimensions.push_back({ 16, 16 });
             notFoundCount++;
             continue;
@@ -326,6 +328,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         if (texPtr + 16 > lumpData.data() + lumpData.size()) {
             glTextureIds.push_back(defaultTextureId);
+            textureNames.push_back("");
             textureDimensions.push_back({ 16, 16 });
             notFoundCount++;
             continue;
@@ -344,6 +347,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         if (name.empty()) {
             glTextureIds.push_back(defaultTextureId);
+            textureNames.push_back("");
             textureDimensions.push_back({ 16, 16 });
             notFoundCount++;
             continue;
@@ -378,6 +382,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         }
 
         glTextureIds.push_back(texId);
+        textureNames.push_back(name);
         textureDimensions.push_back({ width, height });
     }
 
@@ -550,18 +555,30 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         dc.indexOffset = startIdxOffset;
         dc.indexCount = (unsigned int)((faceMeshVerts.size() - 2) * 3);
         dc.faceIndex = faceIdx;
+        
+        // Сохраняем имя текстуры для определения типа поверхности
+        if (texIdx >= 0 && texIdx < (int)textureNames.size()) {
+            dc.textureName = textureNames[texIdx];
+        }
 
         dc.rendermode = static_cast<unsigned char>(rendermode);
         dc.renderamt = static_cast<unsigned char>(renderamt);
 
         // Устанавливаем флаг воды
         dc.isWater = isWaterModel;
+        
+        // Проверяем префикс "!" в имени текстуры (например, !waterblue)
+        if (!dc.textureName.empty() && dc.textureName[0] == '!') {
+            dc.isWater = true;
+            dc.isTransparent = true;  // Вода с префиксом ! тоже прозрачная
+        }
 
         // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
         dc.isTransparent = (rendermode == 2) ||
             (rendermode == 5) ||
             (rendermode == 1 && renderamt < 255) ||
-            (rendermode == 3);
+            (rendermode == 3) ||
+            dc.isWater;  // Вода всегда прозрачна
 
         drawCalls.push_back(dc);
         baseVertex += (unsigned int)faceMeshVerts.size();
@@ -715,6 +732,7 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 
 void BSPLoader::cleanupTextures() {
     glTextureIds.clear();
+    textureNames.clear();
     textureDimensions.clear();
     drawCalls.clear();
     defaultTextureId = 0;

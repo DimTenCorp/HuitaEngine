@@ -64,12 +64,13 @@ struct FaceDrawCall {
     unsigned int indexOffset;
     unsigned int indexCount;
     int faceIndex;
+    std::string textureName;  // Имя текстуры для определения типа поверхности
 
     // Параметры прозрачности HL1
     unsigned char rendermode = 0;
     unsigned char renderamt = 255;
     bool isTransparent = false;
-    bool isWater = false;
+    bool isWater = false;  // Вода (func_water entity или текстура с префиксом !)
 };
 
 class BSPLoader {
@@ -89,6 +90,7 @@ private:
     AABB worldBounds;
 
     std::vector<GLuint> glTextureIds;
+    std::vector<std::string> textureNames;  // Имена текстур для определения типа поверхности
     std::vector<glm::uvec2> textureDimensions;
     GLuint defaultTextureId = 0;
     std::vector<FaceDrawCall> drawCalls;

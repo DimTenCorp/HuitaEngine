@@ -389,9 +389,11 @@ void Renderer::initTransparentShader() {
         uniform mat4 projection;
         
         out vec2 vTexCoord;
+        out vec3 vFragPos;
         
         void main() {
             vTexCoord = aTexCoord;
+            vFragPos = vec3(model * vec4(aPos, 1.0));
             gl_Position = projection * view * model * vec4(aPos, 1.0);
         }
     )glsl";
@@ -399,17 +401,35 @@ void Renderer::initTransparentShader() {
     const char* frag = R"glsl(
         #version 330 core
         in vec2 vTexCoord;
+        in vec3 vFragPos;
         out vec4 FragColor;
         
         uniform sampler2D uTexture;
         uniform float uAlpha;
+        uniform float uTime;  // Время для анимации воды
         
         void main() {
-            vec4 texColor = texture(uTexture, vTexCoord);
+            vec2 uv = vTexCoord;
+            
+            // Анимация воды: смещение UV координат на основе синусоиды
+            if (uAlpha > 0.0) {  // Используем uAlpha как флаг воды
+                float wave1 = sin(uv.x * 10.0 + uTime * 2.0) * 0.02;
+                float wave2 = sin(uv.y * 8.0 + uTime * 1.5) * 0.015;
+                float wave3 = sin((uv.x + uv.y) * 6.0 + uTime * 1.0) * 0.01;
+                uv.x += wave1 + wave2 + wave3;
+                uv.y += wave2 + wave3;
+            }
+            
+            vec4 texColor = texture(uTexture, uv);
             
             // HL1 color key (синий цвет = прозрачность)
             if (texColor.r < 0.01 && texColor.g < 0.01 && texColor.b > 0.9) {
                 discard;
+            }
+            
+            // Добавляем голубоватый оттенок для воды
+            if (uAlpha > 0.0) {
+                texColor.rgb = mix(texColor.rgb, texColor.rgb * vec3(0.7, 0.85, 1.0), 0.3);
             }
             
             FragColor = vec4(texColor.rgb, texColor.a * uAlpha);
@@ -660,8 +680,21 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
             currentTex = dc.texID;
         }
 
+        // Для воды с префиксом "!" используем специальную анимацию
+        // Передаем время в шейдер для анимации волн
+        static float waterTime = 0.0f;
+        waterTime += 0.016f;  // Примерно 60 FPS
+        
         float alpha = dc.renderamt / 255.0f;
         alpha = std::max(0.05f, std::min(1.0f, alpha));
+        
+        // Для воды с префиксом "!" передаем uTime для анимации
+        if (dc.isWater && !dc.textureName.empty() && dc.textureName[0] == '!') {
+            transparentShader->setFloat("uTime", waterTime);
+        } else {
+            transparentShader->setFloat("uTime", 0.0f);
+        }
+        
         transparentShader->setFloat("uAlpha", alpha);
 
         if (dc.indexCount > 0) {
