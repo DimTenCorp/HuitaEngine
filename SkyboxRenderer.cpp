@@ -37,9 +37,15 @@ uniform samplerCube skyTex;
 
 void main() {
     vec3 dir = normalize(vWorldDir);
-    // Для Half-Life скайбокса нужно инвертировать X чтобы грани правильно совпадали
+    // Half-Life скайбокс требует инверсии X для правильного маппинга
     dir.x = -dir.x;
     vec4 texColor = texture(skyTex, dir);
+    
+    // Debug: если текстура не загрузилась корректно, будет черный цвет
+    if (texColor.a < 0.1) {
+        discard;
+    }
+    
     FragColor = texColor;
 }
 )glsl";
@@ -132,12 +138,22 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
         return false;
     }
 
-    uint8_t id_length = file.get();
-    uint8_t colormap_type = file.get();
-    uint8_t image_type = file.get();
+    uint8_t header[18];
+    file.read(reinterpret_cast<char*>(header), 18);
+    
+    uint8_t id_length = header[0];
+    uint8_t colormap_type = header[1];
+    uint8_t image_type = header[2];
+    
+    // Пропускаем ID поле если есть
+    if (id_length > 0) {
+        file.seekg(id_length, std::ios::cur);
+    }
 
-    file.seekg(5, std::ios::cur);
-    file.seekg(4, std::ios::cur);
+    if (image_type != 2 && image_type != 10) {
+        std::cerr << "[SKY] Unsupported TGA type: " << (int)image_type << " in " << path << std::endl;
+        return false;
+    }
 
     uint16_t w, h;
     file.read(reinterpret_cast<char*>(&w), 2);
@@ -145,28 +161,30 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
     width = w;
     height = h;
 
-    // Byte 16: pixel depth (bits per pixel)
-    // Byte 17: image descriptor
-    uint8_t pixel_size = file.get();  // byte 16 - bits per pixel
-    file.get(); // byte 17 - image descriptor
-
-    if (id_length > 0) file.seekg(id_length, std::ios::cur);
-
-    if (image_type != 2 && image_type != 10) {
-        std::cerr << "[SKY] Unsupported TGA type: " << (int)image_type << " in " << path << std::endl;
-        return false;
-    }
+    uint8_t pixel_size = header[16];  // bits per pixel
+    uint8_t image_desc = header[17];  // image descriptor
+    
     if (pixel_size != 24 && pixel_size != 32) {
         std::cerr << "[SKY] Unsupported TGA pixel size: " << (int)pixel_size << " in " << path << std::endl;
         return false;
     }
 
+    // Проверяем ориентацию (биты 4-5 дескриптора)
+    // 0x00 = bottom-left, 0x10 = top-left, 0x20 = bottom-right, 0x30 = top-right
+    // Half-Life TGA обычно имеют origin = bottom-left (0x00), что требует переворота
+    bool flipVertical = ((image_desc & 0x30) == 0x00);  // flip если bottom-left
+    
+    std::cout << "[SKY] TGA info: " << path << " desc=" << (int)image_desc << " flip=" << flipVertical << std::endl;
+    
     rgba.resize(width * height * 4);
 
     if (image_type == 2) {
-        for (int y = height - 1; y >= 0; y--) {
+        // Uncompressed RGB/RGBA - читаем построчно сверху вниз из файла
+        for (int fileY = 0; fileY < height; fileY++) {
+            // Определяем целевую Y позицию в памяти
+            int targetY = flipVertical ? (height - 1 - fileY) : fileY;
             for (int x = 0; x < width; x++) {
-                int idx = (y * width + x) * 4;
+                int idx = (targetY * width + x) * 4;
                 uint8_t b = file.get();
                 uint8_t g = file.get();
                 uint8_t r = file.get();
@@ -180,7 +198,8 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
     }
     else {
         // RLE encoded
-        for (int y = height - 1; y >= 0; y--) {
+        for (int fileY = 0; fileY < height; fileY++) {
+            int targetY = flipVertical ? (height - 1 - fileY) : fileY;
             int x = 0;
             while (x < width) {
                 uint8_t packetHeader = file.get();
@@ -193,7 +212,7 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
                     uint8_t a = (pixel_size == 32) ? file.get() : 255;
 
                     for (int i = 0; i < packetSize && x < width; i++, x++) {
-                        int idx = (y * width + x) * 4;
+                        int idx = (targetY * width + x) * 4;
                         rgba[idx + 0] = r;
                         rgba[idx + 1] = g;
                         rgba[idx + 2] = b;
@@ -207,7 +226,7 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
                         uint8_t r = file.get();
                         uint8_t a = (pixel_size == 32) ? file.get() : 255;
 
-                        int idx = (y * width + x) * 4;
+                        int idx = (targetY * width + x) * 4;
                         rgba[idx + 0] = r;
                         rgba[idx + 1] = g;
                         rgba[idx + 2] = b;
@@ -343,6 +362,7 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
             // Загружаем в cube map
             glTexImage2D(glFace, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
             loadedCount++;
+            std::cout << "[SKY] Loaded face " << suffix << " (" << w << "x" << h << ") into cube map face " << glFace << std::endl;
         }
         else {
             // Создаем fallback текстуру - цветную заглушку
@@ -361,11 +381,14 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
     }
 
     // Настраиваем параметры cube map текстуры
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    
+    // Генерируем мипмапы для лучшего качества
+    glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
     std::cout << "[SKY] Loaded " << loadedCount << "/6 faces for: " << skyName << std::endl;
     return loadedCount > 0;
