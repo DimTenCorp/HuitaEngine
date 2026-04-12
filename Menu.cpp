@@ -391,7 +391,7 @@ void Menu::renderMainMenu() {
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY));
-    if (ImGui::Button(u8"НАЧАТЬ ИГРУ", ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(u8"#dtc_newgame", ImVec2(0, buttonHeight))) {
         currentState = State::MAP_SELECT;
     }
 
