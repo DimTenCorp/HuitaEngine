@@ -140,6 +140,10 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
 
     uint8_t header[18];
     file.read(reinterpret_cast<char*>(header), 18);
+    if (!file.good()) {
+        std::cerr << "[SKY] Failed to read TGA header: " << path << std::endl;
+        return false;
+    }
     
     uint8_t id_length = header[0];
     uint8_t colormap_type = header[1];
@@ -158,6 +162,10 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
     uint16_t w, h;
     file.read(reinterpret_cast<char*>(&w), 2);
     file.read(reinterpret_cast<char*>(&h), 2);
+    if (!file.good()) {
+        std::cerr << "[SKY] Failed to read TGA dimensions: " << path << std::endl;
+        return false;
+    }
     width = w;
     height = h;
 
@@ -174,7 +182,7 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
     // Half-Life TGA обычно имеют origin = bottom-left (0x00), что требует переворота
     bool flipVertical = ((image_desc & 0x30) == 0x00);  // flip если bottom-left
     
-    std::cout << "[SKY] TGA info: " << path << " desc=" << (int)image_desc << " flip=" << flipVertical << std::endl;
+    std::cout << "[SKY] TGA info: " << path << " type=" << (int)image_type << " desc=" << (int)image_desc << " flip=" << flipVertical << " size=" << width << "x" << height << std::endl;
     
     rgba.resize(width * height * 4);
 
@@ -189,6 +197,10 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
                 uint8_t g = file.get();
                 uint8_t r = file.get();
                 uint8_t a = (pixel_size == 32) ? file.get() : 255;
+                if (file.eof() || file.fail()) {
+                    std::cerr << "[SKY] Unexpected EOF reading TGA: " << path << std::endl;
+                    return false;
+                }
                 rgba[idx + 0] = r;
                 rgba[idx + 1] = g;
                 rgba[idx + 2] = b;
@@ -337,6 +349,7 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
 
     int loadedCount = 0;
+    bool anyFileFound = false;
 
     for (int hl1Idx = 0; hl1Idx < 6; hl1Idx++) {
         std::vector<uint8_t> rgba;
@@ -347,14 +360,18 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
 
         // Пробуем загрузить TGA из gfx/env/
         std::string tgaPath = "gfx/env/" + skyName + suffix + ".tga";
+        std::cout << "[SKY] Trying to load: " << tgaPath << std::endl;
         if (loadTGA(tgaPath, rgba, w, h)) {
             loaded = true;
+            anyFileFound = true;
         }
         else {
             // Пробуем BMP
             std::string bmpPath = "gfx/env/" + skyName + suffix + ".bmp";
+            std::cout << "[SKY] Trying to load: " << bmpPath << std::endl;
             if (loadBMP(bmpPath, rgba, w, h)) {
                 loaded = true;
+                anyFileFound = true;
             }
         }
 
@@ -381,16 +398,24 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
     }
 
     // Настраиваем параметры cube map текстуры
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     
-    // Генерируем мипмапы для лучшего качества
-    glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+    // Не генерируем мипмапы если используем GL_LINEAR (они не нужны и могут вызвать проблемы)
+    // Если нужны мипмапы, используйте GL_LINEAR_MIPMAP_LINEAR и раскомментируйте:
+    // glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
-    std::cout << "[SKY] Loaded " << loadedCount << "/6 faces for: " << skyName << std::endl;
+    std::cout << "[SKY] Loaded " << loadedCount << "/6 faces for: " << skyName << " (anyFileFound=" << anyFileFound << ")" << std::endl;
+    
+    // Проверка статуса OpenGL
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cerr << "[SKY] OpenGL error after texture load: " << err << std::endl;
+    }
+    
     return loadedCount > 0;
 }
 

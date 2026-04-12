@@ -1,3 +1,4 @@
+```
 # Compiled and build artifacts
 *.o
 *.obj
@@ -14,6 +15,8 @@ venv/
 __pycache__/
 .mypy_cache/
 .pytest_cache/
+dist/
+build/
 target/
 .gradle/
 
@@ -23,50 +26,16 @@ target/
 *.swp
 *.swo
 
-# System
-.DS_Store
-Thumbs.db
-.env
-.env.local
-*.env.*
-
 # Logs and temp files
 *.log
 *.tmp
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
+# System files
+.DS_Store
+Thumbs.db
 
-# Build systems
-dist/
-build/
-.bazel/
-.cargo/
-.npm/
-.yarn/
-
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Environment
+.env
+.env.local
+*.env.*
+```
