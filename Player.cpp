@@ -95,9 +95,29 @@ void Player::StartDuck() {
 }
 
 void Player::StopDuck() {
+    // Пытаемся встать ТОЛЬКО если есть место
     if (m_afPhysicsFlags & PFLAG_DUCKING) {
-        m_afPhysicsFlags &= ~PFLAG_DUCKING;
-        m_flDuckTime = (float)glfwGetTime();
+        // Проверяем, можем ли мы встать прямо сейчас
+        float newHeight = VEC_HULL_HEIGHT; // 72
+        float heightDiff = newHeight - m_fHullHeight;
+        float shift = heightDiff * 0.5f;
+
+        glm::vec3 testPos = position;
+        testPos.y += shift;
+
+        // Сохраняем текущую высоту для проверки
+        float savedHeight = m_fHullHeight;
+        m_fHullHeight = newHeight;
+        bool canStand = !checkCollisionMesh(testPos);
+        m_fHullHeight = savedHeight;
+
+        if (canStand) {
+            // Можем встать - снимаем флаг и обновляем время
+            m_afPhysicsFlags &= ~PFLAG_DUCKING;
+            m_flDuckTime = (float)glfwGetTime();
+        }
+        // Если НЕ можем встать - НЕ снимаем флаг и НЕ обновляем время!
+        // Остаёмся сидеть молча, без попыток встать
     }
 }
 
@@ -181,13 +201,17 @@ void Player::handleInput(float deltaTime) {
 
     // === ПРИСЯД (без изменений) ===
     if (currentButtons & 32) {
+        // Зажали Ctrl - начинаем присяд
         if ((m_afButtonPressed & 32) && !IsDucking()) {
             StartDuck();
         }
     }
     else {
-        if (IsDucking() || IsFullyDucked()) {
+        // Отпустили Ctrl - пытаемся встать (StopDuck сам проверит можно ли)
+        if (IsDucking()) {
             StopDuck();
+            // Если StopDuck не смог встать (нельзя), он просто оставит флаг DUCKING
+            // и игрок останется сидеть без цикла попыток
         }
     }
 }
@@ -199,45 +223,42 @@ void Player::Duck(float deltaTime) {
     float elapsed = currentTime - m_flDuckTime;
 
     if (IsDucking()) {
-        // === ПРИСЕДАЕМ ===
+        // === ПРИСЕДАЕМ или УЖЕ СИДИМ ===
         if (elapsed >= TIME_TO_DUCK && m_fHullHeight > m_fDuckHullHeight) {
             float oldHeight = m_fHullHeight;
             m_fHullHeight = m_fDuckHullHeight; // 36
 
             // На земле опускаем origin, чтобы ноги остались на месте
-            // В воздухе центр масс не смещается - игрок просто "собирает ноги"
             if (onGround) {
-                float shift = (oldHeight - m_fHullHeight) * 0.5f; // (72-36)/2 = 18
+                float shift = (oldHeight - m_fHullHeight) * 0.5f;
                 position.y -= shift;
             }
         }
     }
     else {
-        // === ВСТАЕМ ===
+        // === ВСТАЁМ (только если флаг снят, а он снимается только когда можно встать) ===
         if (elapsed >= TIME_TO_DUCK && m_fHullHeight < VEC_HULL_HEIGHT) {
             float newHeight = VEC_HULL_HEIGHT; // 72
-            float heightDiff = newHeight - m_fHullHeight; // 36
-            float shift = heightDiff * 0.5f; // 18
+            float heightDiff = newHeight - m_fHullHeight;
+            float shift = heightDiff * 0.5f;
 
-            // Проверяем, есть ли место сверху (только если на земле)
-            // В воздухе встаем без проверки - иначе игрок застрянет в воздухе
+            // Здесь мы уже знаем что можно встать (StopDuck проверил)
+            // Но на всякий случай проверим ещё раз
             if (onGround) {
                 glm::vec3 testPos = position;
-                testPos.y += shift; // Куда сдвинется центр при вставании
+                testPos.y += shift;
 
-                // Сохраняем текущую высоту, проверяем с новой
                 float savedHeight = m_fHullHeight;
                 m_fHullHeight = newHeight;
                 bool canStand = !checkCollisionMesh(testPos);
                 m_fHullHeight = savedHeight;
 
                 if (!canStand) {
-                    // Не можем встать - возвращаем флаг присяда
+                    // Опять нельзя встать (что-то изменилось) - возвращаем флаг
                     m_afPhysicsFlags |= PFLAG_DUCKING;
                     return;
                 }
 
-                // Поднимаем origin на 18 единицa
                 position.y += shift;
             }
 
@@ -245,7 +266,7 @@ void Player::Duck(float deltaTime) {
         }
     }
 
-    // Обновляем m_vecHullMin/Max для совместимости с другими системами (опционально)
+    // Обновляем AABB для совместимости
     float halfHeight = m_fHullHeight * 0.5f;
     m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, -m_fHullRadius);
     m_vecHullMax = glm::vec3(m_fHullRadius, halfHeight, m_fHullRadius);
