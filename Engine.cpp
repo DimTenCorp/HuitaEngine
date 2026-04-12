@@ -83,24 +83,27 @@ bool Engine::initGLFW() {
 
     SettingsData settings;
     settings.load();
+    
+    // Сохраняем настройки в движке для последующего использования
+    currentSettings = settings;
 
     GLFWmonitor* monitor = nullptr;
     int windowX = 0, windowY = 0;
 
-    if (settings.fullscreen) {
+    if (currentSettings.fullscreen) {
         monitor = glfwGetPrimaryMonitor();
         windowX = 0;
         windowY = 0;
-        width = settings.screenWidth;
-        height = settings.screenHeight;
+        width = currentSettings.screenWidth;
+        height = currentSettings.screenHeight;
     }
     else {
         monitor = glfwGetPrimaryMonitor();
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-        windowX = (mode->width - settings.screenWidth) / 2;
-        windowY = (mode->height - settings.screenHeight) / 2;
-        width = settings.screenWidth;
-        height = settings.screenHeight;
+        windowX = (mode->width - currentSettings.screenWidth) / 2;
+        windowY = (mode->height - currentSettings.screenHeight) / 2;
+        width = currentSettings.screenWidth;
+        height = currentSettings.screenHeight;
     }
 
     window = glfwCreateWindow(width, height, "HuitaEngine", monitor, nullptr);
@@ -110,7 +113,7 @@ bool Engine::initGLFW() {
         return false;
     }
 
-    if (!settings.fullscreen) {
+    if (!currentSettings.fullscreen) {
         glfwSetWindowPos(window, windowX, windowY);
     }
 
@@ -558,10 +561,13 @@ void Engine::applySettings(const SettingsData& settings) {
         game->setMouseSensitivity(settings.mouseSensitivity);
     }
 
+    currentSettings = settings;
     width = settings.screenWidth;
     height = settings.screenHeight;
 
-    std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity << std::endl;
+    std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity 
+              << ", fullscreen=" << settings.fullscreen 
+              << ", resolution=" << settings.screenWidth << "x" << settings.screenHeight << std::endl;
 }
 
 void Engine::hideMenu() {
