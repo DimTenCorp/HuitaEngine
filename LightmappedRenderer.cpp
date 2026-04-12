@@ -5,10 +5,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-// ============================================================================
-// ШЕЙДЕРЫ
-// ============================================================================
-
 const char* LightmappedRenderer::getVertexShaderSource() {
     return R"glsl(
 #version 330 core
@@ -59,7 +55,6 @@ uniform float uAlpha = 1.0;
 void main() {
     vec4 albedo = texture(albedoTexture, vTexCoord);
     
-    // HL1 color key: синий цвет (0,0,1) = прозрачность
     if (albedo.a < 0.5 || (albedo.r < 0.01 && albedo.g < 0.01 && albedo.b > 0.9)) {
         discard;
     }
@@ -73,12 +68,10 @@ void main() {
     vec3 finalColor;
     
     if (useLighting) {
-        // Режим со светом: умножаем текстуру на lightmap
         vec3 lightmap = texture(lightmapAtlas, vLightmapCoord).rgb;
         vec3 lighting = lightmap * lightmapIntensity;
         finalColor = albedo.rgb * lighting;
     } else {
-        // Режим без света: только текстура (как в Renderer)
         finalColor = albedo.rgb;
     }
     
@@ -86,10 +79,6 @@ void main() {
 }
 )glsl";
 }
-
-// ============================================================================
-// Implementation
-// ============================================================================
 
 LightmappedRenderer::LightmappedRenderer() = default;
 
@@ -104,6 +93,7 @@ LightmappedRenderer::LightmappedRenderer(LightmappedRenderer&& other) noexcept
     lightmapIntensity(other.lightmapIntensity),
     showLightmapsOnly(other.showLightmapsOnly),
     useLighting(other.useLighting),
+    skipSkyFaces(other.skipSkyFaces),
     screenWidth(other.screenWidth), screenHeight(other.screenHeight),
     stats(other.stats),
     faceDrawCalls(std::move(other.faceDrawCalls)),
@@ -128,6 +118,7 @@ LightmappedRenderer& LightmappedRenderer::operator=(LightmappedRenderer&& other)
         lightmapIntensity = other.lightmapIntensity;
         showLightmapsOnly = other.showLightmapsOnly;
         useLighting = other.useLighting;
+        skipSkyFaces = other.skipSkyFaces;
         screenWidth = other.screenWidth;
         screenHeight = other.screenHeight;
         stats = other.stats;
@@ -152,7 +143,6 @@ bool LightmappedRenderer::init(int width, int height) {
         return false;
     }
 
-    // Сброс состояния OpenGL
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -165,6 +155,8 @@ bool LightmappedRenderer::init(int width, int height) {
 }
 
 void LightmappedRenderer::setViewport(int width, int height) {
+    if (width <= 0 || height <= 0) return;
+
     screenWidth = width;
     screenHeight = height;
     glViewport(0, 0, width, height);
@@ -203,7 +195,6 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         return false;
     }
 
-    // Собираем индексы фейсов которые принадлежат trigger_ (НЕ func_water!)
     std::unordered_set<int> triggerFaceIndices;
 
     for (const auto& entity : entities) {
@@ -227,7 +218,6 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         }
     }
 
-    // Получаем маппинг прозрачности из draw calls BSP
     const auto& bspDrawCalls = bsp.getDrawCalls();
     std::unordered_map<int, std::pair<int, int>> faceTransparency;
     for (const auto& dc : bspDrawCalls) {
@@ -244,6 +234,7 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     int processedFaces = 0;
     int skippedFaces = 0;
     int triggerSkipped = 0;
+    int skySkipped = 0;
 
     for (size_t faceIdx = 0; faceIdx < faces.size(); faceIdx++) {
         if (triggerFaceIndices.count((int)faceIdx)) {
@@ -257,8 +248,17 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         if (face.texInfo < 0 || face.texInfo >= (int)texInfos.size()) { skippedFaces++; continue; }
         if (face.planeNum >= (int)planes.size()) { skippedFaces++; continue; }
 
-        const FaceLightmap& lm = lmManager.getFaceLightmap((int)faceIdx);
         const BSPTexInfo& tex = texInfos[face.texInfo];
+        const std::string& texName = bsp.getTextureName(tex.textureIndex);
+
+        // Пропускаем SKY-фейсы если нужно
+        if (texName == "sky" || texName == "SKY" ||
+            texName.find("sky") == 0 || texName.find("SKY") == 0) {
+            skySkipped++;
+            continue;
+        }
+
+        const FaceLightmap& lm = lmManager.getFaceLightmap((int)faceIdx);
 
         glm::vec3 bspNormal = planes[face.planeNum].normal;
         if (face.side != 0) bspNormal = -bspNormal;
@@ -346,6 +346,7 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         dc.indexOffset = startIndex;
         dc.indexCount = indexCount;
         dc.faceIndex = (int)faceIdx;
+        dc.isSky = (texName == "sky" || texName == "SKY");
 
         auto it = faceTransparency.find((int)faceIdx);
         if (it != faceTransparency.end()) {
@@ -406,7 +407,8 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     std::cout << "[LMRENDERER] Built mesh: " << lmVertices.size()
         << " vertices, " << indexCount << " indices, "
         << faceDrawCalls.size() << " face draw calls"
-        << " (transparent: " << (hasTransparentFaces ? "yes" : "no") << ")" << std::endl;
+        << " (transparent: " << (hasTransparentFaces ? "yes" : "no")
+        << ", sky skipped: " << skySkipped << ")" << std::endl;
 
     return true;
 }
@@ -449,17 +451,21 @@ void LightmappedRenderer::unloadWorld() {
     meshIndices.clear();
 }
 
-void LightmappedRenderer::beginFrame(const glm::vec3& clearColor) {
+void LightmappedRenderer::beginFrame(const glm::vec3& clearColor, bool clearColorBuffer) {
     stats.reset();
 
-    // Сброс состояния OpenGL перед каждым кадром
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
-    glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (clearColorBuffer) {
+        glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
+    else {
+        glClear(GL_DEPTH_BUFFER_BIT);
+    }
 }
 
 void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
@@ -470,9 +476,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
-    // ============================================
-    // ПРОХОД 1: ТОЛЬКО непрозрачные объекты
-    // ============================================
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -496,6 +499,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     GLuint currentTex = 0;
     for (const auto& dc : faceDrawCalls) {
         if (dc.isTransparent) continue;
+        if (dc.isSky) continue;
 
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
@@ -513,9 +517,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     lightmappedShader->unbind();
 
-    // ============================================
-    // ПРОХОД 2: Прозрачные объекты (с сортировкой)
-    // ============================================
     if (hasTransparentFaces) {
         struct SortedDrawCall {
             const LMFaceDrawCall* dc;
@@ -584,7 +585,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
         lightmappedShader->unbind();
 
-        // Восстанавливаем состояние OpenGL
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glDepthFunc(GL_LESS);

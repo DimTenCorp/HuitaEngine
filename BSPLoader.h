@@ -65,11 +65,11 @@ struct FaceDrawCall {
     unsigned int indexCount;
     int faceIndex;
 
-    // Параметры прозрачности HL1
     unsigned char rendermode = 0;
     unsigned char renderamt = 255;
     bool isTransparent = false;
     bool isWater = false;
+    bool isSky = false;
 };
 
 class BSPLoader {
@@ -90,11 +90,14 @@ private:
 
     std::vector<GLuint> glTextureIds;
     std::vector<glm::uvec2> textureDimensions;
+    std::vector<std::string> textureNames;
     GLuint defaultTextureId = 0;
     std::vector<FaceDrawCall> drawCalls;
 
     std::vector<BSPEntity> entities;
     std::vector<std::string> requiredWADs;
+
+    std::string skyName;
 
     bool loadVertices(FILE* file, const BSPHeader& header);
     bool loadEdges(FILE* file, const BSPHeader& header);
@@ -173,4 +176,19 @@ public:
         }
         return glm::uvec2(256, 256);
     }
+
+    const std::string& getTextureName(int index) const {
+        static std::string empty;
+        if (index < 0 || index >= (int)textureNames.size()) return empty;
+        return textureNames[index];
+    }
+
+    bool isSkyTexture(int textureIndex) const {
+        if (textureIndex < 0 || textureIndex >= (int)textureNames.size()) return false;
+        const std::string& name = textureNames[textureIndex];
+        return (name == "sky" || name == "SKY" ||
+            name.find("sky") == 0 || name.find("SKY") == 0);
+    }
+
+    const std::string& getSkyName() const { return skyName; }
 };

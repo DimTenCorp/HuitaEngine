@@ -272,6 +272,7 @@
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Settings.cpp" />
     <ClCompile Include="Shader.cpp" />
+    <ClCompile Include="SkyboxRenderer.cpp" />
     <ClCompile Include="TriangleCollider.cpp" />
     <ClCompile Include="WADLoader.cpp" />
     <ClCompile Include="WaterEntity.cpp" />
@@ -292,6 +293,7 @@
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="Shader.h" />
+    <ClInclude Include="SkyboxRenderer.h" />
     <ClInclude Include="TriangleCollider.h" />
     <ClInclude Include="WADLoader.h" />
     <ClInclude Include="WaterEntity.h" />

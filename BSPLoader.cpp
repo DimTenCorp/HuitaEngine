@@ -310,6 +310,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
     defaultTextureId = wadLoader.getDefaultTexture();
     glTextureIds.reserve(numTextures);
     textureDimensions.reserve(numTextures);
+    textureNames.reserve(numTextures);
 
     int foundCount = 0;
     int notFoundCount = 0;
@@ -318,6 +319,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         if (offsets[i] == -1 || offsets[i] < 0 || offsets[i] >= (int)lump.length) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureNames.push_back("");
             notFoundCount++;
             continue;
         }
@@ -327,6 +329,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         if (texPtr + 16 > lumpData.data() + lumpData.size()) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureNames.push_back("");
             notFoundCount++;
             continue;
         }
@@ -345,6 +348,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
         if (name.empty()) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
+            textureNames.push_back("");
             notFoundCount++;
             continue;
         }
@@ -379,6 +383,7 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         glTextureIds.push_back(texId);
         textureDimensions.push_back({ width, height });
+        textureNames.push_back(name);
     }
 
     std::cout << "[BSP] Textures mapped: " << glTextureIds.size()
@@ -503,6 +508,9 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
             texWidth = texHeight = 256;
         }
 
+        const std::string& texName = getTextureName(texIdx);
+        bool isSky = (texName == "sky" || texName == "SKY");
+
         std::vector<BSPVertex> faceMeshVerts;
         faceMeshVerts.reserve(faceBspVerts.size());
 
@@ -554,10 +562,9 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         dc.rendermode = static_cast<unsigned char>(rendermode);
         dc.renderamt = static_cast<unsigned char>(renderamt);
 
-        // Устанавливаем флаг воды
         dc.isWater = isWaterModel;
+        dc.isSky = isSky;
 
-        // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
         dc.isTransparent = (rendermode == 2) ||
             (rendermode == 5) ||
             (rendermode == 1 && renderamt < 255) ||
@@ -575,10 +582,8 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
-    // Мир (model 0) - всегда непрозрачный, не вода
     buildSubmodelMesh(models[0], 0, 255, false);
 
-    // Остальные модели
     for (const auto& entity : entities) {
         if (entity.model.empty() || entity.model == "*0") continue;
         if (entity.model.length() < 2 || entity.model[0] != '*') continue;
@@ -594,7 +599,6 @@ void BSPLoader::buildMesh() {
 
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
 
-        // ПРОПУСКАЕМ ВСЕ trigger_ entities - они не рендерятся!
         if (entity.classname.find("trigger_") == 0) {
             std::cout << "[BSP] Skipping trigger entity: " << entity.classname << " model *" << modelIndex << std::endl;
             continue;
@@ -604,59 +608,39 @@ void BSPLoader::buildMesh() {
         int renderamt = 255;
         bool isWater = false;
 
-        // func_water - всегда прозрачная, но с настраиваемым FX Amount
         if (entity.classname == "func_water") {
-            rendermode = 2; // Texture mode
-            renderamt = 128; // По умолчанию полупрозрачная
-            isWater = true;  // ← ВАЖНО: помечаем как воду
+            rendermode = 2;
+            renderamt = 128;
+            isWater = true;
 
-            // Читаем FX Amount для воды
             auto it = entity.properties.find("renderamt");
             if (it != entity.properties.end()) {
-                try {
-                    renderamt = std::stoi(it->second);
-                }
+                try { renderamt = std::stoi(it->second); }
                 catch (...) {}
             }
-
             it = entity.properties.find("FX Amount");
             if (it != entity.properties.end()) {
-                try {
-                    renderamt = std::stoi(it->second);
-                }
+                try { renderamt = std::stoi(it->second); }
                 catch (...) {}
             }
-
             renderamt = std::max(1, std::min(255, renderamt));
-
-            std::cout << "[BSP] func_water model *" << modelIndex << " with FX Amount: " << renderamt << std::endl;
         }
         else {
-            // Остальные brush entities
             auto it = entity.properties.find("rendermode");
             if (it != entity.properties.end()) {
-                try {
-                    rendermode = std::stoi(it->second);
-                }
+                try { rendermode = std::stoi(it->second); }
                 catch (...) {}
             }
-
             it = entity.properties.find("renderamt");
             if (it != entity.properties.end()) {
-                try {
-                    renderamt = std::stoi(it->second);
-                }
+                try { renderamt = std::stoi(it->second); }
                 catch (...) {}
             }
-
             it = entity.properties.find("FX Amount");
             if (it != entity.properties.end()) {
-                try {
-                    renderamt = std::stoi(it->second);
-                }
+                try { renderamt = std::stoi(it->second); }
                 catch (...) {}
             }
-
             renderamt = std::max(0, std::min(255, renderamt));
         }
 
@@ -665,17 +649,20 @@ void BSPLoader::buildMesh() {
 
     int transparentCount = 0;
     int waterCount = 0;
+    int skyCount = 0;
     for (const auto& dc : drawCalls) {
         if (dc.isTransparent) transparentCount++;
         if (dc.isWater) waterCount++;
+        if (dc.isSky) skyCount++;
     }
 
     std::cout << "Built " << meshVertices.size() << " mesh vertices, "
         << meshIndices.size() << " indices, "
         << drawCalls.size() << " draw calls\n";
-    std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount)
+    std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount - skyCount)
         << ", Transparent: " << transparentCount
-        << ", Water: " << waterCount << "\n";
+        << ", Water: " << waterCount
+        << ", Sky: " << skyCount << "\n";
 }
 
 bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
@@ -707,6 +694,18 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 
     loadTextures(file, header, wadLoader);
 
+    // Ищем skyname в worldspawn
+    for (const auto& entity : entities) {
+        if (entity.classname == "worldspawn") {
+            auto it = entity.properties.find("skyname");
+            if (it != entity.properties.end()) {
+                skyName = it->second;
+                std::cout << "[BSP] Sky name: " << skyName << std::endl;
+            }
+            break;
+        }
+    }
+
     fclose(file);
     buildMesh();
     printStats();
@@ -716,6 +715,7 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 void BSPLoader::cleanupTextures() {
     glTextureIds.clear();
     textureDimensions.clear();
+    textureNames.clear();
     drawCalls.clear();
     defaultTextureId = 0;
 }
@@ -729,6 +729,7 @@ void BSPLoader::printStats() const {
     std::cout << "Draw Calls: " << drawCalls.size() << "\n";
     std::cout << "Required WADs: " << requiredWADs.size() << "\n";
     std::cout << "Entities: " << entities.size() << "\n";
+    std::cout << "Sky: " << (skyName.empty() ? "none" : skyName) << "\n";
     std::cout << "==================\n";
 }
 

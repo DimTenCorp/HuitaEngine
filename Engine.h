@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "Menu.h"
+#include "SkyboxRenderer.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -80,6 +81,7 @@ private:
     std::unique_ptr<LightmapManager> lightmapManager;
     std::unique_ptr<MeshCollider> meshCollider;
     std::unique_ptr<Menu> menu;
+    std::unique_ptr<SkyboxRenderer> skyboxRenderer;
     std::vector<CFuncWater*> waterZones;
 
     float deltaTime = 0.0f;

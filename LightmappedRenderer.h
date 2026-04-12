@@ -28,6 +28,7 @@ struct LMFaceDrawCall {
     unsigned char rendermode = 0;
     unsigned char renderamt = 255;
     bool isTransparent = false;
+    bool isSky = false;
 };
 
 class LightmappedRenderer {
@@ -45,7 +46,7 @@ public:
     bool loadWorld(BSPLoader& bsp, LightmapManager& lightmapManager);
     void unloadWorld();
 
-    void beginFrame(const glm::vec3& clearColor);
+    void beginFrame(const glm::vec3& clearColor, bool clearColorBuffer = true);
     void renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
         BSPLoader& bsp,
         const glm::vec3& ambientColor = glm::vec3(0.05f));
@@ -63,6 +64,9 @@ public:
 
     void setViewport(int width, int height);
 
+    void setSkipSkyFaces(bool skip) { skipSkyFaces = skip; }
+    bool getSkipSkyFaces() const { return skipSkyFaces; }
+
 private:
     std::unique_ptr<Shader> lightmappedShader;
     GLuint worldVAO = 0, worldVBO = 0, worldEBO = 0;
@@ -75,6 +79,7 @@ private:
     Renderer::RenderStats stats;
     std::vector<LMFaceDrawCall> faceDrawCalls;
     bool hasTransparentFaces = false;
+    bool skipSkyFaces = false;
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;

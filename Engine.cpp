@@ -81,7 +81,6 @@ bool Engine::initGLFW() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    // Загружаем настройки для определения fullscreen
     SettingsData settings;
     settings.load();
 
@@ -96,7 +95,6 @@ bool Engine::initGLFW() {
         height = settings.screenHeight;
     }
     else {
-        // Оконный режим - центрируем окно
         monitor = glfwGetPrimaryMonitor();
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
         windowX = (mode->width - settings.screenWidth) / 2;
@@ -158,6 +156,7 @@ bool Engine::initSystems() {
     lmRenderer = nullptr;
     lightmapManager = nullptr;
     game = nullptr;
+    skyboxRenderer = nullptr;
 
     menu = std::make_unique<Menu>();
     menu->setFontPath("res/fonts/Neogurotesuku-Regular.otf");
@@ -175,7 +174,6 @@ bool Engine::initSystems() {
         });
 
     menu->setOnExitGame([this]() {
-        // Этот callback больше не используется для выхода из главного меню
         });
 
     menu->setOnQuitGame([this]() {
@@ -221,6 +219,12 @@ bool Engine::init() {
 }
 
 void Engine::onFramebufferSize(int width, int height) {
+    // FIX: Prevent crash when minimized or invalid size
+    if (width <= 0 || height <= 0) {
+        std::cout << "[ENGINE] Ignoring invalid framebuffer size: " << width << "x" << height << std::endl;
+        return;
+    }
+
     this->width = width;
     this->height = height;
 
@@ -266,6 +270,11 @@ void Engine::unloadCurrentMap() {
     if (lightmapManager) {
         lightmapManager->cleanup();
         lightmapManager.reset();
+    }
+
+    if (skyboxRenderer) {
+        skyboxRenderer->unload();
+        skyboxRenderer.reset();
     }
 
     if (meshCollider) {
@@ -367,6 +376,19 @@ void Engine::doLoadMap(const std::string& mapPath) {
         return;
     }
 
+    // Загружаем скайбокс
+    std::string skyName = bspLoader->getSkyName();
+    if (!skyName.empty()) {
+        skyboxRenderer = std::make_unique<SkyboxRenderer>();
+        if (skyboxRenderer->loadSky(skyName, *wadLoader)) {
+            std::cout << "[ENGINE] Skybox loaded: " << skyName << std::endl;
+        }
+        else {
+            std::cout << "[ENGINE] Failed to load skybox: " << skyName << std::endl;
+            skyboxRenderer.reset();
+        }
+    }
+
     if (lightmapManager->initializeFromBSP(*bspLoader)) {
         std::cout << "[LIGHT] Lightmaps initialized\n";
         lightmapManager->debugPrintLightmapInfo();
@@ -414,6 +436,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
     if (lmRenderer && lightmapManager->hasLightmaps()) {
         if (lmRenderer->init(width, height)) {
+            lmRenderer->setSkipSkyFaces(true);
             if (lmRenderer->loadWorld(*bspLoader, *lightmapManager)) {
                 std::cout << "[LIGHT] Lightmapped renderer ready (F5 to toggle)\n";
                 lmRenderer->setLightmapIntensity(DEFAULT_LIGHTMAP_INTENSITY);
@@ -602,7 +625,6 @@ void Engine::run() {
             game->processInput(window);
         }
 
-        // ESC открывает меню паузы
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !menuActive) {
             menuActive = true;
             if (menu) {
@@ -662,8 +684,23 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
+    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
+        (float)width / (float)height, 0.1f, 10000.0f);
+
+    // ИСПРАВЛЕНО: Очищаем буферы ПЕРЕД скайбоксом
+    glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // 1. Сначала скайбокс (на чистом экране)
+    if (skyboxRenderer && skyboxRenderer->isLoaded()) {
+        skyboxRenderer->render(view, projection, eyePos);
+    }
+
+    // 2. Потом мир (с очисткой depth, чтобы скайбокс был дальше всех)
+    // Но НЕ очищаем цвет - скайбокс уже нарисовал фон!
+    glClear(GL_DEPTH_BUFFER_BIT);
+
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
-        lmRenderer->beginFrame(glm::vec3(0.02f, 0.02f, 0.02f));
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
     }
 
