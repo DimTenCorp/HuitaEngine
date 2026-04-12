@@ -27,6 +27,8 @@ struct GBuffer {
     void bindForWriting() const;
     void bindForReading(GLuint texUnitPosition, GLuint texUnitNormal, GLuint texUnitAlbedo) const;
     static void unbind();
+
+    bool isValid() const { return fbo != 0; }
 };
 
 struct BspMesh {
@@ -79,9 +81,13 @@ public:
     bool getShowHitbox() const { return showHitbox; }
     const RenderStats& getStats() const { return stats; }
 
+    void setTransparentSorting(bool enable) { sortTransparentFaces = enable; }
+    void setAlphaTestRef(float ref) { alphaTestRef = ref; }
+
 private:
     BspMesh worldMesh;
-    std::vector<FaceDrawCall> drawCalls;
+    std::vector<FaceDrawCall> opaqueDrawCalls;
+    std::vector<FaceDrawCall> transparentDrawCalls;
     bool worldLoaded = false;
 
     BspMesh hitboxMesh;
@@ -98,12 +104,16 @@ private:
     GLuint quadVAO = 0;
     GLuint quadVBO = 0;
 
+    bool sortTransparentFaces = true;
+    float alphaTestRef = 0.5f;
+
     void createQuadMesh();
     void cleanup();
     bool createGBuffer(int w, int h);
     void destroyGBuffer();
-    void geometryPass(const glm::mat4& view, const glm::mat4& proj);
+    void geometryPass(const glm::mat4& view, const glm::mat4& proj, bool opaque);
     void lightingPass(const glm::vec3& viewPos);
+    void renderTransparentFaces(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos);
 
     static const char* getGeometryVert();
     static const char* getGeometryFrag();

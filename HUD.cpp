@@ -40,7 +40,7 @@ void HUD::update(float deltaTime, const glm::vec3& position) {
     }
 }
 
-void HUD::render(int screenWidth, int screenHeight) {
+void HUD::render() {  // Больше без параметров
     if (!ImGui::GetCurrentContext()) return;
 
     if (smallFont) {
@@ -88,8 +88,8 @@ void HUD::render(int screenWidth, int screenHeight) {
             ImGuiWindowFlags_NoBringToFrontOnFocus;
 
         float totalSize = (settings.crosshair.gap + settings.crosshair.length) * 2.0f + 10.0f;
-        ImVec2 center(screenWidth / 2.0f - totalSize / 2.0f,
-            screenHeight / 2.0f - totalSize / 2.0f);
+        ImVec2 center((screenWidth / 2.0f) - totalSize / 2.0f,
+            (screenHeight / 2.0f) - totalSize / 2.0f);
 
         ImGui::SetNextWindowPos(center);
         ImGui::SetNextWindowSize(ImVec2(totalSize, totalSize));

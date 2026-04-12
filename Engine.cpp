@@ -17,6 +17,21 @@
 
 Engine* Engine::instance = nullptr;
 
+// === ПРОТОТИПЫ СТАТИЧЕСКИХ CALLBACK ФУНКЦИЙ ===
+static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+// === РЕАЛИЗАЦИИ CALLBACK ФУНКЦИЙ ===
+static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+    Engine* engine = Engine::getInstance();
+    if (engine) {
+        engine->onFramebufferSize(width, height);
+    }
+}
+
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     Engine* engine = Engine::getInstance();
     if (engine && engine->isMenuActive() && engine->getMenu()) {
@@ -47,6 +62,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
 }
 
+// === КОНСТРУКТОР/ДЕСТРУКТОР ===
 Engine::Engine() {
     instance = this;
 }
@@ -56,16 +72,7 @@ Engine::~Engine() {
     instance = nullptr;
 }
 
-bool Engine::init() {
-    if (!initGLFW()) return false;
-    if (!initGLAD()) return false;
-    if (!initImGui()) return false;
-    if (!initSystems()) return false;
-
-    std::cout << "\n=== ENGINE READY ===\n";
-    return true;
-}
-
+// === INIT GLFW ===
 bool Engine::initGLFW() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
@@ -75,6 +82,7 @@ bool Engine::initGLFW() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window = glfwCreateWindow(width, height, "HuitaEngine", nullptr, nullptr);
     if (!window) {
@@ -86,6 +94,8 @@ bool Engine::initGLFW() {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(0);
 
+    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
@@ -95,6 +105,7 @@ bool Engine::initGLFW() {
 
     return true;
 }
+
 
 bool Engine::initGLAD() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -133,7 +144,7 @@ bool Engine::initSystems() {
     menu->init(window, width, height);
 
     menu->setOnMapSelected([this](const std::string& mapPath) {
-        loadMap(mapPath);  // Теперь это планирует загрузку, а не выполняет сразу
+        loadMap(mapPath);
         });
 
     menu->setOnExitGame([this]() {
@@ -166,6 +177,42 @@ bool Engine::initSystems() {
     mapLoadInProgress = false;
 
     return true;
+}
+
+bool Engine::init() {
+    if (!initGLFW()) return false;
+    if (!initGLAD()) return false;
+    if (!initImGui()) return false;
+    if (!initSystems()) return false;
+
+    std::cout << "\n=== ENGINE READY ===\n";
+    return true;
+}
+
+void Engine::onFramebufferSize(int width, int height) {
+    this->width = width;
+    this->height = height;
+
+    glViewport(0, 0, width, height);
+
+    if (renderer) {
+        renderer->setViewport(width, height);
+    }
+
+    if (lmRenderer) {
+        lmRenderer->setViewport(width, height);
+    }
+
+    if (menu) {
+        menu->init(window, width, height);
+    }
+
+    if (game && !menuActive) {
+        glfwSetCursorPos(window, width / 2.0, height / 2.0);
+        game->centerMouseAt((float)width / 2.0f, (float)height / 2.0f);
+    }
+
+    std::cout << "[ENGINE] Window resized to " << width << "x" << height << std::endl;
 }
 
 void Engine::unloadCurrentMap() {
@@ -204,7 +251,6 @@ void Engine::unloadCurrentMap() {
         wadLoader->init();
     }
 
-    // Очищаем зоны воды
     for (auto* water : waterZones) {
         delete water;
     }
@@ -217,7 +263,6 @@ void Engine::unloadCurrentMap() {
 }
 
 void Engine::loadMap(const std::string& mapPath) {
-    // Просто планируем загрузку на следующий кадр
     if (mapLoadInProgress) {
         std::cout << "[ENGINE] Load already in progress, ignoring request\n";
         return;
@@ -233,9 +278,7 @@ void Engine::processPendingLoad() {
 
     pendingLoad = false;
 
-    // Показываем экран загрузки (рендерится на следующем кадре)
     if (menu) {
-        // Извлекаем имя карты из пути
         std::string mapName = pendingMapPath;
         size_t lastSlash = mapName.find_last_of("/\\");
         if (lastSlash != std::string::npos) {
@@ -248,13 +291,10 @@ void Engine::processPendingLoad() {
         menu->showLoading(mapName);
     }
 
-    // Даём возможность отрендерить экран загрузки
-    // Просто вызываем рендер одного кадра прямо здесь
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (menu && menu->isActive()) {
-        // Рендерим только меню в состоянии LOADING
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -266,7 +306,6 @@ void Engine::processPendingLoad() {
     glfwSwapBuffers(window);
     glfwPollEvents();
 
-    // Теперь реальная загрузка
     doLoadMap(pendingMapPath);
 
     mapLoadInProgress = false;
@@ -280,7 +319,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
         wadLoader->loadAllWADs();
     }
 
-    // Создаём новые объекты
     bspLoader = std::make_unique<BSPLoader>();
     meshCollider = std::make_unique<MeshCollider>();
     lightmapManager = std::make_unique<LightmapManager>();
@@ -338,17 +376,15 @@ void Engine::doLoadMap(const std::string& mapPath) {
         std::cout << "[SPAWN] Using fallback position\n";
     }
 
-    // === ЗАГРУЗКА ЗОН ВОДЫ (func_water) ===
-    // Теперь зоны воды создаются на основе границ моделей брашей, а не из properties
     waterZones.clear();
     auto waterEntities = bspLoader->getEntitiesByClass("func_water");
-    
+
     for (const auto& entity : waterEntities) {
         if (entity.model.empty() || entity.model[0] != '*') {
             std::cerr << "[WATER] Skipping func_water without valid model: " << entity.classname << std::endl;
             continue;
         }
-        
+
         int modelIndex = 0;
         try {
             modelIndex = std::stoi(entity.model.substr(1));
@@ -357,27 +393,23 @@ void Engine::doLoadMap(const std::string& mapPath) {
             std::cerr << "[WATER] Failed to parse model index from: " << entity.model << std::endl;
             continue;
         }
-        
+
         if (modelIndex <= 0 || modelIndex >= (int)bspLoader->getModels().size()) {
             std::cerr << "[WATER] Invalid model index: " << modelIndex << std::endl;
             continue;
         }
-        
-        // Получаем границы модели из BSP
+
         const auto& models = bspLoader->getModels();
         const BSPModel& model = models[modelIndex];
-        
-        // Создаем AABB модели с конвертацией координат (как в BSPLoader)
+
         AABB modelBounds;
         modelBounds.min = glm::vec3(-model.min[0], model.min[2], model.min[1]);
         modelBounds.max = glm::vec3(-model.max[0], model.max[2], model.max[1]);
-        
-        // Проверяем валидность AABB
+
         if (modelBounds.min.x > modelBounds.max.x) std::swap(modelBounds.min.x, modelBounds.max.x);
         if (modelBounds.min.y > modelBounds.max.y) std::swap(modelBounds.min.y, modelBounds.max.y);
         if (modelBounds.min.z > modelBounds.max.z) std::swap(modelBounds.min.z, modelBounds.max.z);
-        
-        // Создаем зону воды на основе границ модели
+
         CFuncWater* water = new CFuncWater();
         water->initFromBounds(modelBounds);
         waterZones.push_back(water);
@@ -386,30 +418,24 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
     std::cout << "=== MAP LOADED ===\n\n";
 
-    // Скрываем экран загрузки
     if (menu) {
         menu->hideLoading();
     }
 
-    // ====== ВАЖНО: настраиваем состояние мыши для игры ======
     menuActive = false;
     if (menu) {
         menu->setActive(false);
     }
 
-    // Сбрасываем состояние мыши ДО того как включаем захват
     if (game) {
         game->resetMouseState();
     }
 
-    // Устанавливаем курсор в центр экрана
-        // Возвращаем мышку в центр для корректного старта
     glfwSetCursorPos(window, width / 2.0, height / 2.0);
-    glfwPollEvents();  // Применяем позицию курсора сразу
+    glfwPollEvents();
 
-    // Центрируем мышь в Game - пропускаем логику firstMouse
     if (game) {
-        game->centerMouseAt(width / 2.0f, height / 2.0f);
+        game->centerMouseAt((float)width / 2.0f, (float)height / 2.0f);
     }
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -461,7 +487,6 @@ void Engine::run() {
     while (!glfwWindowShouldClose(window)) {
         updateTime();
 
-        // Обрабатываем отложенную загрузку в первую очередь
         processPendingLoad();
 
         if (menuActive && menu) {
@@ -539,6 +564,10 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
+    // Enable blending for transparent objects
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     if (useLightmapped && lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->beginFrame(glm::vec3(0.02f, 0.02f, 0.02f));
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
@@ -551,6 +580,9 @@ void Engine::render() {
     if (game) {
         game->render(width, height);
     }
+
+    // Note: Don't disable blending here because HUD might need it
+    // glDisable(GL_BLEND);
 }
 
 void Engine::shutdown() {

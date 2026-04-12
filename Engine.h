@@ -47,11 +47,16 @@ public:
 
     float getDeltaTime() const { return deltaTime; }
 
-    void loadMap(const std::string& mapPath);  // Запланировать загрузку карты
+    void loadMap(const std::string& mapPath);
     void unloadCurrentMap();
 
     int getWidth() const { return width; }
     int getHeight() const { return height; }
+
+    // УДАЛИТЬ ЭТУ СТРОКУ:
+    // void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+
+    void onFramebufferSize(int width, int height);
 
 private:
     static Engine* instance;
@@ -68,7 +73,7 @@ private:
     std::unique_ptr<LightmapManager> lightmapManager;
     std::unique_ptr<MeshCollider> meshCollider;
     std::unique_ptr<Menu> menu;
-    std::vector<CFuncWater*> waterZones;  // Зоны воды на карте
+    std::vector<CFuncWater*> waterZones;
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
@@ -77,7 +82,6 @@ private:
     float lightmapIntensity = 1.0f;
     bool menuActive = true;
 
-    // Для отложенной загрузки
     bool pendingLoad = false;
     std::string pendingMapPath;
     bool mapLoadInProgress = false;
@@ -89,6 +93,6 @@ private:
 
     void updateTime();
     void render();
-    void processPendingLoad();  // Обработка отложенной загрузки
-    void doLoadMap(const std::string& mapPath);  // Реальная загрузка
+    void processPendingLoad();
+    void doLoadMap(const std::string& mapPath);
 };

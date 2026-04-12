@@ -125,5 +125,6 @@ void Game::processInput(GLFWwindow* window) {
 }
 
 void Game::render(int screenWidth, int screenHeight) {
-    hud->render(screenWidth, screenHeight);
+    hud->setScreenSize(screenWidth, screenHeight);  // Передаём размеры в HUD
+    hud->render();  // Теперь без параметров
 }

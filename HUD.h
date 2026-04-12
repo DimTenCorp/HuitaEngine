@@ -26,16 +26,24 @@ private:
     int frameCount = 0;
     glm::vec3 playerPos;
     ImFont* smallFont = nullptr;
+    int screenWidth = 1280;
+    int screenHeight = 720;
 
 public:
     HUD();
     ~HUD();
 
     void update(float deltaTime, const glm::vec3& position);
-    void render(int screenWidth, int screenHeight);
 
     HUDSettings& getSettings() { return settings; }
     void toggleFPS() { settings.showFPS = !settings.showFPS; }
     void togglePosition() { settings.showPosition = !settings.showPosition; }
     void toggleCrosshair() { settings.showCrosshair = !settings.showCrosshair; }
+
+    void setScreenSize(int width, int height) {
+        screenWidth = width;
+        screenHeight = height;
+    }
+
+    void render();
 };

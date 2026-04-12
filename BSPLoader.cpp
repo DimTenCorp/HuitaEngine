@@ -44,7 +44,6 @@ BSPLoader::~BSPLoader() {
     cleanupTextures();
 }
 
-// ИСПРАВЛЕНО: загружаем И оригинальные, И конвертированные вершины
 bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
     const BSPLump& lump = header.lumps[LUMP_VERTICES];
     if (lump.length == 0) return false;
@@ -62,7 +61,7 @@ bool BSPLoader::loadVertices(FILE* file, const BSPHeader& header) {
 
         glm::vec3 original(x, y, z);
         originalVertices[i] = original;
-        vertices[i] = convertPosition(original); // Только перестановка осей!
+        vertices[i] = convertPosition(original);
     }
     return true;
 }
@@ -125,9 +124,6 @@ bool BSPLoader::loadModels(FILE* file, const BSPHeader& header) {
     models.resize(count);
     fseek(file, lump.offset, SEEK_SET);
     fread(models.data(), sizeof(BSPModel), count, file);
-
-    // Убрать конвертацию min/max/origin - оставить как есть!
-    // Или только перестановку осей если нужно
 
     if (!models.empty()) {
         worldBounds.min = glm::vec3(models[0].min[0], models[0].min[1], models[0].min[2]);
@@ -200,9 +196,7 @@ bool BSPLoader::loadRequiredWADsFromEntities() {
     return !requiredWADs.empty();
 }
 
-// ИСПРАВЛЕНО: используем originalVertices для правильного расчёта
 void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, float& minS, float& minT) const {
-    // Проверка валидности face индекса
     if (faceIndex < 0 || faceIndex >= (int)faces.size()) {
         width = 1;
         height = 1;
@@ -212,7 +206,6 @@ void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, floa
 
     const BSPFace& face = faces[faceIndex];
 
-    // Проверка валидности texInfo
     if (face.texInfo < 0 || face.texInfo >= (int)texInfos.size()) {
         width = 1;
         height = 1;
@@ -228,7 +221,6 @@ void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, floa
     for (int i = 0; i < face.numEdges; i++) {
         int edgeIndex = face.firstEdge + i;
 
-        // Проверка индекса surfEdge
         if (edgeIndex < 0 || edgeIndex >= (int)surfEdges.size()) {
             continue;
         }
@@ -250,12 +242,10 @@ void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, floa
             vIndex = edges[negEdge].v[1];
         }
 
-        // Проверка индекса вершины
         if (vIndex < 0 || vIndex >= (int)originalVertices.size()) {
             continue;
         }
 
-        // Используем оригинальную вершину для правильного расчёта
         const glm::vec3& v = originalVertices[vIndex];
 
         glm::vec3 sAxis(tex.s[0], tex.s[1], tex.s[2]);
@@ -273,11 +263,9 @@ void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, floa
     minS = sMin;
     minT = tMin;
 
-    // Формула HL1: ceil(max/16) - floor(min/16) + 1
     width = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
     height = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
 
-    // Ограничиваем разумными значениями
     width = std::max(1, std::min(width, 512));
     height = std::max(1, std::min(height, 512));
 }
@@ -336,7 +324,6 @@ bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wad
 
         const uint8_t* texPtr = lumpData.data() + offsets[i];
 
-        // Проверка на достаточный размер данных для имени текстуры
         if (texPtr + 16 > lumpData.data() + lumpData.size()) {
             glTextureIds.push_back(defaultTextureId);
             textureDimensions.push_back({ 16, 16 });
@@ -441,8 +428,6 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
                 float ox = 0, oy = 0, oz = 0;
                 int parsed = sscanf(value.c_str(), "%f %f %f", &ox, &oy, &oz);
                 if (parsed == 3) {
-                    // БЫЛО: entity.origin = convertPosition(glm::vec3(ox, oy, oz));
-                    // СТАЛО: только перестановка осей
                     entity.origin = glm::vec3(-ox, oz, oy);
                 }
             }
@@ -464,7 +449,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     return true;
 }
 
-void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
+void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt) {
     unsigned int baseVertex = (unsigned int)meshVertices.size();
 
     for (int i = 0; i < subModel.numFaces; i++) {
@@ -476,14 +461,12 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         if (face.planeNum >= planes.size()) continue;
         if (face.texInfo >= texInfos.size()) continue;
 
-        // НОРМАЛЬ - из BSP plane, конвертируем как в HL1
         glm::vec3 bspNormal = planes[face.planeNum].normal;
         if (face.side != 0) bspNormal = -bspNormal;
         glm::vec3 worldNormal = convertNormal(bspNormal);
 
         const BSPTexInfo& texInfo = texInfos[face.texInfo];
 
-        // Собираем вершины фейса (используем ОРИГИНАЛЬНЫЕ BSP вершины!)
         std::vector<glm::vec3> faceBspVerts;
         faceBspVerts.reserve(face.numEdges);
 
@@ -505,14 +488,11 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             }
 
             if (vindex >= originalVertices.size()) continue;
-
-            // ВАЖНО: используем ОРИГИНАЛЬНУЮ вершину для правильного расчёта UV
             faceBspVerts.push_back(originalVertices[vindex]);
         }
 
         if (faceBspVerts.size() < 3) continue;
 
-        // Размеры текстуры
         int texIdx = texInfo.textureIndex;
         if (texIdx < 0 || texIdx >= (int)glTextureIds.size()) texIdx = 0;
 
@@ -523,21 +503,15 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             texWidth = texHeight = 256;
         }
 
-        // Создаём вершины меша
         std::vector<BSPVertex> faceMeshVerts;
         faceMeshVerts.reserve(faceBspVerts.size());
 
         for (const auto& bspPos : faceBspVerts) {
             BSPVertex v;
 
-            // ПОЗИЦИЯ - конвертируем для рендера
             v.position = convertPosition(bspPos);
-
-            // НОРМАЛЬ
             v.normal = worldNormal;
 
-            // ТЕКСТУРНЫЕ UV - считаем в BSP пространстве (как в HL1)
-            // s = dot(vertex, s_axis) + s_offset
             float s = bspPos.x * texInfo.s[0] + bspPos.y * texInfo.s[1]
                 + bspPos.z * texInfo.s[2] + texInfo.s[3];
             float t = bspPos.x * texInfo.t[0] + bspPos.y * texInfo.t[1]
@@ -548,7 +522,6 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             faceMeshVerts.push_back(v);
         }
 
-        // AABB для фейса (в мировых координатах)
         AABB faceBounds;
         faceBounds.min = faceBounds.max = faceMeshVerts[0].position;
         for (const auto& v : faceMeshVerts) {
@@ -560,13 +533,11 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
         faceBounds.max += glm::vec3(epsilon);
         faceBoundingBoxes.push_back(faceBounds);
 
-        // Добавляем вершины в меш
         unsigned int faceStartVertex = baseVertex;
         for (auto& v : faceMeshVerts) {
             meshVertices.push_back(v);
         }
 
-        // Триангуляция (fan)
         unsigned int startIdxOffset = (unsigned int)meshIndices.size();
         for (size_t j = 1; j + 1 < faceMeshVerts.size(); j++) {
             meshIndices.push_back(faceStartVertex);
@@ -574,12 +545,22 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel) {
             meshIndices.push_back(faceStartVertex + (unsigned int)j);
         }
 
-        drawCalls.push_back({
-            textureID,
-            startIdxOffset,
-            (unsigned int)((faceMeshVerts.size() - 2) * 3)
-            });
+        FaceDrawCall dc;
+        dc.texID = textureID;
+        dc.indexOffset = startIdxOffset;
+        dc.indexCount = (unsigned int)((faceMeshVerts.size() - 2) * 3);
+        dc.faceIndex = faceIdx;
 
+        dc.rendermode = static_cast<unsigned char>(rendermode);
+        dc.renderamt = static_cast<unsigned char>(renderamt);
+
+        // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
+        dc.isTransparent = (rendermode == 2) ||
+            (rendermode == 5) ||
+            (rendermode == 1 && renderamt < 255) ||
+            (rendermode == 3);
+
+        drawCalls.push_back(dc);
         baseVertex += (unsigned int)faceMeshVerts.size();
     }
 }
@@ -591,39 +572,12 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
-    // Собираем индексы моделей, которые являются func_water
-    std::vector<int> waterModelIndices;
-    for (const auto& entity : entities) {
-        if (entity.classname == "func_water" && !entity.model.empty() && entity.model[0] == '*') {
-            try {
-                int modelIdx = std::stoi(entity.model.substr(1));
-                if (modelIdx > 0 && modelIdx < (int)models.size()) {
-                    waterModelIndices.push_back(modelIdx);
-                }
-            }
-            catch (...) {}
-        }
-    }
+    // Мир (model 0) - всегда непрозрачный
+    buildSubmodelMesh(models[0], 0, 255);
 
-    // Функция для проверки, является ли модель водой
-    auto isWaterModel = [&waterModelIndices](int idx) -> bool {
-        for (int waterIdx : waterModelIndices) {
-            if (waterIdx == idx) return true;
-        }
-        return false;
-    };
-
-    // Добавляем основную модель мира (если это не вода)
-    if (!isWaterModel(0)) {
-        buildSubmodelMesh(models[0]);
-    }
-
-    // Обрабатываем остальные модели
+    // Остальные модели
     for (const auto& entity : entities) {
         if (entity.model.empty() || entity.model == "*0") continue;
-        if (entity.classname.find("func_") == std::string::npos &&
-            entity.classname.find("brush") == std::string::npos) continue;
-
         if (entity.model.length() < 2 || entity.model[0] != '*') continue;
 
         int modelIndex = 0;
@@ -636,19 +590,84 @@ void BSPLoader::buildMesh() {
         }
 
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
-        
-        // Пропускаем модели func_water - они не добавляются в коллайдер
-        if (entity.classname == "func_water") {
-            std::cout << "[BSP] Skipping func_water model *" << modelIndex << " from collision mesh" << std::endl;
+
+        // ПРОПУСКАЕМ ВСЕ trigger_ entities - они не рендерятся!
+        if (entity.classname.find("trigger_") == 0) {
+            std::cout << "[BSP] Skipping trigger entity: " << entity.classname << " model *" << modelIndex << std::endl;
             continue;
         }
-        
-        buildSubmodelMesh(models[modelIndex]);
+
+        int rendermode = 0;
+        int renderamt = 255;
+
+        // func_water - всегда прозрачная, но с настраиваемым FX Amount
+        if (entity.classname == "func_water") {
+            rendermode = 2; // Texture mode
+            renderamt = 128; // По умолчанию полупрозрачная
+
+            // Читаем FX Amount для воды
+            auto it = entity.properties.find("renderamt");
+            if (it != entity.properties.end()) {
+                try {
+                    renderamt = std::stoi(it->second);
+                }
+                catch (...) {}
+            }
+
+            it = entity.properties.find("FX Amount");
+            if (it != entity.properties.end()) {
+                try {
+                    renderamt = std::stoi(it->second);
+                }
+                catch (...) {}
+            }
+
+            renderamt = std::max(1, std::min(255, renderamt));
+
+            std::cout << "[BSP] func_water model *" << modelIndex << " with FX Amount: " << renderamt << std::endl;
+        }
+        else {
+            // Остальные brush entities
+            auto it = entity.properties.find("rendermode");
+            if (it != entity.properties.end()) {
+                try {
+                    rendermode = std::stoi(it->second);
+                }
+                catch (...) {}
+            }
+
+            it = entity.properties.find("renderamt");
+            if (it != entity.properties.end()) {
+                try {
+                    renderamt = std::stoi(it->second);
+                }
+                catch (...) {}
+            }
+
+            it = entity.properties.find("FX Amount");
+            if (it != entity.properties.end()) {
+                try {
+                    renderamt = std::stoi(it->second);
+                }
+                catch (...) {}
+            }
+
+            renderamt = std::max(0, std::min(255, renderamt));
+        }
+
+        buildSubmodelMesh(models[modelIndex], rendermode, renderamt);
+    }
+
+    int transparentCount = 0;
+    for (const auto& dc : drawCalls) {
+        if (dc.isTransparent) transparentCount++;
     }
 
     std::cout << "Built " << meshVertices.size() << " mesh vertices, "
         << meshIndices.size() << " indices, "
         << drawCalls.size() << " draw calls\n";
+    std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount)
+        << ", Transparent: " << transparentCount << "\n";
 }
 
 bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
@@ -687,10 +706,6 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
 }
 
 void BSPLoader::cleanupTextures() {
-    // НЕ удаляем OpenGL текстуры здесь! Ими владеет WADLoader.
-    // BSP только хранит ссылки (ID) на текстуры из кэша WADLoader.
-    // Удаление произойдёт в ~WADLoader().
-
     glTextureIds.clear();
     textureDimensions.clear();
     drawCalls.clear();

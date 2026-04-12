@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Renderer.h"
 #include <iostream>
 #include <algorithm>
@@ -170,7 +170,7 @@ void BspMesh::bind() const { glBindVertexArray(vao); }
 void BspMesh::unbind() { glBindVertexArray(0); }
 
 // ============================================================================
-// Shader Sources - SIMPLIFIED (no lighting)
+// Shader Sources
 // ============================================================================
 
 static const char* s_geometryVert = R"glsl(
@@ -204,15 +204,18 @@ layout (location = 1) out vec4 gNormal;
 layout (location = 2) out vec4 gAlbedo;
 
 uniform sampler2D uTexture;
+uniform float uAlpha = 1.0;
 
 void main() {
     vec4 texColor = texture(uTexture, vTexCoord);
     
-    // HL1 color key: ����� ���� (0,0,1) = ������������
-    // ����� ��������� ������� �����
+    // HL1 color key: синий цвет (0,0,1) = прозрачность
     if (texColor.a < 0.5 || (texColor.r < 0.01 && texColor.g < 0.01 && texColor.b > 0.9)) {
         discard;
     }
+    
+    // Применяем FX Amount как альфу
+    texColor.a = texColor.a * uAlpha;
     
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
@@ -248,11 +251,10 @@ void main() {
     vec4 albedo = texture(gAlbedo, vTexCoord);
     
     if (length(fragPos) < 0.001) {
-        FragColor = vec4(0.0, 0.0, 0.0, 1.0);  // ��������� ������ ���
+        FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
     
-    // ����������� ambient - ����� ����� ����� ������
     vec3 ambient = vec3(1.00) * albedo.rgb;
     
     FragColor = vec4(ambient, albedo.a);
@@ -271,19 +273,27 @@ const char* Renderer::getLightingFrag() { return s_lightingFrag; }
 Renderer::Renderer() = default;
 
 Renderer::Renderer(Renderer&& other) noexcept
-    : worldMesh(std::move(other.worldMesh)), hitboxMesh(std::move(other.hitboxMesh)),
+    : worldMesh(std::move(other.worldMesh)),
+    opaqueDrawCalls(std::move(other.opaqueDrawCalls)),
+    transparentDrawCalls(std::move(other.transparentDrawCalls)),
+    hitboxMesh(std::move(other.hitboxMesh)),
     geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
     gBuffer(std::move(other.gBuffer)), stats(other.stats),
     screenWidth(other.screenWidth), screenHeight(other.screenHeight),
-    quadVAO(other.quadVAO), quadVBO(other.quadVBO) {
+    quadVAO(other.quadVAO), quadVBO(other.quadVBO),
+    showHitbox(other.showHitbox), worldLoaded(other.worldLoaded) {
     other.quadVAO = 0; other.quadVBO = 0;
     other.screenWidth = 1280; other.screenHeight = 720;
+    other.worldLoaded = false;
+    other.showHitbox = false;
 }
 
 Renderer& Renderer::operator=(Renderer&& other) noexcept {
     if (this != &other) {
         cleanup();
         worldMesh = std::move(other.worldMesh);
+        opaqueDrawCalls = std::move(other.opaqueDrawCalls);
+        transparentDrawCalls = std::move(other.transparentDrawCalls);
         hitboxMesh = std::move(other.hitboxMesh);
         geometryShader = std::move(other.geometryShader);
         lightingShader = std::move(other.lightingShader);
@@ -293,8 +303,12 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
         screenHeight = other.screenHeight;
         quadVAO = other.quadVAO;
         quadVBO = other.quadVBO;
+        showHitbox = other.showHitbox;
+        worldLoaded = other.worldLoaded;
         other.quadVAO = 0; other.quadVBO = 0;
         other.screenWidth = 1280; other.screenHeight = 720;
+        other.worldLoaded = false;
+        other.showHitbox = false;
     }
     return *this;
 }
@@ -407,11 +421,22 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
         return false;
     }
 
-    drawCalls = bsp.getDrawCalls();
-    std::sort(drawCalls.begin(), drawCalls.end(),
-        [](const FaceDrawCall& a, const FaceDrawCall& b) { return a.texID < b.texID; });
+    // Разделяем draw calls на непрозрачные и прозрачные
+    auto allDrawCalls = bsp.getDrawCalls();
+    opaqueDrawCalls.clear();
+    transparentDrawCalls.clear();
 
-    std::cout << "Renderer: World loaded, " << drawCalls.size() << " draw calls" << std::endl;
+    for (const auto& dc : allDrawCalls) {
+        if (dc.isTransparent) {
+            transparentDrawCalls.push_back(dc);
+        }
+        else {
+            opaqueDrawCalls.push_back(dc);
+        }
+    }
+
+    std::cout << "Renderer: " << opaqueDrawCalls.size() << " opaque, "
+        << transparentDrawCalls.size() << " transparent draw calls" << std::endl;
 
     worldLoaded = true;
     return true;
@@ -419,7 +444,8 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
 
 void Renderer::unloadWorld() {
     worldMesh.destroy();
-    drawCalls.clear();
+    opaqueDrawCalls.clear();
+    transparentDrawCalls.clear();
     worldLoaded = false;
 }
 
@@ -437,16 +463,39 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
-    geometryPass(view, projection);
+    // 1. Непрозрачная геометрия
+    geometryPass(view, projection, true);
+
+    // 2. Прозрачная геометрия (включая воду)
+    if (!transparentDrawCalls.empty()) {
+        renderTransparentFaces(view, projection, viewPos);
+    }
+
+    // 3. Освещение
     lightingPass(viewPos);
 }
 
-void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
+void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool opaque) {
     gBuffer.bindForWriting();
-    glClear(GL_DEPTH_BUFFER_BIT);
+
+    if (opaque) {
+        glClear(GL_DEPTH_BUFFER_BIT);
+    }
+
     glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glDepthFunc(GL_LESS);
+    glDepthMask(opaque ? GL_TRUE : GL_FALSE);
+
+    if (!opaque) {
+        glEnable(GL_BLEND);
+        // Для воды и прозрачных объектов используем стандартное blending
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    else {
+        glDisable(GL_BLEND);
+    }
+
+    const auto& drawCalls = opaque ? opaqueDrawCalls : transparentDrawCalls;
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
@@ -456,20 +505,65 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj) {
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
 
+    GLuint currentTex = 0;
     for (const auto& dc : drawCalls) {
-        glBindTexture(GL_TEXTURE_2D, dc.texID);
+        if (dc.texID != currentTex) {
+            glBindTexture(GL_TEXTURE_2D, dc.texID);
+            currentTex = dc.texID;
+        }
+
+        if (!opaque) {
+            // Важно: для воды alpha должен быть > 0 чтобы быть видимой
+            float alpha = dc.renderamt / 255.0f;
+            // Минимальный alpha чтобы вода была видна (не полностью прозрачная)
+            alpha = std::max(0.1f, alpha);
+            geometryShader->setFloat("uAlpha", alpha);
+        }
+        else {
+            geometryShader->setFloat("uAlpha", 1.0f);
+        }
+
         glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
             (void*)(dc.indexOffset * sizeof(unsigned int)));
+
         stats.drawCalls++;
         stats.triangles += dc.indexCount / 3;
     }
 
     BspMesh::unbind();
     geometryShader->unbind();
+
+    if (!opaque) {
+        glDisable(GL_BLEND);
+        glDepthMask(GL_TRUE);
+    }
+}
+
+void Renderer::renderTransparentFaces(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
+    // Сортируем прозрачные фейсы от дальних к ближним
+    if (sortTransparentFaces && transparentDrawCalls.size() > 1) {
+        // Вычисляем расстояние для каждого draw call
+        struct SortedDC {
+            FaceDrawCall dc;
+            float distSq;
+        };
+
+        std::vector<SortedDC> sorted;
+        sorted.reserve(transparentDrawCalls.size());
+
+        // Получаем позиции вершин из меша для приближенной сортировки
+        // Упрощенно: сортируем по индексу (предполагая что дальние фейсы были созданы раньше)
+        // В идеале нужно хранить центр фейса в FaceDrawCall
+
+        // Пока просто рисуем в порядке создания
+        // TODO: добавить правильную сортировку по расстоянию от камеры
+    }
+
+    geometryPass(view, proj, false);
 }
 
 void Renderer::lightingPass(const glm::vec3& viewPos) {
-    (void)viewPos; // Unused in simplified version
+    (void)viewPos;
 
     GBuffer::unbind();
     glDisable(GL_DEPTH_TEST);
@@ -503,6 +597,8 @@ void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
 void Renderer::setViewport(int width, int height) {
     screenWidth = width;
     screenHeight = height;
+    glViewport(0, 0, width, height);
+
     destroyGBuffer();
     createGBuffer(width, height);
 }

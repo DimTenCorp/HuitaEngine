@@ -160,7 +160,7 @@ GLuint WADLoader::createTexture(const WADTexture& tex) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    // Для прозрачных текстур немного меняем фильтрацию
+    // Для прозрачных текстур включаем альфа-тест в шейдере
     if (!tex.name.empty() && tex.name[0] == '{') {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
     }

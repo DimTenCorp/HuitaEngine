@@ -30,7 +30,6 @@ struct BSPHeader { int version; BSPLump lumps[15]; };
 
 struct BSPPlane { glm::vec3 normal; float dist; int type; };
 
-// ИСПРАВЛЕНО: lightOffset -> lightofs (как в оригинальном BSP)
 struct BSPFace {
     unsigned short planeNum;
     unsigned short side;
@@ -38,7 +37,7 @@ struct BSPFace {
     unsigned short numEdges;
     unsigned short texInfo;
     unsigned char styles[4];
-    int lightofs;  // <-- ИСПРАВЛЕНО!
+    int lightofs;
 };
 
 struct BSPEdge { unsigned short v[2]; };
@@ -64,12 +63,18 @@ struct FaceDrawCall {
     GLuint texID;
     unsigned int indexOffset;
     unsigned int indexCount;
+    int faceIndex;
+
+    // Параметры прозрачности HL1
+    unsigned char rendermode = 0;
+    unsigned char renderamt = 255;
+    bool isTransparent = false;
 };
 
 class BSPLoader {
 private:
-    std::vector<glm::vec3> vertices;        // Конвертированные вершины (для рендера)
-    std::vector<glm::vec3> originalVertices; // Оригинальные BSP вершины (для lightmap)
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> originalVertices;
     std::vector<BSPEdge> edges;
     std::vector<int> surfEdges;
     std::vector<BSPFace> faces;
@@ -101,7 +106,7 @@ private:
     bool parseEntities(FILE* file, const BSPHeader& header);
     bool loadRequiredWADsFromEntities();
     void buildMesh();
-    void buildSubmodelMesh(const BSPModel& subModel);
+    void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt);
     bool loadLighting(FILE* file, const BSPHeader& header);
 
 public:
@@ -130,7 +135,6 @@ public:
 
     std::vector<uint8_t> lightingData;
 
-    // ИСПРАВЛЕНО: используем lightofs
     int getFaceLightOffset(int faceIndex) const {
         if (faceIndex >= 0 && faceIndex < static_cast<int>(faces.size())) {
             return faces[faceIndex].lightofs;
@@ -149,10 +153,9 @@ public:
     const std::vector<int>& getSurfEdges() const { return surfEdges; }
     const std::vector<BSPEdge>& getEdges() const { return edges; }
 
-    // НОВОЕ: доступ к оригинальным вершинам и плоскостям
     const std::vector<glm::vec3>& getOriginalVertices() const { return originalVertices; }
     const std::vector<glm::vec3>& getVertices() const { return vertices; }
-    const std::vector<BSPPlane>& getPlanes() const { return planes; }  // <-- ДОБАВЛЕНО!
+    const std::vector<BSPPlane>& getPlanes() const { return planes; }
 
     void getFaceLightmapDims(int faceIndex, int& width, int& height, float& minS, float& minT) const;
 

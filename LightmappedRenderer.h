@@ -2,6 +2,7 @@
 #include "Renderer.h"
 #include "LightmapManager.h"
 #include <memory>
+#include <unordered_set>
 
 struct BSPVertexLightmapped {
     glm::vec3 position;
@@ -16,6 +17,11 @@ struct LMFaceDrawCall {
     unsigned int indexOffset;
     unsigned int indexCount;
     int faceIndex;
+
+    // Добавляем поля для прозрачности
+    unsigned char rendermode = 0;
+    unsigned char renderamt = 255;
+    bool isTransparent = false;
 };
 
 class LightmappedRenderer {
@@ -46,6 +52,8 @@ public:
 
     const Renderer::RenderStats& getStats() const { return stats; }
 
+    void setViewport(int width, int height);
+
 private:
     std::unique_ptr<Shader> lightmappedShader;
     GLuint worldVAO = 0, worldVBO = 0, worldEBO = 0;
@@ -57,6 +65,7 @@ private:
     Renderer::RenderStats stats;
     GBuffer gBuffer;
     std::vector<LMFaceDrawCall> faceDrawCalls;
+    bool hasTransparentFaces = false;
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
@@ -65,4 +74,5 @@ private:
     void cleanup();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();
+    std::unordered_map<int, std::pair<int, int>> faceTransparency;
 };
