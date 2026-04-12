@@ -113,4 +113,7 @@ private:
     void refreshDisplayModes();
     void saveSettings();
     void loadSettings();
+    
+    // Локализация
+    std::string tr(const std::string& key, const std::string& fallback = "") const;
 };
