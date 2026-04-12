@@ -8,11 +8,7 @@
 #include <vector>
 #include "Menu.h"
 
-// === НАСТРОЙКИ ЯРКОСТИ ===
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
-constexpr float LIGHTMAP_INTENSITY_STEP = 0.2f;
-constexpr float LIGHTMAP_INTENSITY_MIN = 0.2f;
-constexpr float LIGHTMAP_INTENSITY_MAX = 5.0f;
 
 class Game;
 class BSPLoader;

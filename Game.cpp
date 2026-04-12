@@ -96,19 +96,6 @@ void Game::processInput(GLFWwindow* window) {
     }
     if (glfwGetKey(window, GLFW_KEY_F6) == GLFW_RELEASE) f6Pressed = false;
 
-    if (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS) {
-        auto* lm = Engine::getInstance()->getLMRenderer();
-        if (lm) {
-            Engine::getInstance()->setLightmapIntensity(lm->getLightmapIntensity() + 0.1f);
-        }
-    }
-    if (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS) {
-        auto* lm = Engine::getInstance()->getLMRenderer();
-        if (lm) {
-            lm->setLightmapIntensity(std::max(0.0f, lm->getLightmapIntensity() - 0.1f));
-        }
-    }
-
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && !noclipPressed) {
         player->toggleNoclip();
         std::cout << "Noclip: " << (player->isNoclip() ? "ON" : "OFF") << "\n";

@@ -485,7 +485,6 @@ void Engine::setShowLightmapsOnly(bool show) {
 }
 
 void Engine::setLightmapIntensity(float intensity) {
-    intensity = std::max(LIGHTMAP_INTENSITY_MIN, std::min(LIGHTMAP_INTENSITY_MAX, intensity));
     lightmapIntensity = intensity;
     if (lmRenderer) lmRenderer->setLightmapIntensity(intensity);
 }

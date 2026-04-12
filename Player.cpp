@@ -261,6 +261,25 @@ void Player::Duck(float deltaTime) {
 
                 position.y += shift;
             }
+            // === ИСПРАВЛЕНИЕ: Под водой тоже нужно проверять и смещаться ===
+            else if (IsInWater()) {
+                glm::vec3 testPos = position;
+                testPos.y += shift;
+
+                float savedHeight = m_fHullHeight;
+                m_fHullHeight = newHeight;
+                bool canStand = !checkCollisionMesh(testPos);
+                m_fHullHeight = savedHeight;
+
+                if (!canStand) {
+                    // Нельзя встать - возвращаем флаг
+                    m_afPhysicsFlags |= PFLAG_DUCKING;
+                    return;
+                }
+
+                // Можем встать - смещаем позицию вверх
+                position.y += shift;
+            }
 
             m_fHullHeight = newHeight;
         }
@@ -268,7 +287,7 @@ void Player::Duck(float deltaTime) {
 
     // Обновляем AABB для совместимости
     float halfHeight = m_fHullHeight * 0.5f;
-    m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, -m_fHullRadius);
+    m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, m_fHullRadius);
     m_vecHullMax = glm::vec3(m_fHullRadius, halfHeight, m_fHullRadius);
 }
 
