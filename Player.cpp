@@ -237,7 +237,7 @@ void Player::Duck(float deltaTime) {
                     return;
                 }
 
-                // Поднимаем origin на 18 единиц
+                // Поднимаем origin на 18 единицa
                 position.y += shift;
             }
 
