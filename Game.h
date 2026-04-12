@@ -29,7 +29,6 @@ public:
 
     void resetCameraAndMouse() {
         firstMouse = true;
-        // Сбрасываем углы, если нужно
         yaw = -90.0f;
         pitch = 0.0f;
         player->setYaw(yaw);
@@ -41,6 +40,14 @@ public:
         lastY = y;
         firstMouse = false;
     }
+
+    void setMouseSensitivity(float sens) {
+        mouseSensitivity = sens;
+    }
+    float getMouseSensitivity() const { return mouseSensitivity; }
+
+    // Обновлённое значение по умолчанию 0.5 вместо 0.1
+    float mouseSensitivity = 0.5f;
 
 private:
     std::unique_ptr<Player> player;
@@ -55,7 +62,7 @@ private:
     bool f1Pressed = false, f2Pressed = false, f3Pressed = false;
     bool f5Pressed = false, f6Pressed = false;
     bool noclipPressed = false, bhopPressed = false;
-    bool f10Pressed = false;  // Добавлено
+    bool f10Pressed = false;
 
     void processMouse(GLFWwindow* window);
 };

@@ -14,17 +14,16 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <iostream>
+#include "Settings.h"
 
 Engine* Engine::instance = nullptr;
 
-// === ПРОТОТИПЫ СТАТИЧЕСКИХ CALLBACK ФУНКЦИЙ ===
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
-// === РЕАЛИЗАЦИИ CALLBACK ФУНКЦИЙ ===
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     Engine* engine = Engine::getInstance();
     if (engine) {
@@ -62,7 +61,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
 }
 
-// === КОНСТРУКТОР/ДЕСТРУКТОР ===
 Engine::Engine() {
     instance = this;
 }
@@ -72,7 +70,6 @@ Engine::~Engine() {
     instance = nullptr;
 }
 
-// === INIT GLFW ===
 bool Engine::initGLFW() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
@@ -84,18 +81,45 @@ bool Engine::initGLFW() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    window = glfwCreateWindow(width, height, "HuitaEngine", nullptr, nullptr);
+    // Загружаем настройки для определения fullscreen
+    SettingsData settings;
+    settings.load();
+
+    GLFWmonitor* monitor = nullptr;
+    int windowX = 0, windowY = 0;
+
+    if (settings.fullscreen) {
+        monitor = glfwGetPrimaryMonitor();
+        windowX = 0;
+        windowY = 0;
+        width = settings.screenWidth;
+        height = settings.screenHeight;
+    }
+    else {
+        // Оконный режим - центрируем окно
+        monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        windowX = (mode->width - settings.screenWidth) / 2;
+        windowY = (mode->height - settings.screenHeight) / 2;
+        width = settings.screenWidth;
+        height = settings.screenHeight;
+    }
+
+    window = glfwCreateWindow(width, height, "HuitaEngine", monitor, nullptr);
     if (!window) {
         std::cerr << "Failed to create window\n";
         glfwTerminate();
         return false;
     }
 
+    if (!settings.fullscreen) {
+        glfwSetWindowPos(window, windowX, windowY);
+    }
+
     glfwMakeContextCurrent(window);
     glfwSwapInterval(0);
 
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
@@ -142,11 +166,19 @@ bool Engine::initSystems() {
 
     menu->init(window, width, height);
 
+    menu->setOnSettingsChanged([this](const SettingsData& settings) {
+        applySettings(settings);
+        });
+
     menu->setOnMapSelected([this](const std::string& mapPath) {
         loadMap(mapPath);
         });
 
     menu->setOnExitGame([this]() {
+        // Этот callback больше не используется для выхода из главного меню
+        });
+
+    menu->setOnQuitGame([this]() {
         glfwSetWindowShouldClose(window, true);
         });
 
@@ -340,7 +372,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
         lightmapManager->debugPrintLightmapInfo();
     }
 
-    // === СОБИРАЕМ КОЛЛИЗИЮ БЕЗ ВОДЫ ===
     {
         const auto& allVertices = bspLoader->getMeshVertices();
         const auto& allIndices = bspLoader->getMeshIndices();
@@ -406,7 +437,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
         std::cout << "[SPAWN] Using fallback position\n";
     }
 
-    // Загружаем зоны воды
     waterZones.clear();
     auto waterEntities = bspLoader->getEntitiesByClass("func_water");
 
@@ -500,6 +530,17 @@ void Engine::showMenu() {
     }
 }
 
+void Engine::applySettings(const SettingsData& settings) {
+    if (game) {
+        game->setMouseSensitivity(settings.mouseSensitivity);
+    }
+
+    width = settings.screenWidth;
+    height = settings.screenHeight;
+
+    std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity << std::endl;
+}
+
 void Engine::hideMenu() {
     menuActive = false;
     if (menu) {
@@ -561,13 +602,16 @@ void Engine::run() {
             game->processInput(window);
         }
 
+        // ESC открывает меню паузы
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !menuActive) {
             menuActive = true;
             if (menu) {
                 menu->setActive(true);
-                menu->setState(Menu::State::CONFIRM_EXIT);
+                menu->setState(Menu::State::PAUSE);
             }
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            if (window) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
         }
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -599,7 +643,6 @@ void Engine::toggleLightmappedRenderer() {
     if (lmRenderer) {
         lmRenderer->setUseLighting(useLightmapped);
     }
-    // Сброс состояния OpenGL при переключении
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -619,7 +662,6 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
-    // Используем ТОЛЬКО LightmappedRenderer
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->beginFrame(glm::vec3(0.02f, 0.02f, 0.02f));
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));

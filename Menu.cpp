@@ -4,10 +4,12 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
 static const float MENU_FONT_SIZE = 20.0f;
+static const float TAB_BAR_HEIGHT = 50.0f;
 
 Menu::Menu() = default;
 Menu::~Menu() = default;
@@ -25,10 +27,15 @@ void Menu::init(GLFWwindow* win, int w, int h) {
     width = w;
     height = h;
 
+    loadSettings();
+    refreshDisplayModes();
+    settingsSensitivity = settings.mouseSensitivity;
+    settingsTab = 0;
+    pendingApplySettings = false;
+
     reset();
 
     ImGuiIO& io = ImGui::GetIO();
-
     io.Fonts->Clear();
     io.FontDefault = nullptr;
 
@@ -92,6 +99,8 @@ void Menu::reset() {
     returnToMenu = false;
     mousePressed = false;
     loadingMapName.clear();
+    settingsTab = 0;
+    pendingApplySettings = false;
 }
 
 void Menu::setActive(bool act) {
@@ -160,7 +169,24 @@ void Menu::handleKey(int key, int action) {
             if (onReturnToGame) onReturnToGame();
         }
     }
-    // В состоянии LOADING клавиши не обрабатываем
+    else if (currentState == State::CONFIRM_QUIT) {
+        if (key == GLFW_KEY_ESCAPE) {
+            currentState = State::MAIN_MENU;
+        }
+    }
+    else if (currentState == State::SETTINGS) {
+        if (key == GLFW_KEY_ESCAPE) {
+            loadSettings();
+            settingsSensitivity = settings.mouseSensitivity;
+            currentState = State::MAIN_MENU;
+        }
+    }
+    // <-- НОВОЕ: ESC в паузе = вернуться в игру
+    else if (currentState == State::PAUSE) {
+        if (key == GLFW_KEY_ESCAPE) {
+            if (onReturnToGame) onReturnToGame();
+        }
+    }
 }
 
 void Menu::handleScroll(double xoffset, double yoffset) {
@@ -176,6 +202,77 @@ void Menu::showLoading(const std::string& mapName) {
 void Menu::hideLoading() {
     currentState = State::MAIN_MENU;
     loadingMapName.clear();
+}
+
+void Menu::refreshDisplayModes() {
+    availableModes = SettingsData::getAvailableDisplayModes();
+
+    selectedModeIndex = -1;
+    for (size_t i = 0; i < availableModes.size(); i++) {
+        if (availableModes[i].width == settings.screenWidth &&
+            availableModes[i].height == settings.screenHeight) {
+            selectedModeIndex = (int)i;
+            break;
+        }
+    }
+
+    if (selectedModeIndex == -1 && settings.screenWidth > 0 && settings.screenHeight > 0) {
+        availableModes.insert(availableModes.begin(),
+            DisplayMode(settings.screenWidth, settings.screenHeight));
+        selectedModeIndex = 0;
+    }
+}
+
+void Menu::applySettings() {
+    if (window) {
+        GLFWmonitor* monitor = settings.fullscreen ? glfwGetPrimaryMonitor() : nullptr;
+
+        if (settings.fullscreen && monitor) {
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(window, monitor, 0, 0,
+                settings.screenWidth, settings.screenHeight, mode->refreshRate);
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+        }
+        else {
+            // Декорируем окно (рамка для перетаскивания)
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+
+            // Получаем размеры монитора для центрирования
+            GLFWmonitor* primary = glfwGetPrimaryMonitor();
+            const GLFWvidmode* mode = glfwGetVideoMode(primary);
+            int monitorWidth = mode->width;
+            int monitorHeight = mode->height;
+
+            int windowX = (monitorWidth - settings.screenWidth) / 2;
+            int windowY = (monitorHeight - settings.screenHeight) / 2;
+
+            glfwSetWindowMonitor(window, nullptr, windowX, windowY,
+                settings.screenWidth, settings.screenHeight, 0);
+        }
+
+        glfwGetFramebufferSize(window, &width, &height);
+    }
+
+    if (onSettingsChanged) {
+        onSettingsChanged(settings);
+    }
+
+    std::cout << "[MENU] Applied settings: "
+        << settings.screenWidth << "x" << settings.screenHeight
+        << " fullscreen=" << settings.fullscreen
+        << " sensitivity=" << settings.mouseSensitivity << std::endl;
+}
+
+void Menu::saveSettings() {
+    settings.mouseSensitivity = settingsSensitivity;
+    settings.save();
+    std::cout << "[MENU] Settings saved" << std::endl;
+}
+
+void Menu::loadSettings() {
+    settings.load();
+    settingsSensitivity = settings.mouseSensitivity;
+    std::cout << "[MENU] Settings loaded: sensitivity=" << settingsSensitivity << std::endl;
 }
 
 void Menu::render() {
@@ -198,11 +295,24 @@ void Menu::render() {
         ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    drawList->AddRectFilled(
-        ImVec2(0, 0),
-        ImVec2((float)width, (float)height),
-        IM_COL32(0, 0, 0, 180)
-    );
+
+    // Фон: для паузы — полупрозрачный чёрный, для главного меню — темный
+    if (currentState == State::PAUSE) {
+        // Полупрозрачный чёрный фон для паузы
+        drawList->AddRectFilled(
+            ImVec2(0, 0),
+            ImVec2((float)width, (float)height),
+            IM_COL32(0, 0, 0, 160)  // <-- полупрозрачный
+        );
+    }
+    else {
+        // Обычный фон для главного меню
+        drawList->AddRectFilled(
+            ImVec2(0, 0),
+            ImVec2((float)width, (float)height),
+            IM_COL32(0, 0, 0, 180)
+        );
+    }
 
     switch (currentState) {
     case State::MAIN_MENU:
@@ -214,13 +324,57 @@ void Menu::render() {
     case State::CONFIRM_EXIT:
         renderConfirmExit();
         break;
+    case State::CONFIRM_QUIT:
+        renderConfirmQuit();
+        break;
     case State::LOADING:
         renderLoading();
+        break;
+    case State::SETTINGS:
+        renderSettings();
+        break;
+    case State::PAUSE:      // <-- НОВОЕ
+        renderPause();
         break;
     }
 
     ImGui::End();
     ImGui::PopStyleVar(2);
+}
+
+void Menu::renderPause() {
+    float buttonX = 50.0f;
+    float startY = height - 200.0f;
+    float buttonHeight = 35.0f;
+    float spacing = 8.0f;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, spacing));
+
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 100, 80));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(150, 150, 150, 100));
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
+
+    ImGui::SetCursorPos(ImVec2(buttonX, startY));
+    if (ImGui::Button(u8"ПРОДОЛЖИТЬ", ImVec2(0, buttonHeight))) {
+        if (onReturnToGame) onReturnToGame();
+    }
+
+    ImGui::SetCursorPos(ImVec2(buttonX, startY + buttonHeight + spacing));
+    if (ImGui::Button(u8"НАСТРОЙКИ", ImVec2(0, buttonHeight))) {
+        previousState = State::PAUSE;  // <-- ЗАПОМИНАЕМ что мы были в паузе
+        currentState = State::SETTINGS;
+        settingsSensitivity = settings.mouseSensitivity;
+        refreshDisplayModes();
+    }
+
+    ImGui::SetCursorPos(ImVec2(buttonX, startY + (buttonHeight + spacing) * 2));
+    if (ImGui::Button(u8"В ГЛАВНОЕ МЕНЮ", ImVec2(0, buttonHeight))) {
+        currentState = State::CONFIRM_EXIT;
+    }
+
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
 }
 
 void Menu::renderMainMenu() {
@@ -242,17 +396,205 @@ void Menu::renderMainMenu() {
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + buttonHeight + spacing));
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 150, 150));
-    ImGui::Button(u8"НАСТРОЙКИ", ImVec2(0, buttonHeight));
-    ImGui::PopStyleColor();
+    if (ImGui::Button(u8"НАСТРОЙКИ", ImVec2(0, buttonHeight))) {
+        previousState = State::MAIN_MENU;  // <-- ЗАПОМИНАЕМ что мы были в главном меню
+        currentState = State::SETTINGS;
+        settingsSensitivity = settings.mouseSensitivity;
+        refreshDisplayModes();
+    }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + (buttonHeight + spacing) * 2));
     if (ImGui::Button(u8"ВЫХОД", ImVec2(0, buttonHeight))) {
-        if (onExitGame) onExitGame();
+        currentState = State::CONFIRM_QUIT;
     }
 
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar();
+}
+
+void Menu::renderSettings() {
+    float panelX = width * 0.2f;
+    float panelY = 80.0f;
+    float panelWidth = width * 0.6f;
+    float panelHeight = height - 160.0f;
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(
+        ImVec2(panelX, panelY),
+        ImVec2(panelX + panelWidth, panelY + panelHeight),
+        IM_COL32(30, 30, 40, 220),
+        10.0f
+    );
+    drawList->AddRect(
+        ImVec2(panelX, panelY),
+        ImVec2(panelX + panelWidth, panelY + panelHeight),
+        IM_COL32(80, 80, 100, 255),
+        10.0f, 0, 2.0f
+    );
+
+    ImGui::SetCursorPos(ImVec2(panelX + 20, panelY + 15));
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+    ImGui::Text(u8"НАСТРОЙКИ");
+    ImGui::PopStyleColor();
+
+    float tabWidth = 120.0f;
+    float tabY = panelY + 50.0f;
+
+    ImGui::SetCursorPos(ImVec2(panelX + 20, tabY));
+    ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 0 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
+    if (ImGui::Button(u8"ИГРА", ImVec2(tabWidth, 35))) {
+        settingsTab = 0;
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine(0, 5);
+    ImGui::SetCursorPosX(panelX + 20 + tabWidth + 5);
+    ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 1 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
+    if (ImGui::Button(u8"ГРАФИКА", ImVec2(tabWidth, 35))) {
+        settingsTab = 1;
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine(0, 5);
+    ImGui::SetCursorPosX(panelX + 20 + tabWidth * 2 + 10);
+    ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 2 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
+    if (ImGui::Button(u8"ЗВУК", ImVec2(tabWidth, 35))) {
+        settingsTab = 2;
+    }
+    ImGui::PopStyleColor(2);
+
+    float contentY = tabY + 50.0f;
+    float contentHeight = panelHeight - 140.0f;
+
+    ImGui::SetCursorPos(ImVec2(panelX + 20, contentY));
+    ImGui::BeginChild("SettingsContent", ImVec2(panelWidth - 40, contentHeight), false);
+
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 220, 255));
+
+    if (settingsTab == 0) {
+        ImGui::Text(u8"УПРАВЛЕНИЕ");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text(u8"Чувствительность мыши:");
+        float oldSens = settingsSensitivity;
+        ImGui::SliderFloat(u8"##sensitivity", &settingsSensitivity, 0.1f, 2.0f, "%.2f");
+
+        ImGui::SameLine();
+        ImGui::Text(" (%.2f)", settingsSensitivity);
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+    }
+    else if (settingsTab == 1) {
+        ImGui::Text(u8"ДИСПЛЕЙ");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        bool fsChanged = false;
+        bool currentFullscreen = settings.fullscreen;
+        if (ImGui::Checkbox(u8"Полноэкранный режим", &currentFullscreen)) {
+            settings.fullscreen = currentFullscreen;
+            fsChanged = true;
+        }
+
+        ImGui::Spacing();
+
+        if (!availableModes.empty()) {
+            ImGui::Text(u8"Разрешение экрана:");
+
+            std::vector<const char*> modeNames;
+            for (const auto& mode : availableModes) {
+                modeNames.push_back(mode.name.c_str());
+            }
+
+            int currentMode = selectedModeIndex;
+            if (ImGui::Combo(u8"##resolution", &currentMode, modeNames.data(), (int)modeNames.size())) {
+                if (currentMode >= 0 && currentMode < (int)availableModes.size()) {
+                    settings.screenWidth = availableModes[currentMode].width;
+                    settings.screenHeight = availableModes[currentMode].height;
+                    selectedModeIndex = currentMode;
+                    settings.displayModeIndex = currentMode;
+                    fsChanged = true;
+                }
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Text(u8"Текущее разрешение: %dx%d", settings.screenWidth, settings.screenHeight);
+
+        if (fsChanged) {
+            pendingApplySettings = true;
+        }
+    }
+    else if (settingsTab == 2) {
+        ImGui::Text(u8"АУДИО");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::Text(u8"Громкость:");
+        float volume = settings.masterVolume;
+        if (ImGui::SliderFloat(u8"##volume", &volume, 0.0f, 1.0f, "%.0f%%")) {
+            settings.masterVolume = volume;
+        }
+
+        ImGui::Spacing();
+
+        bool mute = settings.mute;
+        if (ImGui::Checkbox(u8"Без звука", &mute)) {
+            settings.mute = mute;
+        }
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Text(u8"(Звук будет добавлен в следующих обновлениях)");
+        ImGui::Text(u8"Сейчас доступна только заготовка интерфейса");
+    }
+
+    ImGui::PopStyleColor();
+    ImGui::EndChild();
+
+    float buttonY = panelY + panelHeight - 55.0f;
+    float buttonWidth = 150.0f;
+
+    // Кнопка СОХРАНИТЬ
+    ImGui::SetCursorPos(ImVec2(panelX + panelWidth - buttonWidth - 20, buttonY));
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(70, 70, 70, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(90, 90, 90, 255));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(110, 110, 110, 255));
+    if (ImGui::Button(u8"СОХРАНИТЬ", ImVec2(buttonWidth, 40))) {
+        settings.mouseSensitivity = settingsSensitivity;
+        saveSettings();
+
+        // <-- ИСПРАВЛЕНИЕ: ВСЕГДА вызываем applySettings для применения сенсы и других настроек
+        if (onSettingsChanged) {
+            onSettingsChanged(settings);
+        }
+
+        // Применяем настройки дисплея только если они менялись
+        if (pendingApplySettings) {
+            applySettings();  // Это для смены разрешения/полноэкранного режима
+            pendingApplySettings = false;
+        }
+
+        currentState = previousState;
+    }
+    ImGui::PopStyleColor(3);
+
+    // Кнопка ОТМЕНА
+    ImGui::SetCursorPos(ImVec2(panelX + 20, buttonY));
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(70, 70, 70, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(90, 90, 90, 255));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(110, 110, 110, 255));
+    if (ImGui::Button(u8"ОТМЕНА", ImVec2(buttonWidth, 40))) {
+        loadSettings();
+        settingsSensitivity = settings.mouseSensitivity;
+        currentState = previousState;
+    }
+    ImGui::PopStyleColor(3);
 }
 
 void Menu::renderMapSelect() {
@@ -308,11 +650,10 @@ void Menu::renderMapSelect() {
 
         if (clicked) {
             if (ImGui::IsMouseDoubleClicked(0)) {
-                // При двойном клике показываем экран загрузки
                 std::string fullPath = "maps/" + maps[i];
                 showLoading(displayName);
                 if (onMapSelected) {
-                    onMapSelected(fullPath);  // Engine сам покажет loading
+                    onMapSelected(fullPath);
                 }
             }
             else {
@@ -339,7 +680,6 @@ void Menu::renderMapSelect() {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
         if (ImGui::Button(u8"ЗАГРУЗИТЬ", ImVec2(buttonWidth, buttonHeight))) {
-            // При клике на кнопку показываем экран загрузки
             std::string displayName = maps[selectedMapIndex];
             size_t dotPos = displayName.find_last_of('.');
             if (dotPos != std::string::npos) {
@@ -347,7 +687,7 @@ void Menu::renderMapSelect() {
             }
             showLoading(displayName);
             if (onMapSelected) {
-                onMapSelected("maps/" + maps[selectedMapIndex]);  // Engine сам покажет loading
+                onMapSelected("maps/" + maps[selectedMapIndex]);
             }
         }
         ImGui::PopStyleColor(2);
@@ -377,6 +717,7 @@ void Menu::renderMapSelect() {
     ImGui::PopStyleColor();
 }
 
+// Диалог подтверждения выхода в главное меню (из игры)
 void Menu::renderConfirmExit() {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
@@ -433,25 +774,78 @@ void Menu::renderConfirmExit() {
     ImGui::PopStyleVar();
 }
 
-void Menu::renderLoading() {
-    // Просто тёмный фон - никаких кнопок
+// Новый диалог подтверждения полного выхода из игры
+void Menu::renderConfirmQuit() {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-    // Очищаем весь экран тёмным фоном
+    drawList->AddRectFilled(
+        ImVec2(0, 0),
+        ImVec2((float)width, (float)height),
+        IM_COL32(0, 0, 0, 200)
+    );
+
+    float dialogWidth = 400.0f;
+    float dialogHeight = 150.0f;
+    float dialogX = (width - dialogWidth) * 0.5f;
+    float dialogY = (height - dialogHeight) * 0.5f;
+
+    drawList->AddRectFilled(
+        ImVec2(dialogX, dialogY),
+        ImVec2(dialogX + dialogWidth, dialogY + dialogHeight),
+        IM_COL32(50, 50, 50, 255)
+    );
+    drawList->AddRect(
+        ImVec2(dialogX, dialogY),
+        ImVec2(dialogX + dialogWidth, dialogY + dialogHeight),
+        IM_COL32(120, 120, 120, 255),
+        0.0f, 0, 2.0f
+    );
+
+    ImGui::SetCursorPos(ImVec2(dialogX + 20, dialogY + 30));
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+    ImGui::Text(u8"Выйти из игры?");
+    ImGui::PopStyleColor();
+
+    float buttonY = dialogY + 90;
+    float buttonWidth = 120.0f;
+    float buttonHeight = 35.0f;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+
+    ImGui::SetCursorPos(ImVec2(dialogX + 60, buttonY));
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
+    if (ImGui::Button(u8"ДА", ImVec2(buttonWidth, buttonHeight))) {
+        if (onQuitGame) onQuitGame();
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::SetCursorPos(ImVec2(dialogX + dialogWidth - 60 - buttonWidth, buttonY));
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
+    if (ImGui::Button(u8"НЕТ", ImVec2(buttonWidth, buttonHeight))) {
+        currentState = State::MAIN_MENU;
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::PopStyleVar();
+}
+
+void Menu::renderLoading() {
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
     drawList->AddRectFilled(
         ImVec2(0, 0),
         ImVec2((float)width, (float)height),
         IM_COL32(10, 10, 15, 255)
     );
 
-    // Прямоугольник с округлёнными краями внизу справа
     float boxWidth = 200.0f;
     float boxHeight = 60.0f;
-    float boxX = width - boxWidth - 30.0f;   // Отступ 30px справа
-    float boxY = height - boxHeight - 30.0f; // Отступ 30px снизу
+    float boxX = width - boxWidth - 30.0f;
+    float boxY = height - boxHeight - 30.0f;
     float rounding = 10.0f;
 
-    // Тень
     drawList->AddRectFilled(
         ImVec2(boxX + 2, boxY + 2),
         ImVec2(boxX + boxWidth + 2, boxY + boxHeight + 2),
@@ -459,7 +853,6 @@ void Menu::renderLoading() {
         rounding
     );
 
-    // Основной прямоугольник
     drawList->AddRectFilled(
         ImVec2(boxX, boxY),
         ImVec2(boxX + boxWidth, boxY + boxHeight),
@@ -467,7 +860,6 @@ void Menu::renderLoading() {
         rounding
     );
 
-    // Обводка
     drawList->AddRect(
         ImVec2(boxX, boxY),
         ImVec2(boxX + boxWidth, boxY + boxHeight),
@@ -475,18 +867,15 @@ void Menu::renderLoading() {
         rounding, 0, 1.5f
     );
 
-    // Текст загрузки
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
 
-    // Анимированные точки
     static float timer = 0.0f;
-    timer += 0.016f; // Примерно на кадр
+    timer += 0.016f;
     int dots = ((int)(timer * 2.0f) % 4);
     std::string loadingText = "Loading";
     for (int i = 0; i < dots; i++) loadingText += ".";
     for (int i = dots; i < 3; i++) loadingText += " ";
 
-    // Центрируем текст внутри бокса
     ImVec2 textSize = ImGui::CalcTextSize(loadingText.c_str());
     ImGui::SetCursorPos(ImVec2(
         boxX + (boxWidth - textSize.x) * 0.5f,
@@ -494,7 +883,6 @@ void Menu::renderLoading() {
     ));
     ImGui::Text("%s", loadingText.c_str());
 
-    // Название карты (чуть меньше)
     if (!loadingMapName.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 200, 255));
         std::string mapText = loadingMapName;
@@ -520,6 +908,10 @@ void Menu::setOnExitGame(std::function<void()> callback) {
 
 void Menu::setOnReturnToGame(std::function<void()> callback) {
     onReturnToGame = callback;
+}
+
+void Menu::setOnQuitGame(std::function<void()> callback) {
+    onQuitGame = callback;
 }
 
 void Menu::selectMap(int index) {

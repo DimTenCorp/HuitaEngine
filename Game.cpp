@@ -12,6 +12,10 @@ Game::~Game() = default;
 void Game::init() {
     player = std::make_unique<Player>();
     hud = std::make_unique<HUD>();
+
+    SettingsData settings;
+    settings.load();
+    mouseSensitivity = settings.mouseSensitivity;
 }
 
 void Game::setViewAngles(float newYaw, float newPitch) {
@@ -37,8 +41,12 @@ void Game::processMouse(GLFWwindow* window) {
     lastX = (float)xpos;
     lastY = (float)ypos;
 
-    yaw += xoffset * 0.1f;
-    pitch += yoffset * 0.1f;
+    // Умножаем на сенсу, но с нелинейной шкалой для лучшего контроля
+    // При сенсе 0.5 получаем множитель ~0.05, при 2.0 - ~0.4
+    float sensMultiplier = mouseSensitivity * 0.1f;
+
+    yaw += xoffset * sensMultiplier;
+    pitch += yoffset * sensMultiplier;
 
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
@@ -52,11 +60,9 @@ void Game::update(float deltaTime) {
 
     auto* collider = Engine::getInstance()->getCollider();
     auto& waterZones = Engine::getInstance()->getWaterZones();
-    
-    // Сначала проверяем воду и устанавливаем флаги
+
     player->CheckWater(waterZones);
-    
-    // Затем обновляем игрока (внутри применится водная физика если он в воде)
+
     if (collider) {
         player->update(deltaTime, yaw, pitch, collider);
     }
@@ -112,6 +118,6 @@ void Game::processInput(GLFWwindow* window) {
 }
 
 void Game::render(int screenWidth, int screenHeight) {
-    hud->setScreenSize(screenWidth, screenHeight);  // Передаём размеры в HUD
-    hud->render();  // Теперь без параметров
+    hud->setScreenSize(screenWidth, screenHeight);
+    hud->render();
 }

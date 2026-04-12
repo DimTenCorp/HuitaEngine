@@ -63,6 +63,8 @@ public:
 
     void setLightingEnabled(bool enabled);
 
+    void applySettings(const SettingsData& settings);
+
 private:
     static Engine* instance;
 
