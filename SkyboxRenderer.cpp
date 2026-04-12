@@ -1,7 +1,6 @@
 ﻿#include "pch.h"
 #include "SkyboxRenderer.h"
 #include "Shader.h"
-#include "WADLoader.h"
 #include <iostream>
 #include <fstream>
 
@@ -128,7 +127,10 @@ void SkyboxRenderer::createCubeMesh() {
 
 bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height) {
     std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) return false;
+    if (!file.is_open()) {
+        std::cerr << "[SKY] Cannot open TGA: " << path << std::endl;
+        return false;
+    }
 
     uint8_t id_length = file.get();
     uint8_t colormap_type = file.get();
@@ -143,13 +145,21 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
     width = w;
     height = h;
 
-    uint8_t pixel_size = file.get();
-    file.get(); // attributes
+    // Byte 16: pixel depth (bits per pixel)
+    // Byte 17: image descriptor
+    uint8_t pixel_size = file.get();  // byte 16 - bits per pixel
+    file.get(); // byte 17 - image descriptor
 
     if (id_length > 0) file.seekg(id_length, std::ios::cur);
 
-    if (image_type != 2 && image_type != 10) return false;
-    if (pixel_size != 24 && pixel_size != 32) return false;
+    if (image_type != 2 && image_type != 10) {
+        std::cerr << "[SKY] Unsupported TGA type: " << (int)image_type << " in " << path << std::endl;
+        return false;
+    }
+    if (pixel_size != 24 && pixel_size != 32) {
+        std::cerr << "[SKY] Unsupported TGA pixel size: " << (int)pixel_size << " in " << path << std::endl;
+        return false;
+    }
 
     rgba.resize(width * height * 4);
 
@@ -207,16 +217,23 @@ bool SkyboxRenderer::loadTGA(const std::string& path, std::vector<uint8_t>& rgba
             }
         }
     }
+    std::cout << "[SKY] Loaded TGA: " << path << " (" << width << "x" << height << ", " << (int)pixel_size << "bpp)" << std::endl;
     return true;
 }
 
 bool SkyboxRenderer::loadBMP(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height) {
     std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) return false;
+    if (!file.is_open()) {
+        std::cerr << "[SKY] Cannot open BMP: " << path << std::endl;
+        return false;
+    }
 
     uint16_t magic;
     file.read(reinterpret_cast<char*>(&magic), 2);
-    if (magic != 0x4D42) return false;
+    if (magic != 0x4D42) {
+        std::cerr << "[SKY] Invalid BMP magic in " << path << std::endl;
+        return false;
+    }
 
     file.seekg(8, std::ios::cur);
     uint32_t dataOffset;
@@ -235,7 +252,10 @@ bool SkyboxRenderer::loadBMP(const std::string& path, std::vector<uint8_t>& rgba
     uint16_t bpp;
     file.read(reinterpret_cast<char*>(&bpp), 2);
 
-    if (bpp != 24) return false;
+    if (bpp != 24) {
+        std::cerr << "[SKY] Unsupported BMP bpp: " << bpp << " in " << path << std::endl;
+        return false;
+    }
 
     rgba.resize(width * height * 4);
     file.seekg(dataOffset, std::ios::beg);
@@ -256,37 +276,15 @@ bool SkyboxRenderer::loadBMP(const std::string& path, std::vector<uint8_t>& rgba
         }
         for (int p = 0; p < rowSize - width * 3; p++) file.get();
     }
+    std::cout << "[SKY] Loaded BMP: " << path << " (" << width << "x" << height << ")" << std::endl;
     return true;
 }
 
-// Helper для получения данных текстуры из WADLoader через glGetTexImage
-bool SkyboxRenderer::loadTextureFromWAD(const std::string& texName, WADLoader& wadLoader, 
-                                         std::vector<uint8_t>& rgba, int& width, int& height) {
-    int tw, th;
-    GLuint texId;
-    if (!wadLoader.getTextureInfo(texName, tw, th, texId)) {
+bool SkyboxRenderer::loadSkyTextures(const std::string& skyName) {
+    if (skyName.empty()) {
+        std::cerr << "[SKY] Empty sky name" << std::endl;
         return false;
     }
-    
-    if (texId == 0) {
-        return false;
-    }
-    
-    width = tw;
-    height = th;
-    rgba.resize(width * height * 4);
-    
-    // Bind текстуру и читаем данные
-    glBindTexture(GL_TEXTURE_2D, texId);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    
-    std::cout << "[SKY] Loaded from WAD: " << texName << " (" << width << "x" << height << ")" << std::endl;
-    return true;
-}
-
-bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadLoader) {
-    if (skyName.empty()) return false;
     currentSkyName = skyName;
 
     // Удаляем старую cube map текстуру если есть
@@ -332,29 +330,11 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
         std::string tgaPath = "gfx/env/" + skyName + suffix + ".tga";
         if (loadTGA(tgaPath, rgba, w, h)) {
             loaded = true;
-            std::cout << "[SKY] Loaded TGA: " << tgaPath << std::endl;
         }
         else {
             // Пробуем BMP
             std::string bmpPath = "gfx/env/" + skyName + suffix + ".bmp";
             if (loadBMP(bmpPath, rgba, w, h)) {
-                loaded = true;
-                std::cout << "[SKY] Loaded BMP: " << bmpPath << std::endl;
-            }
-        }
-
-        // Fallback на WAD текстуры
-        if (!loaded) {
-            std::string texName = skyName + suffix;
-            if (loadTextureFromWAD(texName, wadLoader, rgba, w, h)) {
-                loaded = true;
-            }
-        }
-
-        // Если всё ещё не загружено - пробуем без префикса (иногда текстуры называются просто rt, lf и т.д.)
-        if (!loaded) {
-            std::string texName = std::string(suffix);
-            if (loadTextureFromWAD(texName, wadLoader, rgba, w, h)) {
                 loaded = true;
             }
         }
@@ -388,13 +368,15 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     std::cout << "[SKY] Loaded " << loadedCount << "/6 faces for: " << skyName << std::endl;
-    return true;
+    return loadedCount > 0;
 }
 
-bool SkyboxRenderer::loadSky(const std::string& skyName, WADLoader& wadLoader) {
+bool SkyboxRenderer::loadSky(const std::string& skyName) {
     unload();
     if (!init()) return false;
-    loadSkyTextures(skyName, wadLoader);
+    if (!loadSkyTextures(skyName)) {
+        std::cerr << "[SKY] Failed to load any textures for: " << skyName << std::endl;
+    }
     createCubeMesh();
     loaded = true;
     return true;

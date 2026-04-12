@@ -6,7 +6,6 @@
 #include <vector>
 
 class Shader;
-class WADLoader;
 
 class SkyboxRenderer {
 public:
@@ -14,7 +13,7 @@ public:
     ~SkyboxRenderer();
 
     bool init();
-    bool loadSky(const std::string& skyName, WADLoader& wadLoader);
+    bool loadSky(const std::string& skyName);
     void unload();
 
     void render(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& viewPos);
@@ -33,14 +32,12 @@ private:
     bool loaded = false;
     std::string currentSkyName;
 
-    bool loadSkyTextures(const std::string& skyName, WADLoader& wadLoader);
+    bool loadSkyTextures(const std::string& skyName);
     void createCubeMesh();
 
     // File loading helpers
     bool loadTGA(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height);
     bool loadBMP(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height);
-    bool loadTextureFromWAD(const std::string& texName, WADLoader& wadLoader, 
-                            std::vector<uint8_t>& rgba, int& width, int& height);
 
     static const char* getVertexShader();
     static const char* getFragmentShader();
