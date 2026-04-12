@@ -39,6 +39,8 @@ private:
     // File loading helpers
     bool loadTGA(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height);
     bool loadBMP(const std::string& path, std::vector<uint8_t>& rgba, int& width, int& height);
+    bool loadTextureFromWAD(const std::string& texName, WADLoader& wadLoader, 
+                            std::vector<uint8_t>& rgba, int& width, int& height);
 
     static const char* getVertexShader();
     static const char* getFragmentShader();

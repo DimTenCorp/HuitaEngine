@@ -385,7 +385,27 @@ void Engine::doLoadMap(const std::string& mapPath) {
             std::cout << "[ENGINE] Skybox loaded: " << skyName << std::endl;
         }
         else {
-            std::cout << "[ENGINE] Failed to load skybox: " << skyName << std::endl;
+            std::cout << "[ENGINE] Failed to load skybox: " << skyName << ", trying fallback 'testsky'" << std::endl;
+            skyboxRenderer.reset();
+            skyboxRenderer = std::make_unique<SkyboxRenderer>();
+            if (skyboxRenderer->loadSky("testsky", *wadLoader)) {
+                std::cout << "[ENGINE] Fallback skybox loaded: testsky" << std::endl;
+            }
+            else {
+                std::cout << "[ENGINE] Failed to load fallback skybox" << std::endl;
+                skyboxRenderer.reset();
+            }
+        }
+    }
+    else {
+        // Если скайбокс не указан в BSP, пробуем загрузить testsky
+        std::cout << "[ENGINE] No skybox specified in BSP, trying fallback 'testsky'" << std::endl;
+        skyboxRenderer = std::make_unique<SkyboxRenderer>();
+        if (skyboxRenderer->loadSky("testsky", *wadLoader)) {
+            std::cout << "[ENGINE] Fallback skybox loaded: testsky" << std::endl;
+        }
+        else {
+            std::cout << "[ENGINE] Failed to load fallback skybox" << std::endl;
             skyboxRenderer.reset();
         }
     }

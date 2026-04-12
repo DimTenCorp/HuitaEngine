@@ -259,6 +259,32 @@ bool SkyboxRenderer::loadBMP(const std::string& path, std::vector<uint8_t>& rgba
     return true;
 }
 
+// Helper для получения данных текстуры из WADLoader через glGetTexImage
+bool SkyboxRenderer::loadTextureFromWAD(const std::string& texName, WADLoader& wadLoader, 
+                                         std::vector<uint8_t>& rgba, int& width, int& height) {
+    int tw, th;
+    GLuint texId;
+    if (!wadLoader.getTextureInfo(texName, tw, th, texId)) {
+        return false;
+    }
+    
+    if (texId == 0) {
+        return false;
+    }
+    
+    width = tw;
+    height = th;
+    rgba.resize(width * height * 4);
+    
+    // Bind текстуру и читаем данные
+    glBindTexture(GL_TEXTURE_2D, texId);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    std::cout << "[SKY] Loaded from WAD: " << texName << " (" << width << "x" << height << ")" << std::endl;
+    return true;
+}
+
 bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadLoader) {
     if (skyName.empty()) return false;
     currentSkyName = skyName;
@@ -282,9 +308,9 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
     // Half-Life: rt(+X), lf(-X), bk(+Z), ft(-Z), up(+Y), dn(-Y)
     const int hl1ToGL[6] = {
         GL_TEXTURE_CUBE_MAP_POSITIVE_X,  // rt -> +X
-        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,  // bk -> +Z (в HL back это +Z)
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // bk -> +Z 
         GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // lf -> -X
-        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // ft -> -Z (в HL front это -Z)
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,  // ft -> -Z
         GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // up -> +Y
         GL_TEXTURE_CUBE_MAP_NEGATIVE_Y   // dn -> -Y
     };
@@ -302,7 +328,7 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
         const char* suffix = hl1Suffixes[hl1Idx];
         GLint glFace = hl1ToGL[hl1Idx];
 
-        // Пробуем загрузить TGA
+        // Пробуем загрузить TGA из gfx/env/
         std::string tgaPath = "gfx/env/" + skyName + suffix + ".tga";
         if (loadTGA(tgaPath, rgba, w, h)) {
             loaded = true;
@@ -317,21 +343,19 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
             }
         }
 
-        // Fallback на WAD
+        // Fallback на WAD текстуры
         if (!loaded) {
             std::string texName = skyName + suffix;
-            int tw, th;
-            GLuint texId;
-            if (wadLoader.getTextureInfo(texName, tw, th, texId)) {
-                if (texId != 0) {
-                    // Копируем текстуру из WAD в cube map
-                    // Для этого нужно сначала получить данные текстуры
-                    // Но проще загрузить напрямую из WADLoader
-                    std::cout << "[SKY] Using WAD texture: " << texName << std::endl;
-                    // WAD текстуры уже в VRAM, нам нужно их скопировать или использовать напрямую
-                    // Для простоты создадим заглушку
-                    loaded = false; // Будем использовать fallback цвет
-                }
+            if (loadTextureFromWAD(texName, wadLoader, rgba, w, h)) {
+                loaded = true;
+            }
+        }
+
+        // Если всё ещё не загружено - пробуем без префикса (иногда текстуры называются просто rt, lf и т.д.)
+        if (!loaded) {
+            std::string texName = std::string(suffix);
+            if (loadTextureFromWAD(texName, wadLoader, rgba, w, h)) {
+                loaded = true;
             }
         }
 
