@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Engine.h"
 #include "Game.h"
 #include "BSPLoader.h"
@@ -17,14 +17,14 @@
 
 Engine* Engine::instance = nullptr;
 
-// === ��������� ����������� CALLBACK ������� ===
+// === ПРОТОТИПЫ СТАТИЧЕСКИХ CALLBACK ФУНКЦИЙ ===
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
-// === ���������� CALLBACK ������� ===
+// === РЕАЛИЗАЦИИ CALLBACK ФУНКЦИЙ ===
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     Engine* engine = Engine::getInstance();
     if (engine) {
@@ -62,7 +62,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
 }
 
-// === �����������/���������� ===
+// === КОНСТРУКТОР/ДЕСТРУКТОР ===
 Engine::Engine() {
     instance = this;
 }
@@ -105,7 +105,6 @@ bool Engine::initGLFW() {
 
     return true;
 }
-
 
 bool Engine::initGLAD() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -341,8 +340,39 @@ void Engine::doLoadMap(const std::string& mapPath) {
         lightmapManager->debugPrintLightmapInfo();
     }
 
-    meshCollider->buildFromBSP(bspLoader->getMeshVertices(), bspLoader->getMeshIndices());
-    std::cout << "[COLLIDER] " << meshCollider->getTriangleCount() << " triangles\n";
+    // === СОБИРАЕМ КОЛЛИЗИЮ БЕЗ ВОДЫ ===
+    {
+        const auto& allVertices = bspLoader->getMeshVertices();
+        const auto& allIndices = bspLoader->getMeshIndices();
+        const auto& drawCalls = bspLoader->getDrawCalls();
+
+        std::vector<BSPVertex> collisionVertices;
+        std::vector<unsigned int> collisionIndices;
+
+        std::unordered_map<unsigned int, unsigned int> vertexMap;
+
+        for (const auto& dc : drawCalls) {
+            if (dc.isWater) continue;
+
+            for (unsigned int i = 0; i < dc.indexCount; i++) {
+                unsigned int oldIdx = allIndices[dc.indexOffset + i];
+
+                auto it = vertexMap.find(oldIdx);
+                if (it == vertexMap.end()) {
+                    unsigned int newIdx = (unsigned int)collisionVertices.size();
+                    vertexMap[oldIdx] = newIdx;
+                    collisionVertices.push_back(allVertices[oldIdx]);
+                    collisionIndices.push_back(newIdx);
+                }
+                else {
+                    collisionIndices.push_back(it->second);
+                }
+            }
+        }
+
+        meshCollider->buildFromBSP(collisionVertices, collisionIndices);
+        std::cout << "[COLLIDER] " << meshCollider->getTriangleCount() << " triangles (water excluded)\n";
+    }
 
     if (renderer) {
         if (!renderer->init(width, height)) {
@@ -355,7 +385,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
         if (lmRenderer->init(width, height)) {
             if (lmRenderer->loadWorld(*bspLoader, *lightmapManager)) {
                 std::cout << "[LIGHT] Lightmapped renderer ready (F5 to toggle)\n";
-                lmRenderer->setLightmapIntensity(lightmapIntensity);
+                lmRenderer->setLightmapIntensity(DEFAULT_LIGHTMAP_INTENSITY);
                 useLightmapped = true;
             }
         }
@@ -376,6 +406,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
         std::cout << "[SPAWN] Using fallback position\n";
     }
 
+    // Загружаем зоны воды
     waterZones.clear();
     auto waterEntities = bspLoader->getEntitiesByClass("func_water");
 
@@ -414,7 +445,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
         water->initFromBounds(modelBounds);
         waterZones.push_back(water);
     }
-    std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones from brush models\n";
+    std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
     std::cout << "=== MAP LOADED ===\n\n";
 
@@ -454,6 +485,7 @@ void Engine::setShowLightmapsOnly(bool show) {
 }
 
 void Engine::setLightmapIntensity(float intensity) {
+    intensity = std::max(LIGHTMAP_INTENSITY_MIN, std::min(LIGHTMAP_INTENSITY_MAX, intensity));
     lightmapIntensity = intensity;
     if (lmRenderer) lmRenderer->setLightmapIntensity(intensity);
 }
@@ -543,6 +575,9 @@ void Engine::run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+
         render();
 
         ImGui::Render();
@@ -551,6 +586,27 @@ void Engine::run() {
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+}
+
+void Engine::setLightingEnabled(bool enabled) {
+    if (lmRenderer) {
+        lmRenderer->setUseLighting(enabled);
+        useLightmapped = enabled;
+    }
+}
+
+void Engine::toggleLightmappedRenderer() {
+    useLightmapped = !useLightmapped;
+    if (lmRenderer) {
+        lmRenderer->setUseLighting(useLightmapped);
+    }
+    // Сброс состояния OpenGL при переключении
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
+    std::cout << "Lightmapped renderer: " << (useLightmapped ? "ON (with lighting)" : "OFF (no lighting)") << std::endl;
 }
 
 void Engine::render() {
@@ -564,25 +620,15 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
-    // Enable blending for transparent objects
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    if (useLightmapped && lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
+    // Используем ТОЛЬКО LightmappedRenderer
+    if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->beginFrame(glm::vec3(0.02f, 0.02f, 0.02f));
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
-    }
-    else if (renderer && bspLoader) {
-        renderer->beginFrame(glm::vec3(0.1f, 0.15f, 0.2f));
-        renderer->renderWorld(view, eyePos);
     }
 
     if (game) {
         game->render(width, height);
     }
-
-    // Note: Don't disable blending here because HUD might need it
-    // glDisable(GL_BLEND);
 }
 
 void Engine::shutdown() {

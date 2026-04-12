@@ -1,9 +1,18 @@
-#pragma once
+Ôªø#pragma once
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <iostream>
+#include <string>
+#include <vector>
 #include "Menu.h"
+
+// === –ù–ê–°–¢–†–û–ô–ö–ò –Ø–†–ö–û–°–¢–ò ===
+constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
+constexpr float LIGHTMAP_INTENSITY_STEP = 0.2f;
+constexpr float LIGHTMAP_INTENSITY_MIN = 0.2f;
+constexpr float LIGHTMAP_INTENSITY_MAX = 5.0f;
 
 class Game;
 class BSPLoader;
@@ -37,9 +46,10 @@ public:
     const std::vector<CFuncWater*>& getWaterZones() const { return waterZones; }
 
     bool useLightmappedRenderer() const { return useLightmapped; }
-    void toggleLightmappedRenderer() { useLightmapped = !useLightmapped; }
+    void toggleLightmappedRenderer();
     void setShowLightmapsOnly(bool show);
     void setLightmapIntensity(float intensity);
+    float getLightmapIntensity() const { return lightmapIntensity; }
 
     void showMenu();
     void hideMenu();
@@ -53,10 +63,9 @@ public:
     int getWidth() const { return width; }
     int getHeight() const { return height; }
 
-    // ”ƒ¿À»“‹ ›“” —“–Œ ”:
-    // void framebufferSizeCallback(GLFWwindow* window, int width, int height);
-
     void onFramebufferSize(int width, int height);
+
+    void setLightingEnabled(bool enabled);
 
 private:
     static Engine* instance;
@@ -79,7 +88,7 @@ private:
     float lastFrame = 0.0f;
     bool useLightmapped = false;
     bool showLightmapsOnly = false;
-    float lightmapIntensity = 1.0f;
+    float lightmapIntensity = DEFAULT_LIGHTMAP_INTENSITY;
     bool menuActive = true;
 
     bool pendingLoad = false;

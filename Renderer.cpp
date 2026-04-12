@@ -214,9 +214,6 @@ void main() {
         discard;
     }
     
-    // Применяем FX Amount как альфу
-    texColor.a = texColor.a * uAlpha;
-    
     gPosition = vec4(vFragPos, 1.0);
     gNormal = vec4(normalize(vNormal), 1.0);
     gAlbedo = texColor;
@@ -257,7 +254,7 @@ void main() {
     
     vec3 ambient = vec3(1.00) * albedo.rgb;
     
-    FragColor = vec4(ambient, albedo.a);
+    FragColor = vec4(ambient, 1.0);
 }
 )glsl";
 
@@ -274,10 +271,14 @@ Renderer::Renderer() = default;
 
 Renderer::Renderer(Renderer&& other) noexcept
     : worldMesh(std::move(other.worldMesh)),
+    meshVertices(std::move(other.meshVertices)),
+    meshIndices(std::move(other.meshIndices)),
     opaqueDrawCalls(std::move(other.opaqueDrawCalls)),
     transparentDrawCalls(std::move(other.transparentDrawCalls)),
     hitboxMesh(std::move(other.hitboxMesh)),
-    geometryShader(std::move(other.geometryShader)), lightingShader(std::move(other.lightingShader)),
+    geometryShader(std::move(other.geometryShader)),
+    lightingShader(std::move(other.lightingShader)),
+    transparentShader(std::move(other.transparentShader)),
     gBuffer(std::move(other.gBuffer)), stats(other.stats),
     screenWidth(other.screenWidth), screenHeight(other.screenHeight),
     quadVAO(other.quadVAO), quadVBO(other.quadVBO),
@@ -292,11 +293,14 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
     if (this != &other) {
         cleanup();
         worldMesh = std::move(other.worldMesh);
+        meshVertices = std::move(other.meshVertices);
+        meshIndices = std::move(other.meshIndices);
         opaqueDrawCalls = std::move(other.opaqueDrawCalls);
         transparentDrawCalls = std::move(other.transparentDrawCalls);
         hitboxMesh = std::move(other.hitboxMesh);
         geometryShader = std::move(other.geometryShader);
         lightingShader = std::move(other.lightingShader);
+        transparentShader = std::move(other.transparentShader);
         gBuffer = std::move(other.gBuffer);
         stats = other.stats;
         screenWidth = other.screenWidth;
@@ -349,6 +353,7 @@ bool Renderer::init(int width, int height) {
     }
 
     createQuadMesh();
+    initTransparentShader();
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -370,6 +375,52 @@ bool Renderer::init(int width, int height) {
     );
 
     return true;
+}
+
+void Renderer::initTransparentShader() {
+    const char* vert = R"glsl(
+        #version 330 core
+        layout (location = 0) in vec3 aPos;
+        layout (location = 1) in vec3 aNormal;
+        layout (location = 2) in vec2 aTexCoord;
+        
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+        
+        out vec2 vTexCoord;
+        
+        void main() {
+            vTexCoord = aTexCoord;
+            gl_Position = projection * view * model * vec4(aPos, 1.0);
+        }
+    )glsl";
+
+    const char* frag = R"glsl(
+        #version 330 core
+        in vec2 vTexCoord;
+        out vec4 FragColor;
+        
+        uniform sampler2D uTexture;
+        uniform float uAlpha;
+        
+        void main() {
+            vec4 texColor = texture(uTexture, vTexCoord);
+            
+            // HL1 color key (синий цвет = прозрачность)
+            if (texColor.r < 0.01 && texColor.g < 0.01 && texColor.b > 0.9) {
+                discard;
+            }
+            
+            FragColor = vec4(texColor.rgb, texColor.a * uAlpha);
+        }
+    )glsl";
+
+    transparentShader = std::make_unique<Shader>();
+    if (!transparentShader->compile(vert, frag)) {
+        std::cerr << "Transparent shader fail: " << transparentShader->getLastError() << std::endl;
+        transparentShader.reset();
+    }
 }
 
 void Renderer::createQuadMesh() {
@@ -411,12 +462,12 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
         return false;
     }
 
-    const auto& vertices = bsp.getMeshVertices();
-    const auto& indices = bsp.getMeshIndices();
+    meshVertices = bsp.getMeshVertices();
+    meshIndices = bsp.getMeshIndices();
 
-    std::cout << "Renderer: Loading world with " << vertices.size() << " vertices" << std::endl;
+    std::cout << "Renderer: Loading world with " << meshVertices.size() << " vertices" << std::endl;
 
-    if (!worldMesh.buildFromBSP(vertices, indices)) {
+    if (!worldMesh.buildFromBSP(meshVertices, meshIndices)) {
         std::cerr << "Renderer: Failed to build mesh" << std::endl;
         return false;
     }
@@ -444,6 +495,8 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
 
 void Renderer::unloadWorld() {
     worldMesh.destroy();
+    meshVertices.clear();
+    meshIndices.clear();
     opaqueDrawCalls.clear();
     transparentDrawCalls.clear();
     worldLoaded = false;
@@ -463,64 +516,69 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
-    // 1. Непрозрачная геометрия
-    geometryPass(view, projection, true);
-
-    // 2. Прозрачная геометрия (включая воду)
-    if (!transparentDrawCalls.empty()) {
-        renderTransparentFaces(view, projection, viewPos);
-    }
-
-    // 3. Освещение
-    lightingPass(viewPos);
-}
-
-void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool opaque) {
+    // ============================================
+    // ПРОХОД 1: Только НЕПРОЗРАЧНАЯ геометрия
+    // ============================================
     gBuffer.bindForWriting();
-
-    if (opaque) {
-        glClear(GL_DEPTH_BUFFER_BIT);
-    }
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glDepthMask(opaque ? GL_TRUE : GL_FALSE);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
 
-    if (!opaque) {
-        glEnable(GL_BLEND);
-        // Для воды и прозрачных объектов используем стандартное blending
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    }
-    else {
-        glDisable(GL_BLEND);
-    }
+    // Рисуем НЕПРОЗРАЧНЫЕ draw calls
+    geometryPass(view, projection, false); // ← параметр false = только opaque
 
-    const auto& drawCalls = opaque ? opaqueDrawCalls : transparentDrawCalls;
+    // ============================================
+    // ПРОХОД 2: Освещение
+    // ============================================
+    lightingPass(viewPos);
+
+    // ============================================
+    // ПРОХОД 3: Прозрачная геометрия (поверх всего)
+    // ============================================
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);  // ← КЛЮЧЕВОЙ МОМЕНТ!
+    glDepthFunc(GL_LEQUAL);
+
+    // Рисуем ПРОЗРАЧНЫЕ draw calls (отсортированные)
+    renderTransparentFacesForward(view, projection, viewPos);
+
+    // Восстанавливаем состояние
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDepthFunc(GL_LESS);
+}
+
+void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool onlyTransparent) {
+    gBuffer.bindForWriting();
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
     geometryShader->setMat4("view", view);
     geometryShader->setMat4("projection", proj);
+    geometryShader->setFloat("uAlpha", 1.0f);
 
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
 
     GLuint currentTex = 0;
+
+    // Выбираем какие draw calls рисовать
+    const auto& drawCalls = onlyTransparent ? transparentDrawCalls : opaqueDrawCalls;
+
     for (const auto& dc : drawCalls) {
         if (dc.texID != currentTex) {
             glBindTexture(GL_TEXTURE_2D, dc.texID);
             currentTex = dc.texID;
-        }
-
-        if (!opaque) {
-            // Важно: для воды alpha должен быть > 0 чтобы быть видимой
-            float alpha = dc.renderamt / 255.0f;
-            // Минимальный alpha чтобы вода была видна (не полностью прозрачная)
-            alpha = std::max(0.1f, alpha);
-            geometryShader->setFloat("uAlpha", alpha);
-        }
-        else {
-            geometryShader->setFloat("uAlpha", 1.0f);
         }
 
         glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
@@ -532,34 +590,6 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool o
 
     BspMesh::unbind();
     geometryShader->unbind();
-
-    if (!opaque) {
-        glDisable(GL_BLEND);
-        glDepthMask(GL_TRUE);
-    }
-}
-
-void Renderer::renderTransparentFaces(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
-    // Сортируем прозрачные фейсы от дальних к ближним
-    if (sortTransparentFaces && transparentDrawCalls.size() > 1) {
-        // Вычисляем расстояние для каждого draw call
-        struct SortedDC {
-            FaceDrawCall dc;
-            float distSq;
-        };
-
-        std::vector<SortedDC> sorted;
-        sorted.reserve(transparentDrawCalls.size());
-
-        // Получаем позиции вершин из меша для приближенной сортировки
-        // Упрощенно: сортируем по индексу (предполагая что дальние фейсы были созданы раньше)
-        // В идеале нужно хранить центр фейса в FaceDrawCall
-
-        // Пока просто рисуем в порядке создания
-        // TODO: добавить правильную сортировку по расстоянию от камеры
-    }
-
-    geometryPass(view, proj, false);
 }
 
 void Renderer::lightingPass(const glm::vec3& viewPos) {
@@ -567,6 +597,7 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
 
     GBuffer::unbind();
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
@@ -575,6 +606,75 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     lightingShader->unbind();
+
+    // ВАЖНО: Восстанавливаем состояние для прозрачных объектов
+    glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
+    if (transparentDrawCalls.empty() || !transparentShader) return;
+
+    // Сортируем прозрачные объекты от дальних к ближним
+    struct SortedDrawCall {
+        FaceDrawCall dc;
+        float distance;
+    };
+
+    std::vector<SortedDrawCall> sorted;
+    sorted.reserve(transparentDrawCalls.size());
+
+    for (const auto& dc : transparentDrawCalls) {
+        float dist = 0.0f;
+        if (dc.indexCount > 0 && !meshIndices.empty() && !meshVertices.empty()) {
+            unsigned int firstIdx = dc.indexOffset;
+            if (firstIdx < meshIndices.size()) {
+                unsigned int vertIdx = meshIndices[firstIdx];
+                if (vertIdx < meshVertices.size()) {
+                    glm::vec3 worldPos = meshVertices[vertIdx].position;
+                    dist = glm::distance(viewPos, worldPos);
+                }
+            }
+        }
+        sorted.push_back({ dc, dist });
+    }
+
+    // Сортируем от дальних к ближним
+    std::sort(sorted.begin(), sorted.end(), [](const SortedDrawCall& a, const SortedDrawCall& b) {
+        return a.distance > b.distance;
+        });
+
+    transparentShader->bind();
+    transparentShader->setMat4("view", view);
+    transparentShader->setMat4("projection", proj);
+    transparentShader->setMat4("model", glm::mat4(1.0f));
+
+    worldMesh.bind();
+
+    GLuint currentTex = 0;
+    for (const auto& item : sorted) {
+        const auto& dc = item.dc;
+
+        if (dc.texID != currentTex) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, dc.texID);
+            currentTex = dc.texID;
+        }
+
+        float alpha = dc.renderamt / 255.0f;
+        alpha = std::max(0.05f, std::min(1.0f, alpha));
+        transparentShader->setFloat("uAlpha", alpha);
+
+        if (dc.indexCount > 0) {
+            glDrawElements(GL_TRIANGLES, (GLsizei)dc.indexCount, GL_UNSIGNED_INT,
+                (void*)(dc.indexOffset * sizeof(unsigned int)));
+
+            stats.drawCalls++;
+            stats.triangles += dc.indexCount / 3;
+        }
+    }
+
+    BspMesh::unbind();
+    transparentShader->unbind();
 }
 
 void Renderer::renderHitbox(const glm::mat4& view, const glm::mat4& projection,
@@ -610,6 +710,7 @@ void Renderer::cleanup() {
 
     geometryShader.reset();
     lightingShader.reset();
+    transparentShader.reset();
 
     if (quadVAO) { glDeleteVertexArrays(1, &quadVAO); quadVAO = 0; }
     if (quadVBO) { glDeleteBuffers(1, &quadVBO); quadVBO = 0; }

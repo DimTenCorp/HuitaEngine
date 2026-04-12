@@ -12,13 +12,19 @@ struct BSPVertexLightmapped {
     int lightmapIndex;
 };
 
+struct LMRenderVertex {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 texCoord;
+    glm::vec2 lightmapCoord;
+};
+
 struct LMFaceDrawCall {
     GLuint texID;
     unsigned int indexOffset;
     unsigned int indexCount;
     int faceIndex;
 
-    // Добавляем поля для прозрачности
     unsigned char rendermode = 0;
     unsigned char renderamt = 255;
     bool isTransparent = false;
@@ -50,6 +56,9 @@ public:
     void setShowLightmapsOnly(bool show) { showLightmapsOnly = show; }
     bool getShowLightmapsOnly() const { return showLightmapsOnly; }
 
+    void setUseLighting(bool use) { useLighting = use; }
+    bool getUseLighting() const { return useLighting; }
+
     const Renderer::RenderStats& getStats() const { return stats; }
 
     void setViewport(int width, int height);
@@ -61,18 +70,18 @@ private:
     LightmapManager* lmManager = nullptr;
     float lightmapIntensity = 1.0f;
     bool showLightmapsOnly = false;
+    bool useLighting = true;
     int screenWidth = 1280, screenHeight = 720;
     Renderer::RenderStats stats;
-    GBuffer gBuffer;
     std::vector<LMFaceDrawCall> faceDrawCalls;
     bool hasTransparentFaces = false;
 
+    std::vector<LMRenderVertex> meshVertices;
+    std::vector<unsigned int> meshIndices;
+
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
-    void geometryPass(const glm::mat4& view, const glm::mat4& proj);
-    void lightingPass(const glm::vec3& viewPos, const glm::vec3& ambient);
     void cleanup();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();
-    std::unordered_map<int, std::pair<int, int>> faceTransparency;
 };

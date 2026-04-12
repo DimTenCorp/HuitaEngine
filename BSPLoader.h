@@ -69,6 +69,7 @@ struct FaceDrawCall {
     unsigned char rendermode = 0;
     unsigned char renderamt = 255;
     bool isTransparent = false;
+    bool isWater = false;
 };
 
 class BSPLoader {
@@ -106,7 +107,7 @@ private:
     bool parseEntities(FILE* file, const BSPHeader& header);
     bool loadRequiredWADsFromEntities();
     void buildMesh();
-    void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt);
+    void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel = false);
     bool loadLighting(FILE* file, const BSPHeader& header);
 
 public:

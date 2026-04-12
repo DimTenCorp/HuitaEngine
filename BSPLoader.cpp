@@ -449,7 +449,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     return true;
 }
 
-void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt) {
+void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel) {
     unsigned int baseVertex = (unsigned int)meshVertices.size();
 
     for (int i = 0; i < subModel.numFaces; i++) {
@@ -554,6 +554,9 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         dc.rendermode = static_cast<unsigned char>(rendermode);
         dc.renderamt = static_cast<unsigned char>(renderamt);
 
+        // Устанавливаем флаг воды
+        dc.isWater = isWaterModel;
+
         // Прозрачность: rendermode 2(texture), 5(additive), 1(color) с renderamt < 255, 3(glow)
         dc.isTransparent = (rendermode == 2) ||
             (rendermode == 5) ||
@@ -572,8 +575,8 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
-    // Мир (model 0) - всегда непрозрачный
-    buildSubmodelMesh(models[0], 0, 255);
+    // Мир (model 0) - всегда непрозрачный, не вода
+    buildSubmodelMesh(models[0], 0, 255, false);
 
     // Остальные модели
     for (const auto& entity : entities) {
@@ -599,11 +602,13 @@ void BSPLoader::buildMesh() {
 
         int rendermode = 0;
         int renderamt = 255;
+        bool isWater = false;
 
         // func_water - всегда прозрачная, но с настраиваемым FX Amount
         if (entity.classname == "func_water") {
             rendermode = 2; // Texture mode
             renderamt = 128; // По умолчанию полупрозрачная
+            isWater = true;  // ← ВАЖНО: помечаем как воду
 
             // Читаем FX Amount для воды
             auto it = entity.properties.find("renderamt");
@@ -655,19 +660,22 @@ void BSPLoader::buildMesh() {
             renderamt = std::max(0, std::min(255, renderamt));
         }
 
-        buildSubmodelMesh(models[modelIndex], rendermode, renderamt);
+        buildSubmodelMesh(models[modelIndex], rendermode, renderamt, isWater);
     }
 
     int transparentCount = 0;
+    int waterCount = 0;
     for (const auto& dc : drawCalls) {
         if (dc.isTransparent) transparentCount++;
+        if (dc.isWater) waterCount++;
     }
 
     std::cout << "Built " << meshVertices.size() << " mesh vertices, "
         << meshIndices.size() << " indices, "
         << drawCalls.size() << " draw calls\n";
     std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount)
-        << ", Transparent: " << transparentCount << "\n";
+        << ", Transparent: " << transparentCount
+        << ", Water: " << waterCount << "\n";
 }
 
 bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {

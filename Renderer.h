@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include "BSPLoader.h"
 #include "Shader.h"
 
@@ -86,6 +87,8 @@ public:
 
 private:
     BspMesh worldMesh;
+    std::vector<BSPVertex> meshVertices;      // ��������� ��� ����������
+    std::vector<unsigned int> meshIndices;    // ��������� ��� ����������
     std::vector<FaceDrawCall> opaqueDrawCalls;
     std::vector<FaceDrawCall> transparentDrawCalls;
     bool worldLoaded = false;
@@ -95,6 +98,7 @@ private:
 
     std::unique_ptr<Shader> geometryShader;
     std::unique_ptr<Shader> lightingShader;
+    std::unique_ptr<Shader> transparentShader;  // ����� ������ ��� ���������� ��������
 
     GBuffer gBuffer;
 
@@ -111,12 +115,13 @@ private:
     void cleanup();
     bool createGBuffer(int w, int h);
     void destroyGBuffer();
-    void geometryPass(const glm::mat4& view, const glm::mat4& proj, bool opaque);
-    void lightingPass(const glm::vec3& viewPos);
-    void renderTransparentFaces(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos);
 
     static const char* getGeometryVert();
     static const char* getGeometryFrag();
     static const char* getLightingVert();
     static const char* getLightingFrag();
+    void geometryPass(const glm::mat4& view, const glm::mat4& proj, bool onlyTransparent = false);
+    void lightingPass(const glm::vec3& viewPos);
+    void renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos);
+    void initTransparentShader();
 };
