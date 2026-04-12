@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <vector>
 
+
+
 class Localization {
 public:
     static Localization& getInstance();
@@ -21,3 +23,4 @@ private:
     
     std::unordered_map<std::string, std::string> translations;
 };
+

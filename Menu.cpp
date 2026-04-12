@@ -360,12 +360,12 @@ void Menu::renderPause() {
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY));
-    if (ImGui::Button(tr("#dtc_resume", "Продолжить").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_resume").c_str(), ImVec2(0, buttonHeight))) {
         if (onReturnToGame) onReturnToGame();
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + buttonHeight + spacing));
-    if (ImGui::Button(tr("#dtc_settings", "Настройки").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_settings").c_str(), ImVec2(0, buttonHeight))) {
         previousState = State::PAUSE;  // <-- ЗАПОМИНАЕМ что мы были в паузе
         currentState = State::SETTINGS;
         settingsSensitivity = settings.mouseSensitivity;
@@ -373,7 +373,7 @@ void Menu::renderPause() {
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + (buttonHeight + spacing) * 2));
-    if (ImGui::Button(tr("#dtc_mainmenu", "В главное меню").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_mainmenu").c_str(), ImVec2(0, buttonHeight))) {
         currentState = State::CONFIRM_EXIT;
     }
 
@@ -395,12 +395,12 @@ void Menu::renderMainMenu() {
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 200));
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY));
-    if (ImGui::Button(tr("#dtc_newgame", "Новая игра").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_newgame").c_str(), ImVec2(0, buttonHeight))) {
         currentState = State::MAP_SELECT;
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + buttonHeight + spacing));
-    if (ImGui::Button(tr("#dtc_settings", "Настройки").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_settings").c_str(), ImVec2(0, buttonHeight))) {
         previousState = State::MAIN_MENU;  // <-- ЗАПОМИНАЕМ что мы были в главном меню
         currentState = State::SETTINGS;
         settingsSensitivity = settings.mouseSensitivity;
@@ -408,7 +408,7 @@ void Menu::renderMainMenu() {
     }
 
     ImGui::SetCursorPos(ImVec2(buttonX, startY + (buttonHeight + spacing) * 2));
-    if (ImGui::Button(tr("#dtc_exit", "Выход").c_str(), ImVec2(0, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_exit").c_str(), ImVec2(0, buttonHeight))) {
         currentState = State::CONFIRM_QUIT;
     }
 
@@ -438,7 +438,7 @@ void Menu::renderSettings() {
 
     ImGui::SetCursorPos(ImVec2(panelX + 20, panelY + 15));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-    ImGui::Text(tr("#dtc_settings", "Настройки").c_str());
+    ImGui::Text(tr("#dtc_settings").c_str());
     ImGui::PopStyleColor();
 
     float tabWidth = 120.0f;
@@ -447,7 +447,7 @@ void Menu::renderSettings() {
     ImGui::SetCursorPos(ImVec2(panelX + 20, tabY));
     ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 0 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
-    if (ImGui::Button(tr("#dtc_game", "Игра").c_str(), ImVec2(tabWidth, 35))) {
+    if (ImGui::Button(tr("#dtc_game").c_str(), ImVec2(tabWidth, 35))) {
         settingsTab = 0;
     }
     ImGui::PopStyleColor(2);
@@ -456,7 +456,7 @@ void Menu::renderSettings() {
     ImGui::SetCursorPosX(panelX + 20 + tabWidth + 5);
     ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 1 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
-    if (ImGui::Button(tr("#dtc_graphics", "Графика").c_str(), ImVec2(tabWidth, 35))) {
+    if (ImGui::Button(tr("#dtc_graphics").c_str(), ImVec2(tabWidth, 35))) {
         settingsTab = 1;
     }
     ImGui::PopStyleColor(2);
@@ -465,7 +465,7 @@ void Menu::renderSettings() {
     ImGui::SetCursorPosX(panelX + 20 + tabWidth * 2 + 10);
     ImGui::PushStyleColor(ImGuiCol_Button, settingsTab == 2 ? IM_COL32(80, 80, 120, 255) : IM_COL32(50, 50, 70, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 140, 255));
-    if (ImGui::Button(tr("#dtc_sound", "Звук").c_str(), ImVec2(tabWidth, 35))) {
+    if (ImGui::Button(tr("#dtc_sound").c_str(), ImVec2(tabWidth, 35))) {
         settingsTab = 2;
     }
     ImGui::PopStyleColor(2);
@@ -479,11 +479,11 @@ void Menu::renderSettings() {
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 220, 255));
 
     if (settingsTab == 0) {
-        ImGui::Text(tr("#dtc_controls", "Управление").c_str());
+        ImGui::Text(tr("#dtc_controls").c_str());
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::Text(tr("#dtc_mouse_sensitivity", "Чувствительность мыши").c_str());
+        ImGui::Text(tr("#dtc_mouse_sensitivity").c_str());
         float oldSens = settingsSensitivity;
         ImGui::SliderFloat("##sensitivity", &settingsSensitivity, 0.1f, 2.0f, "%.2f");
 
@@ -494,13 +494,13 @@ void Menu::renderSettings() {
         ImGui::Spacing();
     }
     else if (settingsTab == 1) {
-        ImGui::Text(tr("#dtc_display", "Дисплей").c_str());
+        ImGui::Text(tr("#dtc_display").c_str());
         ImGui::Separator();
         ImGui::Spacing();
 
         bool fsChanged = false;
         bool currentFullscreen = settings.fullscreen;
-        if (ImGui::Checkbox(tr("#dtc_fullscreen", "Полноэкранный режим").c_str(), &currentFullscreen)) {
+        if (ImGui::Checkbox(tr("#dtc_fullscreen").c_str(), &currentFullscreen)) {
             settings.fullscreen = currentFullscreen;
             fsChanged = true;
         }
@@ -508,7 +508,7 @@ void Menu::renderSettings() {
         ImGui::Spacing();
 
         if (!availableModes.empty()) {
-            ImGui::Text(tr("#dtc_resolution", "Разрешение экрана").c_str());
+            ImGui::Text(tr("#dtc_resolution").c_str());
 
             std::vector<const char*> modeNames;
             for (const auto& mode : availableModes) {
@@ -528,18 +528,19 @@ void Menu::renderSettings() {
         }
 
         ImGui::Spacing();
-        ImGui::Text(u8"Текущее разрешение: %dx%d", settings.screenWidth, settings.screenHeight);
+        //ImGui::Text(u8"Текущее разрешение: %dx%d", settings.screenWidth, settings.screenHeight);
+        ImGui::Text(tr("#dtc_current_res").c_str(), settings.screenWidth, settings.screenHeight);
 
         if (fsChanged) {
             pendingApplySettings = true;
         }
     }
     else if (settingsTab == 2) {
-        ImGui::Text(u8"АУДИО");
+        ImGui::Text(tr("#dtc_audio").c_str());
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::Text(u8"Громкость:");
+        ImGui::Text(tr("#dtc_volume").c_str());
         float volume = settings.masterVolume;
         if (ImGui::SliderFloat(u8"##volume", &volume, 0.0f, 1.0f, "%.0f%%")) {
             settings.masterVolume = volume;
@@ -548,14 +549,14 @@ void Menu::renderSettings() {
         ImGui::Spacing();
 
         bool mute = settings.mute;
-        if (ImGui::Checkbox(u8"Без звука", &mute)) {
+        if (ImGui::Checkbox(tr("#dtc_nosound").c_str(), &mute)) {
             settings.mute = mute;
         }
 
         ImGui::Spacing();
         ImGui::Spacing();
-        ImGui::Text(u8"(Звук будет добавлен в следующих обновлениях)");
-        ImGui::Text(u8"Сейчас доступна только заготовка интерфейса");
+        ImGui::Text(tr("#dtc_sound_description").c_str());
+        
     }
 
     ImGui::PopStyleColor();
@@ -569,7 +570,7 @@ void Menu::renderSettings() {
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(70, 70, 70, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(90, 90, 90, 255));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(110, 110, 110, 255));
-    if (ImGui::Button(u8"СОХРАНИТЬ", ImVec2(buttonWidth, 40))) {
+    if (ImGui::Button(tr("#dtc_save").c_str(), ImVec2(buttonWidth, 40))) {
         settings.mouseSensitivity = settingsSensitivity;
         saveSettings();
 
@@ -593,7 +594,7 @@ void Menu::renderSettings() {
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(70, 70, 70, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(90, 90, 90, 255));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(110, 110, 110, 255));
-    if (ImGui::Button(u8"ОТМЕНА", ImVec2(buttonWidth, 40))) {
+    if (ImGui::Button(tr("#dtc_cancel").c_str(), ImVec2(buttonWidth, 40))) {
         loadSettings();
         settingsSensitivity = settings.mouseSensitivity;
         currentState = previousState;
@@ -606,7 +607,7 @@ void Menu::renderMapSelect() {
 
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
     ImGui::SetCursorPos(ImVec2(center.x - 100, center.y));
-    ImGui::Text(tr("#dtc_select_map", "Выбор карты").c_str());
+    ImGui::Text(tr("#dtc_select_map").c_str());
     ImGui::PopStyleColor();
 
     float listX = width * 0.5f - 200.0f;
@@ -683,7 +684,7 @@ void Menu::renderMapSelect() {
     if (selectedMapIndex >= 0) {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-        if (ImGui::Button(tr("#dtc_loading", "Загрузить").c_str(), ImVec2(buttonWidth, buttonHeight))) {
+        if (ImGui::Button(tr("#dtc_load").c_str(), ImVec2(buttonWidth, buttonHeight))) {
             std::string displayName = maps[selectedMapIndex];
             size_t dotPos = displayName.find_last_of('.');
             if (dotPos != std::string::npos) {
@@ -700,14 +701,14 @@ void Menu::renderMapSelect() {
         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 50, 50, 150));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(50, 50, 50, 150));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(50, 50, 50, 150));
-        ImGui::Button(tr("#dtc_loading", "Загрузить").c_str(), ImVec2(buttonWidth, buttonHeight));
+        ImGui::Button(tr("#dtc_load").c_str(), ImVec2(buttonWidth, buttonHeight));
         ImGui::PopStyleColor(3);
     }
 
     ImGui::SetCursorPos(ImVec2(width * 0.5f + 10.0f, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(60, 60, 60, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(100, 100, 100, 200));
-    if (ImGui::Button(tr("#dtc_back", "Назад").c_str(), ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_back").c_str(), ImVec2(buttonWidth, buttonHeight))) {
         currentState = State::MAIN_MENU;
         selectedMapIndex = -1;
     }
@@ -717,7 +718,7 @@ void Menu::renderMapSelect() {
 
     ImGui::SetCursorPos(ImVec2(width * 0.5f - 150, height - 30.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-    ImGui::Text(u8"Двойной клик для быстрой загрузки");
+    ImGui::Text(tr("#dtc_fast_map_load").c_str());
     ImGui::PopStyleColor();
 }
 
@@ -750,7 +751,7 @@ void Menu::renderConfirmExit() {
 
     ImGui::SetCursorPos(ImVec2(dialogX + 20, dialogY + 30));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-    ImGui::Text(u8"Выйти в главное меню?");
+    ImGui::Text(tr("#dtc_quit_to_menu").c_str());
     ImGui::PopStyleColor();
 
     float buttonY = dialogY + 90;
@@ -762,7 +763,7 @@ void Menu::renderConfirmExit() {
     ImGui::SetCursorPos(ImVec2(dialogX + 60, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-    if (ImGui::Button(tr("#dtc_yes", "ДА").c_str(), ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_yes").c_str(), ImVec2(buttonWidth, buttonHeight))) {
         returnToMenu = true;
     }
     ImGui::PopStyleColor(2);
@@ -770,7 +771,7 @@ void Menu::renderConfirmExit() {
     ImGui::SetCursorPos(ImVec2(dialogX + dialogWidth - 60 - buttonWidth, buttonY));
     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(80, 80, 80, 200));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(120, 120, 120, 200));
-    if (ImGui::Button(tr("#dtc_no", "НЕТ").c_str(), ImVec2(buttonWidth, buttonHeight))) {
+    if (ImGui::Button(tr("#dtc_no").c_str(), ImVec2(buttonWidth, buttonHeight))) {
         if (onReturnToGame) onReturnToGame();
     }
     ImGui::PopStyleColor(2);
@@ -807,7 +808,7 @@ void Menu::renderConfirmQuit() {
 
     ImGui::SetCursorPos(ImVec2(dialogX + 20, dialogY + 30));
     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-    ImGui::Text(u8"Выйти из игры?");
+    ImGui::Text(tr("#dtc_quit_game").c_str());
     ImGui::PopStyleColor();
 
     float buttonY = dialogY + 90;
@@ -876,7 +877,7 @@ void Menu::renderLoading() {
     static float timer = 0.0f;
     timer += 0.016f;
     int dots = ((int)(timer * 2.0f) % 4);
-    std::string loadingText = "Loading";
+    std::string loadingText = (tr("#dtc_loading").c_str());
     for (int i = 0; i < dots; i++) loadingText += ".";
     for (int i = dots; i < 3; i++) loadingText += " ";
 
