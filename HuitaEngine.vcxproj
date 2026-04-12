@@ -265,6 +265,7 @@
     <ClCompile Include="HUD.cpp" />
     <ClCompile Include="LightmapManager.cpp" />
     <ClCompile Include="LightmappedRenderer.cpp" />
+    <ClCompile Include="Localization.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Menu.cpp" />
     <ClCompile Include="Mesh.cpp" />
@@ -286,6 +287,7 @@
     <ClInclude Include="HUD.h" />
     <ClInclude Include="LightmapManager.h" />
     <ClInclude Include="LightmappedRenderer.h" />
+    <ClInclude Include="Localization.h" />
     <ClInclude Include="Menu.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Player.h" />
