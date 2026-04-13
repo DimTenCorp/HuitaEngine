@@ -310,20 +310,20 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
                 // Расчет lightmap UV координат с использованием точных данных из BSP
-                // Формула основана на том же принципе, что используется в LightmapManager::initializeFromBSP
-                // и BSPLoader::getFaceLightmapDims для обеспечения консистентности
+                // Ключевое изменение: используем данные о размерах напрямую из BSP через LightmapManager
+                // Это обеспечивает независимость от разрешения текстур и масштаба карты
                 
                 // Вычисляем позицию в пространстве лайтмапа (в текселях)
-                // Используем ту же формулу что и при расчете размеров: floor(coord/16) - floor(minCoord/16)
-                // Это дает целочисленные координаты в диапазоне [0, width-1] x [0, height-1]
+                // Формула точно соответствует той, что используется в BSPLoader::getFaceLightmapDims
+                // для расчета ширины и высоты лайтмапа
                 float sInTexels = std::floor(s / 16.0f) - std::floor(lm.minS / 16.0f);
                 float tInTexels = std::floor(t / 16.0f) - std::floor(lm.minT / 16.0f);
 
                 // Нормализуем к диапазону [0, 1] внутри этого лайтмапа
-                // Важно: делим на (width-1) и (height-1) для корректного маппинга вершин по краям
-                // Это обеспечивает правильную интерполяцию даже на атласах произвольного разрешения
-                float normU = (lm.width > 1) ? (sInTexels / (float)(lm.width - 1)) : 0.0f;
-                float normV = (lm.height > 1) ? (tInTexels / (float)(lm.height - 1)) : 0.0f;
+                // Делим на width и height (не width-1!), так как мы маппим на центры текселей
+                // Half-pixel offset уже учтен в uvMin/uvMax при упаковке в packLightmap()
+                float normU = sInTexels / (float)lm.width;
+                float normV = tInTexels / (float)lm.height;
                 
                 // Вычисляем итоговые UV координаты в атласе
                 // Интерполируем между uvMin и uvMax (которые уже содержат half-pixel offset из packLightmap)

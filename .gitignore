@@ -6,8 +6,9 @@
 *.so
 *.a
 *.out
-*.pyc
-*.class
+build/
+dist/
+
 # Dependencies
 node_modules/
 venv/
@@ -15,29 +16,32 @@ venv/
 __pycache__/
 .mypy_cache/
 .pytest_cache/
-dist/
-build/
 target/
 .gradle/
+
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
+
 # Environment
 .env
 .env.local
 *.env.*
+
 # Editors
 .vscode/
 .idea/
+
 # System files
 .DS_Store
 Thumbs.db
+
 # Coverage
 coverage/
 htmlcov/
 .coverage
+
 # Compressed files
 *.zip
 *.gz
