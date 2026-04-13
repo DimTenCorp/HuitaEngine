@@ -300,13 +300,17 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             v.position = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
             v.normal = worldNormal;
 
-            // Расчет текстурных координат НЕ зависит от разрешения текстуры
-            // Используем просто S/T координаты без деления на размеры текстуры
+            // Расчет текстурных координат с учетом масштаба текстуры
             float s = bspPos.x * tex.s[0] + bspPos.y * tex.s[1] + bspPos.z * tex.s[2] + tex.s[3];
             float t = bspPos.x * tex.t[0] + bspPos.y * tex.t[1] + bspPos.z * tex.t[2] + tex.t[3];
             
-            // Для albedo UV используем нормализованные координаты (независимо от размера текстуры)
-            v.texCoord = glm::vec2(s, t);
+            // Получаем размеры текстуры для нормализации UV
+            glm::uvec2 texDim = bsp.getTextureDimensions(tex.textureIndex);
+            int texWidth = texDim.x > 0 ? texDim.x : 256;
+            int texHeight = texDim.y > 0 ? texDim.y : 256;
+            
+            // Для albedo UV делим на размеры текстуры чтобы получить корректные UV координаты
+            v.texCoord = glm::vec2(s / texWidth, t / texHeight);
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
                 // Расчет lightmap UV основан только на S/T координатах и размере тайла (16 единиц)
