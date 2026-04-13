@@ -313,15 +313,16 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             v.texCoord = glm::vec2(s / texWidth, t / texHeight);
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
-                // Расчет lightmap UV основан только на S/T координатах и размере тайла (16 единиц)
-                // Не зависит от разрешения текстур карты
-                float lmU = (s / 16.0f) - std::floor(lm.minS / 16.0f);
-                float lmV = (t / 16.0f) - std::floor(lm.minT / 16.0f);
+                // Расчет lightmap UV НЕЗАВИСИМ от размеров текстур карты
+                // Используем только S/T из texInfo и параметры лайтмапа
+                float lmU = (s - lm.minS) / (lm.maxS - lm.minS);
+                float lmV = (t - lm.minT) / (lm.maxT - lm.minT);
 
-                // Нормализуем к размеру конкретного лайтмапа этой грани
-                lmU = (lmU + 0.5f) / (float)lm.width;
-                lmV = (lmV + 0.5f) / (float)lm.height;
-
+                // Нормализуем к размеру конкретного лайтмапа этой грани с учетом пиксельных границ
+                lmU = (lmU + 0.5f / (float)lm.width) / (float)lm.width * (float)lm.width;
+                lmV = (lmV + 0.5f / (float)lm.height) / (float)lm.height * (float)lm.height;
+                
+                // Прямая нормализация в диапазон [uvMin, uvMax] атласа
                 v.lightmapCoord.x = lm.uvMin.x + lmU * (lm.uvMax.x - lm.uvMin.x);
                 v.lightmapCoord.y = lm.uvMin.y + lmV * (lm.uvMax.y - lm.uvMin.y);
             }
