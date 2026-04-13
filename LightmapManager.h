@@ -27,6 +27,7 @@ public:
     bool initialized = false;
 
     bool init();
+    bool init(int size);  // Перегруженная версия с указанием размера
     // ���������� UV ���������� � ������: (minU, minV, maxU, maxV)
     glm::vec4 packLightmap(int width, int height, const uint8_t* data);
     void bind(GLuint unit) const;

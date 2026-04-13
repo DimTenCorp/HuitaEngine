@@ -5,11 +5,34 @@
 #include <cstring>
 #include <cmath>
 
+// Максимальный размер лайтмапа для одной грани (можно увеличить при необходимости)
+constexpr int MAX_LIGHTMAP_SIZE = 1024;
+
+// Базовый размер атласа (будет увеличен при необходимости)
+constexpr int BASE_ATLAS_SIZE = 2048;
+
+// Максимальный размер атласа (ограничение видеокарты, обычно 16384)
+constexpr int MAX_ATLAS_SIZE = 16384;
+
+// Шаг увеличения атласа
+constexpr int ATLAS_SIZE_STEP = 2048;
+
 // ============================================================================
 // LightmapAtlas Implementation
 // ============================================================================
 
 bool LightmapAtlas::init() {
+    return init(BASE_ATLAS_SIZE);
+}
+
+bool LightmapAtlas::init(int size) {
+    if (atlasTexture) {
+        glDeleteTextures(1, &atlasTexture);
+        atlasTexture = 0;
+    }
+    
+    atlasSize = std::min(size, MAX_ATLAS_SIZE);
+    
     glGenTextures(1, &atlasTexture);
     glBindTexture(GL_TEXTURE_2D, atlasTexture);
 
@@ -36,6 +59,50 @@ bool LightmapAtlas::init() {
 glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data) {
     if (!initialized) return glm::vec4(0.0f);
 
+    // Проверка: лайтмап слишком большой для текущего атласа
+    if (width > atlasSize || height > atlasSize) {
+        std::cerr << "LightmapAtlas: Lightmap too big (" << width << "x" << height 
+                  << ") for atlas size " << atlasSize << ", attempting to resize..." << std::endl;
+        
+        // Попытка увеличить размер атласа
+        int newSize = atlasSize;
+        while ((width > newSize || height > newSize) && newSize < MAX_ATLAS_SIZE) {
+            newSize += ATLAS_SIZE_STEP;
+        }
+        
+        if (newSize > atlasSize && newSize <= MAX_ATLAS_SIZE) {
+            // Пересоздаем атлас с большим размером
+            // Сохраняем старую текстуру для копирования данных
+            GLuint oldTexture = atlasTexture;
+            int oldSize = atlasSize;
+            
+            // Создаем новый атлас
+            atlasTexture = 0;
+            initialized = false;
+            
+            if (!init(newSize)) {
+                std::cerr << "LightmapAtlas: Failed to create larger atlas!" << std::endl;
+                return glm::vec4(0.0f);
+            }
+            
+            // Копируем данные со старой текстуры на новую
+            glBindTexture(GL_TEXTURE_2D, atlasTexture);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldSize, oldSize);
+            
+            glDeleteTextures(1, &oldTexture);
+            
+            // Сбрасываем позицию упаковки (упрощенно - переупакуем все заново)
+            // Для полной реализации нужно хранить все упакованные лайтмапы и переупаковывать их
+            currentX = 0;
+            currentY = 0;
+            rowHeight = 0;
+        } else {
+            std::cerr << "LightmapAtlas: Cannot fit lightmap (" << width << "x" << height 
+                      << "), max atlas size reached: " << MAX_ATLAS_SIZE << std::endl;
+            return glm::vec4(0.0f);
+        }
+    }
+
     // Проверка переполнения строки
     if (currentX + width > atlasSize) {
         currentX = 0;
@@ -45,8 +112,34 @@ glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data
 
     // Проверка переполнения атласа
     if (currentY + height > atlasSize) {
-        std::cerr << "LightmapAtlas: Atlas full! Size: " << atlasSize << std::endl;
-        return glm::vec4(0.0f);
+        std::cerr << "LightmapAtlas: Atlas full! Size: " << atlasSize << ", trying to expand..." << std::endl;
+        
+        // Попытка увеличить атлас
+        int newSize = std::min(atlasSize + ATLAS_SIZE_STEP, MAX_ATLAS_SIZE);
+        if (newSize > atlasSize) {
+            GLuint oldTexture = atlasTexture;
+            int oldSize = atlasSize;
+            
+            atlasTexture = 0;
+            initialized = false;
+            
+            if (!init(newSize)) {
+                std::cerr << "LightmapAtlas: Failed to expand atlas!" << std::endl;
+                return glm::vec4(0.0f);
+            }
+            
+            // Копируем данные со старой текстуры
+            glBindTexture(GL_TEXTURE_2D, atlasTexture);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldSize, oldSize);
+            
+            glDeleteTextures(1, &oldTexture);
+            
+            currentX = 0;
+            currentY = 0;
+            rowHeight = 0;
+        } else {
+            return glm::vec4(0.0f);
+        }
     }
 
     // Копируем данные
@@ -254,8 +347,8 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
         int sSize = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
         int tSize = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
 
-        lm.width = std::max(1, std::min(sSize, 512));
-        lm.height = std::max(1, std::min(tSize, 512));
+        lm.width = std::max(1, std::min(sSize, MAX_LIGHTMAP_SIZE));
+        lm.height = std::max(1, std::min(tSize, MAX_LIGHTMAP_SIZE));
 
         // Проверка размера данных
         int dataSize = lm.width * lm.height * 3; // RGB
