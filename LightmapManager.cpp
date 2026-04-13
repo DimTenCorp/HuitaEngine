@@ -4,41 +4,34 @@
 #include <algorithm>
 #include <cstring>
 #include <cmath>
+#include <numeric>
 
-// Максимальный размер лайтмапа для одной грани (можно увеличить при необходимости)
+// Максимальный размер одной грани (можно увеличить, если карта очень детальная)
 constexpr int MAX_LIGHTMAP_SIZE = 1024;
-
-// Базовый размер атласа (будет увеличен при необходимости)
-constexpr int BASE_ATLAS_WIDTH = 2048;
-constexpr int BASE_ATLAS_HEIGHT = 2048;
 
 // Максимальный размер атласа (ограничение видеокарты, обычно 16384)
 constexpr int MAX_ATLAS_SIZE = 16384;
 
-// Шаг увеличения атласа
-constexpr int ATLAS_SIZE_STEP = 2048;
-
 // ============================================================================
 // LightmapAtlas Implementation
 // ============================================================================
-
-bool LightmapAtlas::init() {
-    return init(BASE_ATLAS_WIDTH, BASE_ATLAS_HEIGHT);
-}
 
 bool LightmapAtlas::init(int width, int height) {
     if (atlasTexture) {
         glDeleteTextures(1, &atlasTexture);
         atlasTexture = 0;
     }
-    
-    atlasWidth = std::min(width, MAX_ATLAS_SIZE);
-    atlasHeight = std::min(height, MAX_ATLAS_SIZE);
-    
+
+    // Принимаем любой размер, даже не кратный степени двойки (например 1535x1457)
+    // Ограничиваем только максимальным размером GPU
+    atlasWidth = std::max(1, std::min(width, MAX_ATLAS_SIZE));
+    atlasHeight = std::max(1, std::min(height, MAX_ATLAS_SIZE));
+
     glGenTextures(1, &atlasTexture);
     glBindTexture(GL_TEXTURE_2D, atlasTexture);
 
-    // ИСПРАВЛЕНО: чёрный фон (0 = нет света) вместо белого
+    // Создаем пустую текстуру черного цвета (0 = отсутствие света)
+    // Размер может быть любым прямоугольным
     std::vector<uint8_t> emptyData(atlasWidth * atlasHeight * 3, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, atlasWidth, atlasHeight,
         0, GL_RGB, GL_UNSIGNED_BYTE, emptyData.data());
@@ -53,120 +46,50 @@ bool LightmapAtlas::init(int width, int height) {
     rowHeight = 0;
     initialized = true;
 
-    // Не нужен белый пиксель - теперь где нет lightmap будет чёрный цвет из (0,0)
-
     return atlasTexture != 0;
 }
 
 glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data) {
     if (!initialized) return glm::vec4(0.0f);
 
-    // Проверка: лайтмап слишком большой для текущего атласа
+    // Если вдруг лайтмап больше атласа (не должно случиться при правильном расчете)
     if (width > atlasWidth || height > atlasHeight) {
-        std::cerr << "LightmapAtlas: Lightmap too big (" << width << "x" << height 
-                  << ") for atlas size " << atlasWidth << "x" << atlasHeight << ", attempting to resize..." << std::endl;
-        
-        // Попытка увеличить размер атласа
-        int newWidth = atlasWidth;
-        int newHeight = atlasHeight;
-        
-        // Увеличиваем ширину или высоту по необходимости
-        while (width > newWidth && newWidth < MAX_ATLAS_SIZE) {
-            newWidth += ATLAS_SIZE_STEP;
-        }
-        while (height > newHeight && newHeight < MAX_ATLAS_SIZE) {
-            newHeight += ATLAS_SIZE_STEP;
-        }
-        
-        if ((newWidth > atlasWidth || newHeight > atlasHeight) && 
-            newWidth <= MAX_ATLAS_SIZE && newHeight <= MAX_ATLAS_SIZE) {
-            // Пересоздаем атлас с большим размером
-            // Сохраняем старую текстуру для копирования данных
-            GLuint oldTexture = atlasTexture;
-            int oldWidth = atlasWidth;
-            int oldHeight = atlasHeight;
-            
-            // Создаем новый атлас
-            atlasTexture = 0;
-            initialized = false;
-            
-            if (!init(newWidth, newHeight)) {
-                std::cerr << "LightmapAtlas: Failed to create larger atlas!" << std::endl;
-                return glm::vec4(0.0f);
-            }
-            
-            // Копируем данные со старой текстуры на новую
-            glBindTexture(GL_TEXTURE_2D, atlasTexture);
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldWidth, oldHeight);
-            
-            glDeleteTextures(1, &oldTexture);
-            
-            // Сбрасываем позицию упаковки (упрощенно - переупакуем все заново)
-            // Для полной реализации нужно хранить все упакованные лайтмапы и переупаковывать их
-            currentX = 0;
-            currentY = 0;
-            rowHeight = 0;
-        } else {
-            std::cerr << "LightmapAtlas: Cannot fit lightmap (" << width << "x" << height 
-                      << "), max atlas size reached: " << MAX_ATLAS_SIZE << std::endl;
-            return glm::vec4(0.0f);
-        }
+        std::cerr << "LightmapAtlas: Critical error! Lightmap (" << width << "x" << height
+            << ") is larger than atlas (" << atlasWidth << "x" << atlasHeight << ")" << std::endl;
+        return glm::vec4(0.0f);
     }
 
-    // Проверка переполнения строки
+    // Алгоритм упаковки строками (Row Packing)
+    // Если текущая строка переполняется по ширине, переходим на следующую
     if (currentX + width > atlasWidth) {
         currentX = 0;
-        currentY += rowHeight + 2; // +2 для padding
+        currentY += rowHeight + 1; // +1 пиксель отступ между строками
         rowHeight = 0;
     }
 
-    // Проверка переполнения атласа
+    // Если переполняется высота атласа
     if (currentY + height > atlasHeight) {
-        std::cerr << "LightmapAtlas: Atlas full! Size: " << atlasWidth << "x" << atlasHeight << ", trying to expand..." << std::endl;
-        
-        // Попытка увеличить атлас
-        int newHeight = std::min(atlasHeight + ATLAS_SIZE_STEP, MAX_ATLAS_SIZE);
-        if (newHeight > atlasHeight) {
-            GLuint oldTexture = atlasTexture;
-            int oldWidth = atlasWidth;
-            int oldHeight = atlasHeight;
-            
-            atlasTexture = 0;
-            initialized = false;
-            
-            if (!init(oldWidth, newHeight)) {
-                std::cerr << "LightmapAtlas: Failed to expand atlas!" << std::endl;
-                return glm::vec4(0.0f);
-            }
-            
-            // Копируем данные со старой текстуры
-            glBindTexture(GL_TEXTURE_2D, atlasTexture);
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldWidth, oldHeight);
-            
-            glDeleteTextures(1, &oldTexture);
-            
-            currentX = 0;
-            currentY = 0;
-            rowHeight = 0;
-        } else {
-            return glm::vec4(0.0f);
-        }
+        std::cerr << "LightmapAtlas: Atlas overflow! Required height exceeds " << atlasHeight << std::endl;
+        return glm::vec4(0.0f);
     }
 
-    // Копируем данные
+    // Копируем данные лайтмапа в атлас
     glBindTexture(GL_TEXTURE_2D, atlasTexture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, currentX, currentY, width, height,
         GL_RGB, GL_UNSIGNED_BYTE, data);
 
-    // UV координаты (с небольшим смещением 0.5 пикселя для центрирования)
-    float halfPixelX = 0.5f / atlasWidth;
-    float halfPixelY = 0.5f / atlasHeight;
-    float u1 = (float)currentX / atlasWidth + halfPixelX;
-    float v1 = (float)currentY / atlasHeight + halfPixelY;
-    float u2 = (float)(currentX + width) / atlasWidth - halfPixelX;
-    float v2 = (float)(currentY + height) / atlasHeight - halfPixelY;
+    // Расчет UV координат
+    // Добавляем небольшое смещение (half-pixel offset) для корректной выборки текстур
+    float halfPixelX = 0.5f / (float)atlasWidth;
+    float halfPixelY = 0.5f / (float)atlasHeight;
 
-    currentX += width + 2; // +2 padding
+    float u1 = (float)currentX / (float)atlasWidth + halfPixelX;
+    float v1 = (float)currentY / (float)atlasHeight + halfPixelY;
+    float u2 = (float)(currentX + width) / (float)atlasWidth - halfPixelX;
+    float v2 = (float)(currentY + height) / (float)atlasHeight - halfPixelY;
+
+    // Обновляем позицию курсора
+    currentX += width + 1; // +1 пиксель отступ между лайтмапами в строке
     rowHeight = std::max(rowHeight, height);
 
     return glm::vec4(u1, v1, u2, v2);
@@ -183,6 +106,8 @@ void LightmapAtlas::cleanup() {
         atlasTexture = 0;
     }
     initialized = false;
+    atlasWidth = 0;
+    atlasHeight = 0;
 }
 
 // ============================================================================
@@ -218,7 +143,6 @@ GLuint LightmapManager::createLightmapTexture(int width, int height, const uint8
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
 
-    // ВАЖНО: выравнивание 1 байт для lightmaps!
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height,
@@ -232,26 +156,82 @@ GLuint LightmapManager::createLightmapTexture(int width, int height, const uint8
     return texID;
 }
 
+// Функция расчета оптимального размера атласа на основе всех лайтмапов
+void LightmapManager::calculateOptimalAtlasSize(const std::vector<FaceLightmap>& tempMaps, int& outWidth, int& outHeight) {
+    int totalArea = 0;
+    int maxWidth = 0;
+    int maxHeight = 0;
+
+    // Считаем общую площадь и максимальные размеры отдельных лайтмапов
+    for (const auto& lm : tempMaps) {
+        if (lm.valid) {
+            totalArea += lm.width * lm.height;
+            maxWidth = std::max(maxWidth, lm.width);
+            maxHeight = std::max(maxHeight, lm.height);
+        }
+    }
+
+    // Добавляем запас на отступы (padding) ~20%
+    totalArea = static_cast<int>(totalArea * 1.2f);
+
+    // Начальный расчет размеров
+    // Пытаемся сделать атлас близким к квадрату, но не меньше максимальных размеров граней
+    int estimatedSide = static_cast<int>(std::sqrt(totalArea));
+
+    int w = std::max(estimatedSide, maxWidth);
+    int h = std::max(estimatedSide, maxHeight);
+
+    // Округляем до ближайшей степени двойки для лучшей совместимости и производительности GPU,
+    // НО сохраняем возможность неквадратных форм, если одна сторона явно больше другой.
+    // Однако, если пользователь хочет ТОЧНО 1535x1457, мы можем просто вернуть ближайшие большие значения.
+    // Здесь мы используем стратегию: округление вверх до степени двойки, но независимо для W и H,
+    // если соотношение сторон сильно отличается.
+
+    auto nextPow2 = [](int v) -> int {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return std::max(v, 1);
+    };
+
+    // Простая эвристика: если стороны сильно различаются, оставляем прямоугольник, иначе квадрат
+    float aspectRatio = (float)w / (float)h;
+
+    if (aspectRatio > 1.5f || aspectRatio < 0.66f) {
+        // Прямоугольный атлас
+        outWidth = nextPow2(w);
+        outHeight = nextPow2(h);
+    }
+    else {
+        // Квадратный атлас
+        int side = nextPow2(std::max(w, h));
+        outWidth = side;
+        outHeight = side;
+    }
+
+    // Финальная проверка ограничений
+    outWidth = std::min(outWidth, MAX_ATLAS_SIZE);
+    outHeight = std::min(outHeight, MAX_ATLAS_SIZE);
+
+    // Гарантируем, что атлас не меньше максимальной грани
+    outWidth = std::max(outWidth, maxWidth);
+    outHeight = std::max(outHeight, maxHeight);
+}
+
 void LightmapManager::debugPrintLightmapInfo() const {
     std::cout << "=== LightmapManager Debug Info ===" << std::endl;
+    std::cout << "Atlas Size: " << atlas.getWidth() << "x" << atlas.getHeight() << std::endl;
     std::cout << "Face lightmaps count: " << faceLightmaps.size() << std::endl;
-    std::cout << "Has valid lightmaps: " << (hasValidLightmaps ? "YES" : "NO") << std::endl;
-    std::cout << "Atlas initialized: " << (atlas.initialized ? "YES" : "NO") << std::endl;
 
     int validCount = 0;
     for (size_t i = 0; i < faceLightmaps.size(); i++) {
-        if (faceLightmaps[i].valid) {
-            validCount++;
-            if (validCount < 10) { // Печатаем первые 10
-                std::cout << "  Face " << i << ": valid, offset=" << faceLightmaps[i].offset
-                    << ", size=" << faceLightmaps[i].width << "x" << faceLightmaps[i].height
-                    << ", uvMin=(" << faceLightmaps[i].uvMin.x << "," << faceLightmaps[i].uvMin.y << ")"
-                    << ", uvMax=(" << faceLightmaps[i].uvMax.x << "," << faceLightmaps[i].uvMax.y << ")"
-                    << std::endl;
-            }
-        }
+        if (faceLightmaps[i].valid) validCount++;
     }
-    std::cout << "Valid lightmaps: " << validCount << "/" << faceLightmaps.size() << std::endl;
+    std::cout << "Valid lightmaps: " << validCount << std::endl;
     std::cout << "===================================" << std::endl;
 }
 
@@ -263,7 +243,6 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
         return false;
     }
 
-    // ВАЖНО: выравнивание 1 байт!
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     const auto& faces = bsp.getFaces();
@@ -273,53 +252,37 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
     const auto& originalVertices = bsp.getOriginalVertices();
     const auto& lightingData = bsp.lightingData;
 
-    faceLightmaps.resize(faces.size());
-
-    if (!atlas.init()) {
-        std::cerr << "LightmapManager: Failed to create atlas" << std::endl;
-        return false;
-    }
-
-    int validCount = 0;
-    int skipCount = 0;
-    int noLightCount = 0;
+    // Шаг 1: Пре-сканирование (Dry Run)
+    // Вычисляем размеры всех лайтмапов, но НЕ создаем текстуры и НЕ упаковываем их.
+    // Это нужно, чтобы узнать точный необходимый размер атласа.
+    std::vector<FaceLightmap> tempMaps(faces.size());
 
     for (size_t i = 0; i < faces.size(); i++) {
         const BSPFace& face = faces[i];
-        FaceLightmap& lm = faceLightmaps[i];
+        FaceLightmap& lm = tempMaps[i];
 
         lm.offset = face.lightofs;
 
-        // Проверка: нет lightmap (триггеры, небо и т.д.)
         if (face.lightofs < 0) {
             lm.valid = false;
-            lm.uvMin = glm::vec2(0.0f, 0.0f);
-            lm.uvMax = glm::vec2(0.001f, 0.001f);
-            noLightCount++;
             continue;
         }
 
         if (face.lightofs >= (int)lightingData.size()) {
-            std::cerr << "Face " << i << ": lightofs out of bounds: " << face.lightofs << std::endl;
             lm.valid = false;
-            skipCount++;
             continue;
         }
 
         if (face.texInfo < 0 || face.texInfo >= (int)texInfos.size()) {
-            std::cerr << "Face " << i << ": texInfo out of bounds: " << face.texInfo << std::endl;
             lm.valid = false;
-            skipCount++;
             continue;
         }
 
         const BSPTexInfo& tex = texInfos[face.texInfo];
 
-        // Расчёт размеров LIGHTMAP
         float sMin = 999999.0f, sMax = -999999.0f;
         float tMin = 999999.0f, tMax = -999999.0f;
 
-        // Используем оригинальные вершины!
         for (int j = 0; j < face.numEdges; j++) {
             int surfEdgeIdx = face.firstEdge + j;
             if (surfEdgeIdx < 0 || surfEdgeIdx >= (int)surfEdges.size()) continue;
@@ -340,8 +303,6 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
             if (vIdx < 0 || vIdx >= (int)originalVertices.size()) continue;
 
             const glm::vec3& v = originalVertices[vIdx];
-
-            // Проекция на текстурные оси
             float s = v.x * tex.s[0] + v.y * tex.s[1] + v.z * tex.s[2] + tex.s[3];
             float t = v.x * tex.t[0] + v.y * tex.t[1] + v.z * tex.t[2] + tex.t[3];
 
@@ -351,50 +312,66 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
             tMax = std::max(tMax, t);
         }
 
-        // Сохраняем min для UV расчёта
         lm.minS = sMin;
         lm.minT = tMin;
 
-        // Правильная формула HL1 с ceil и floor
         int sSize = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
         int tSize = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
 
         lm.width = std::max(1, std::min(sSize, MAX_LIGHTMAP_SIZE));
         lm.height = std::max(1, std::min(tSize, MAX_LIGHTMAP_SIZE));
 
-        // Проверка размера данных
-        int dataSize = lm.width * lm.height * 3; // RGB
+        // Проверка границ данных
+        int dataSize = lm.width * lm.height * 3;
         if (face.lightofs + dataSize > (int)lightingData.size()) {
-            std::cerr << "Face " << i << ": Not enough lighting data! "
-                << "Offset: " << face.lightofs
-                << ", Need: " << dataSize
-                << ", Have: " << lightingData.size() - face.lightofs << std::endl;
             lm.valid = false;
-            skipCount++;
             continue;
         }
 
-        // Создаём индивидуальную текстуру (для отладки)
+        lm.valid = true;
+    }
+
+    // Шаг 2: Расчет оптимального размера атласа на основе пре-сканирования
+    int atlasW, atlasH;
+    calculateOptimalAtlasSize(tempMaps, atlasW, atlasH);
+
+    std::cout << "[LIGHT] Calculated optimal atlas size: " << atlasW << "x" << atlasH << std::endl;
+
+    // Шаг 3: Создание атласа ПОД КОНКРЕТНЫЙ РАЗМЕР
+    if (!atlas.init(atlasW, atlasH)) {
+        std::cerr << "LightmapManager: Failed to create atlas of size " << atlasW << "x" << atlasH << std::endl;
+        return false;
+    }
+
+    // Шаг 4: Вторая проход - реальная загрузка и упаковка
+    faceLightmaps = std::move(tempMaps);
+    int validCount = 0;
+
+    for (size_t i = 0; i < faceLightmaps.size(); i++) {
+        FaceLightmap& lm = faceLightmaps[i];
+        if (!lm.valid) continue;
+
+        const BSPFace& face = faces[i];
+
+        // Создаем индивидуальную текстуру (опционально, для отладки)
         lm.textureID = createLightmapTexture(lm.width, lm.height,
             lightingData.data() + face.lightofs);
 
-        // Пакуем в атлас
+        // Упаковываем в общий атлас
         glm::vec4 atlasUV = atlas.packLightmap(lm.width, lm.height,
             lightingData.data() + face.lightofs);
+
         lm.uvMin = glm::vec2(atlasUV.x, atlasUV.y);
         lm.uvMax = glm::vec2(atlasUV.z, atlasUV.w);
 
-        lm.valid = true;
         validCount++;
     }
 
     hasValidLightmaps = (validCount > 0);
 
     std::cout << "[LIGHTMAP] Total faces: " << faces.size() << std::endl;
-    std::cout << "[LIGHTMAP] Valid: " << validCount << ", No light: " << noLightCount << ", Errors: " << skipCount << std::endl;
-    std::cout << "[LIGHTMAP] Atlas initialized: " << (atlas.initialized ? "YES" : "NO") << std::endl;
-    std::cout << "[LIGHT] Lightmaps initialized successfully" << std::endl;
-    std::cout << "[LIGHT] Total lightmap data: " << lightingData.size() << " bytes" << std::endl;
+    std::cout << "[LIGHTMAP] Valid lightmaps packed: " << validCount << std::endl;
+    std::cout << "[LIGHTMAP] Atlas dimensions: " << atlas.getWidth() << "x" << atlas.getHeight() << std::endl;
 
     return hasValidLightmaps;
 }
@@ -403,7 +380,6 @@ const FaceLightmap& LightmapManager::getFaceLightmap(int faceIndex) const {
     if (faceIndex >= 0 && faceIndex < (int)faceLightmaps.size()) {
         return faceLightmaps[faceIndex];
     }
-
     static FaceLightmap empty;
     return empty;
 }
