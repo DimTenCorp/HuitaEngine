@@ -95,6 +95,8 @@ private:
     std::string pendingMapPath;
     bool mapLoadInProgress = false;
 
+    SettingsData currentSettings;
+
     bool initGLFW();
     bool initGLAD();
     bool initImGui();

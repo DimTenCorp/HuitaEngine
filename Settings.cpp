@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 
+
 DisplayMode SettingsData::getNativeResolution() {
     DisplayMode native(1920, 1080);
 
@@ -86,7 +87,7 @@ void SettingsData::save(const std::string& filename) {
 }
 
 void SettingsData::load(const std::string& filename) {
-    // Сначала устанавливаем дефолтные значения
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     detectNativeResolution();
 
     fullscreen = true;
@@ -110,23 +111,23 @@ void SettingsData::load(const std::string& filename) {
     bool audioSectionFound = false;
 
     while (std::getline(file, line)) {
-        // Пропускаем пустые строки и комментарии
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
         if (line.empty()) continue;
 
-        // Убираем пробелы в начале строки
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
         size_t start = line.find_first_not_of(" \t\r\n");
         if (start == std::string::npos) continue;
         if (start > 0) line = line.substr(start);
 
-        // Комментарии
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
         if (line[0] == ';' || line[0] == '#') continue;
 
-        // Секция [Section]
+        // пїЅпїЅпїЅпїЅпїЅпїЅ [Section]
         if (line[0] == '[') {
             size_t end = line.find(']');
             if (end != std::string::npos) {
                 section = line.substr(1, end - 1);
-                // Убираем пробелы из имени секции
+                // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
                 size_t secStart = section.find_first_not_of(" \t");
                 size_t secEnd = section.find_last_not_of(" \t");
                 if (secStart != std::string::npos && secEnd != std::string::npos) {
@@ -140,14 +141,14 @@ void SettingsData::load(const std::string& filename) {
             continue;
         }
 
-        // Парсим key=value
+        // пїЅпїЅпїЅпїЅпїЅпїЅ key=value
         size_t eqPos = line.find('=');
         if (eqPos == std::string::npos) continue;
 
         std::string key = line.substr(0, eqPos);
         std::string value = line.substr(eqPos + 1);
 
-        // Убираем пробелы
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
         size_t keyStart = key.find_first_not_of(" \t");
         size_t keyEnd = key.find_last_not_of(" \t");
         if (keyStart != std::string::npos && keyEnd != std::string::npos) {
@@ -158,7 +159,7 @@ void SettingsData::load(const std::string& filename) {
         if (valStart != std::string::npos) {
             value = value.substr(valStart);
         }
-        // Убираем \r в конце (Windows)
+        // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ \r пїЅ пїЅпїЅпїЅпїЅпїЅ (Windows)
         size_t valEnd = value.find_last_not_of(" \t\r\n");
         if (valEnd != std::string::npos) {
             value = value.substr(0, valEnd + 1);
@@ -168,7 +169,7 @@ void SettingsData::load(const std::string& filename) {
             if (section == "Display") {
                 if (key == "fullscreen") {
                     fullscreen = (value == "1" || value == "true" || value == "yes");
-                    std::cout << "[SETTINGS] Loaded fullscreen=" << fullscreen << " (value='" << value << "')" << std::endl;
+                    std::cout << "[SETTINGS] Loaded fullscreen=" << fullscreen << " (value='" << value << "', section='" << section << "')" << std::endl;
                 }
                 else if (key == "width") {
                     screenWidth = std::stoi(value);
@@ -201,7 +202,7 @@ void SettingsData::load(const std::string& filename) {
 
     file.close();
 
-    // Валидация: если fullscreen=0 но разрешение не задано или нулевое - используем дефолты
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅ fullscreen=0 пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ - пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     if (!fullscreen && (screenWidth <= 0 || screenHeight <= 0)) {
         std::cerr << "[SETTINGS] Invalid windowed resolution, using native" << std::endl;
         screenWidth = nativeResolution.width;
