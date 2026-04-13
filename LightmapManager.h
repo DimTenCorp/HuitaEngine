@@ -21,13 +21,14 @@ struct FaceLightmap {
 class LightmapAtlas {
 public:
     GLuint atlasTexture = 0;
-    int atlasSize = 2048;
+    int atlasWidth = 2048;   // Ширина атласа
+    int atlasHeight = 2048;  // Высота атласа
     int currentX = 0, currentY = 0;
     int rowHeight = 0;
     bool initialized = false;
 
     bool init();
-    bool init(int size);  // Перегруженная версия с указанием размера
+    bool init(int width, int height);  // Перегруженная версия с указанием размера
     // ���������� UV ���������� � ������: (minU, minV, maxU, maxV)
     glm::vec4 packLightmap(int width, int height, const uint8_t* data);
     void bind(GLuint unit) const;

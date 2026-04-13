@@ -9,7 +9,8 @@
 constexpr int MAX_LIGHTMAP_SIZE = 1024;
 
 // Базовый размер атласа (будет увеличен при необходимости)
-constexpr int BASE_ATLAS_SIZE = 2048;
+constexpr int BASE_ATLAS_WIDTH = 2048;
+constexpr int BASE_ATLAS_HEIGHT = 2048;
 
 // Максимальный размер атласа (ограничение видеокарты, обычно 16384)
 constexpr int MAX_ATLAS_SIZE = 16384;
@@ -22,23 +23,24 @@ constexpr int ATLAS_SIZE_STEP = 2048;
 // ============================================================================
 
 bool LightmapAtlas::init() {
-    return init(BASE_ATLAS_SIZE);
+    return init(BASE_ATLAS_WIDTH, BASE_ATLAS_HEIGHT);
 }
 
-bool LightmapAtlas::init(int size) {
+bool LightmapAtlas::init(int width, int height) {
     if (atlasTexture) {
         glDeleteTextures(1, &atlasTexture);
         atlasTexture = 0;
     }
     
-    atlasSize = std::min(size, MAX_ATLAS_SIZE);
+    atlasWidth = std::min(width, MAX_ATLAS_SIZE);
+    atlasHeight = std::min(height, MAX_ATLAS_SIZE);
     
     glGenTextures(1, &atlasTexture);
     glBindTexture(GL_TEXTURE_2D, atlasTexture);
 
     // ИСПРАВЛЕНО: чёрный фон (0 = нет света) вместо белого
-    std::vector<uint8_t> emptyData(atlasSize * atlasSize * 3, 0);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, atlasSize, atlasSize,
+    std::vector<uint8_t> emptyData(atlasWidth * atlasHeight * 3, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, atlasWidth, atlasHeight,
         0, GL_RGB, GL_UNSIGNED_BYTE, emptyData.data());
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -60,34 +62,42 @@ glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data
     if (!initialized) return glm::vec4(0.0f);
 
     // Проверка: лайтмап слишком большой для текущего атласа
-    if (width > atlasSize || height > atlasSize) {
+    if (width > atlasWidth || height > atlasHeight) {
         std::cerr << "LightmapAtlas: Lightmap too big (" << width << "x" << height 
-                  << ") for atlas size " << atlasSize << ", attempting to resize..." << std::endl;
+                  << ") for atlas size " << atlasWidth << "x" << atlasHeight << ", attempting to resize..." << std::endl;
         
         // Попытка увеличить размер атласа
-        int newSize = atlasSize;
-        while ((width > newSize || height > newSize) && newSize < MAX_ATLAS_SIZE) {
-            newSize += ATLAS_SIZE_STEP;
+        int newWidth = atlasWidth;
+        int newHeight = atlasHeight;
+        
+        // Увеличиваем ширину или высоту по необходимости
+        while (width > newWidth && newWidth < MAX_ATLAS_SIZE) {
+            newWidth += ATLAS_SIZE_STEP;
+        }
+        while (height > newHeight && newHeight < MAX_ATLAS_SIZE) {
+            newHeight += ATLAS_SIZE_STEP;
         }
         
-        if (newSize > atlasSize && newSize <= MAX_ATLAS_SIZE) {
+        if ((newWidth > atlasWidth || newHeight > atlasHeight) && 
+            newWidth <= MAX_ATLAS_SIZE && newHeight <= MAX_ATLAS_SIZE) {
             // Пересоздаем атлас с большим размером
             // Сохраняем старую текстуру для копирования данных
             GLuint oldTexture = atlasTexture;
-            int oldSize = atlasSize;
+            int oldWidth = atlasWidth;
+            int oldHeight = atlasHeight;
             
             // Создаем новый атлас
             atlasTexture = 0;
             initialized = false;
             
-            if (!init(newSize)) {
+            if (!init(newWidth, newHeight)) {
                 std::cerr << "LightmapAtlas: Failed to create larger atlas!" << std::endl;
                 return glm::vec4(0.0f);
             }
             
             // Копируем данные со старой текстуры на новую
             glBindTexture(GL_TEXTURE_2D, atlasTexture);
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldSize, oldSize);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldWidth, oldHeight);
             
             glDeleteTextures(1, &oldTexture);
             
@@ -104,33 +114,34 @@ glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data
     }
 
     // Проверка переполнения строки
-    if (currentX + width > atlasSize) {
+    if (currentX + width > atlasWidth) {
         currentX = 0;
         currentY += rowHeight + 2; // +2 для padding
         rowHeight = 0;
     }
 
     // Проверка переполнения атласа
-    if (currentY + height > atlasSize) {
-        std::cerr << "LightmapAtlas: Atlas full! Size: " << atlasSize << ", trying to expand..." << std::endl;
+    if (currentY + height > atlasHeight) {
+        std::cerr << "LightmapAtlas: Atlas full! Size: " << atlasWidth << "x" << atlasHeight << ", trying to expand..." << std::endl;
         
         // Попытка увеличить атлас
-        int newSize = std::min(atlasSize + ATLAS_SIZE_STEP, MAX_ATLAS_SIZE);
-        if (newSize > atlasSize) {
+        int newHeight = std::min(atlasHeight + ATLAS_SIZE_STEP, MAX_ATLAS_SIZE);
+        if (newHeight > atlasHeight) {
             GLuint oldTexture = atlasTexture;
-            int oldSize = atlasSize;
+            int oldWidth = atlasWidth;
+            int oldHeight = atlasHeight;
             
             atlasTexture = 0;
             initialized = false;
             
-            if (!init(newSize)) {
+            if (!init(oldWidth, newHeight)) {
                 std::cerr << "LightmapAtlas: Failed to expand atlas!" << std::endl;
                 return glm::vec4(0.0f);
             }
             
             // Копируем данные со старой текстуры
             glBindTexture(GL_TEXTURE_2D, atlasTexture);
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldSize, oldSize);
+            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, oldWidth, oldHeight);
             
             glDeleteTextures(1, &oldTexture);
             
@@ -148,11 +159,12 @@ glm::vec4 LightmapAtlas::packLightmap(int width, int height, const uint8_t* data
         GL_RGB, GL_UNSIGNED_BYTE, data);
 
     // UV координаты (с небольшим смещением 0.5 пикселя для центрирования)
-    float halfPixel = 0.5f / atlasSize;
-    float u1 = (float)currentX / atlasSize + halfPixel;
-    float v1 = (float)currentY / atlasSize + halfPixel;
-    float u2 = (float)(currentX + width) / atlasSize - halfPixel;
-    float v2 = (float)(currentY + height) / atlasSize - halfPixel;
+    float halfPixelX = 0.5f / atlasWidth;
+    float halfPixelY = 0.5f / atlasHeight;
+    float u1 = (float)currentX / atlasWidth + halfPixelX;
+    float v1 = (float)currentY / atlasHeight + halfPixelY;
+    float u2 = (float)(currentX + width) / atlasWidth - halfPixelX;
+    float v2 = (float)(currentY + height) / atlasHeight - halfPixelY;
 
     currentX += width + 2; // +2 padding
     rowHeight = std::max(rowHeight, height);
