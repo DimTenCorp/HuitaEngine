@@ -265,10 +265,6 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         glm::vec3 worldNormal = glm::vec3(-bspNormal.x, bspNormal.z, bspNormal.y);
         worldNormal = glm::normalize(worldNormal);
 
-        glm::uvec2 texDim = bsp.getTextureDimensions(tex.textureIndex);
-        int texWidth = texDim.x > 0 ? texDim.x : 256;
-        int texHeight = texDim.y > 0 ? texDim.y : 256;
-
         std::vector<glm::vec3> bspPositions;
         bspPositions.reserve(face.numEdges);
 
@@ -304,14 +300,21 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             v.position = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
             v.normal = worldNormal;
 
+            // Расчет текстурных координат НЕ зависит от разрешения текстуры
+            // Используем просто S/T координаты без деления на размеры текстуры
             float s = bspPos.x * tex.s[0] + bspPos.y * tex.s[1] + bspPos.z * tex.s[2] + tex.s[3];
             float t = bspPos.x * tex.t[0] + bspPos.y * tex.t[1] + bspPos.z * tex.t[2] + tex.t[3];
-            v.texCoord = glm::vec2(s / texWidth, t / texHeight);
+            
+            // Для albedo UV используем нормализованные координаты (независимо от размера текстуры)
+            v.texCoord = glm::vec2(s, t);
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
+                // Расчет lightmap UV основан только на S/T координатах и размере тайла (16 единиц)
+                // Не зависит от разрешения текстур карты
                 float lmU = (s / 16.0f) - std::floor(lm.minS / 16.0f);
                 float lmV = (t / 16.0f) - std::floor(lm.minT / 16.0f);
 
+                // Нормализуем к размеру конкретного лайтмапа этой грани
                 lmU = (lmU + 0.5f) / (float)lm.width;
                 lmV = (lmV + 0.5f) / (float)lm.height;
 
