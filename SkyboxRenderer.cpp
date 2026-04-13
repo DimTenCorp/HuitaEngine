@@ -18,12 +18,23 @@ layout (location = 0) in vec3 aPos;
 out vec3 vWorldDir;
 uniform mat4 projection;
 uniform mat4 view;
+
 void main() {
     // Убираем трансляцию из view матрицы (только вращение)
     mat4 viewRot = mat4(mat3(view));
-    vec4 pos = projection * viewRot * vec4(aPos, 1.0);
-    // Делаем z = w чтобы скайбокс был на far plane
+    
+    // HL1 → OpenGL координатная система:
+    // HL1: X=вперёд, Y=влево, Z=вверх
+    // GL:  X=вправо, Y=вверх, Z=назад
+    vec3 posGL;
+    posGL.x = -aPos.y;   // HL1 Y(влево) → GL X(вправо), инвертируем
+    posGL.y = aPos.z;    // HL1 Z(вверх) → GL Y(вверх)
+    posGL.z = -aPos.x;   // HL1 X(вперёд) → GL Z(назад), инвертируем
+    
+    vec4 pos = projection * viewRot * vec4(posGL, 1.0);
     gl_Position = pos.xyww;
+    
+    // Передаём направление в HL1 координатах для фрагментного шейдера
     vWorldDir = aPos;
 }
 )glsl";
@@ -41,37 +52,52 @@ uniform vec3 fallbackColor;
 void main() {
     vec3 dir = normalize(vWorldDir);
     
-    // Вычисляем UV для текущей грани куба
+    // dir в HL1 координатах: X=вперёд, Y=влево, Z=вверх
     vec2 uv;
+    float scale;
     
-    // Порядок граней: rt(+X), lf(-X), bk(+Y), ft(-Y), up(+Z), dn(-Z)
-    if (faceIndex == 0) { // rt (+X)
-        // x = 1, проецируем на YZ плоскость
-        uv = vec2(-dir.z, dir.y) / abs(dir.x);
+    // Порядок граней куба в HL1:
+    // 0=rt(+X вперёд), 1=lf(-X назад), 2=bk(+Y влево), 3=ft(-Y вправо), 4=up(+Z вверх), 5=dn(-Z вниз)
+    
+    if (faceIndex == 0) { // rt (+X) - правая стена когда смотрим вперёд
+        // Проецируем на YZ плоскость (влево-вверх)
+        scale = abs(dir.x);
+        uv.x = -dir.y / scale;  // влево → U
+        uv.y = dir.z / scale;   // вверх → V
     }
-    else if (faceIndex == 1) { // lf (-X)
-        // x = -1, проецируем на YZ плоскость
-        uv = vec2(dir.z, dir.y) / abs(dir.x);
+    else if (faceIndex == 1) { // lf (-X) - левая стена
+        scale = abs(dir.x);
+        uv.x = dir.y / scale;   // вправо → U (инвертировано)
+        uv.y = dir.z / scale;   // вверх → V
     }
-    else if (faceIndex == 2) { // bk (+Y)
-        // y = 1, проецируем на XZ плоскость
-        uv = vec2(dir.x, -dir.z) / abs(dir.y);
+    else if (faceIndex == 2) { // bk (+Y) - задняя стена (влево в HL1)
+        scale = abs(dir.y);
+        uv.x = dir.x / scale;   // вперёд → U
+        uv.y = dir.z / scale;   // вверх → V
     }
-    else if (faceIndex == 3) { // ft (-Y)
-        // y = -1, проецируем на XZ плоскость
-        uv = vec2(-dir.x, -dir.z) / abs(dir.y);
+    else if (faceIndex == 3) { // ft (-Y) - передняя стена (вправо в HL1)
+        scale = abs(dir.y);
+        uv.x = -dir.x / scale;  // назад → U (инвертировано)
+        uv.y = dir.z / scale;   // вверх → V
     }
-    else if (faceIndex == 4) { // up (+Z)
-        // z = 1, проецируем на XY плоскость
-        uv = vec2(dir.x, dir.y) / abs(dir.z);
+    else if (faceIndex == 4) { // up (+Z) - верх
+        scale = abs(dir.z);
+        uv.x = dir.x / scale;   // вперёд → U
+        uv.y = dir.y / scale;   // влево → V
     }
-    else { // dn (-Z)
-        // z = -1, проецируем на XY плоскость
-        uv = vec2(dir.x, -dir.y) / abs(dir.z);
+    else { // dn (-Z) - низ
+        scale = abs(dir.z);
+        uv.x = dir.x / scale;   // вперёд → U
+        uv.y = -dir.y / scale;  // вправо → V (инвертировано)
     }
     
     // Преобразуем из [-1,1] в [0,1]
     uv = uv * 0.5 + 0.5;
+    
+    // Костыль: инвертируем V для всех граней кроме up/dn (текстуры HL1 перевернуты)
+    if (faceIndex < 4) {
+        uv.y = 1.0 - uv.y;
+    }
     
     vec4 texColor = texture(skyTex, uv);
     
@@ -95,8 +121,8 @@ bool SkyboxRenderer::init() {
 }
 
 void SkyboxRenderer::createCubeMesh() {
-    // Куб от -1 до 1 по всем осям
-    // Порядок граней: rt(+X), lf(-X), bk(+Y), ft(-Y), up(+Z), dn(-Z)
+    // Куб в HL1 координатах: X=вперёд, Y=влево, Z=вверх
+    // Грани: 0=rt(+X), 1=lf(-X), 2=bk(+Y), 3=ft(-Y), 4=up(+Z), 5=dn(-Z)
 
     float vertices[6 * 6 * 3];
 
@@ -117,27 +143,28 @@ void SkyboxRenderer::createCubeMesh() {
             vertices[base + 15] = x3; vertices[base + 16] = y3; vertices[base + 17] = z3;
         };
 
-    // 0: rt (+X) - правая грань, нормаль +X
+    // 0: rt (+X) - правая грань, нормаль +X (вперёд в HL1)
     // Вершины: (1,-1,-1), (1,1,-1), (1,1,1), (1,-1,1)
+    // X=1 (вперёд), Y=-1..1 (вправо..влево), Z=-1..1 (вниз..вверх)
     addFace(0, 1, -1, -1, 1, 1, -1, 1, 1, 1, 1, -1, 1);
 
-    // 1: lf (-X) - левая грань, нормаль -X  
+    // 1: lf (-X) - левая грань, нормаль -X (назад в HL1)
     // Вершины: (-1,-1,1), (-1,1,1), (-1,1,-1), (-1,-1,-1)
     addFace(1, -1, -1, 1, -1, 1, 1, -1, 1, -1, -1, -1, -1);
 
-    // 2: bk (+Y) - задняя грань, нормаль +Y
-    // Вершины: (-1,1,-1), (1,1,-1), (1,1,1), (-1,1,1)
-    addFace(2, -1, 1, -1, 1, 1, -1, 1, 1, 1, -1, 1, 1);
+    // 2: bk (+Y) - задняя грань, нормаль +Y (влево в HL1)
+    // Вершины: (1,1,-1), (-1,1,-1), (-1,1,1), (1,1,1)
+    addFace(2, 1, 1, -1, -1, 1, -1, -1, 1, 1, 1, 1, 1);
 
-    // 3: ft (-Y) - передняя грань, нормаль -Y
-    // Вершины: (1,-1,-1), (-1,-1,-1), (-1,-1,1), (1,-1,1)
-    addFace(3, 1, -1, -1, -1, -1, -1, -1, -1, 1, 1, -1, 1);
+    // 3: ft (-Y) - передняя грань, нормаль -Y (вправо в HL1)
+    // Вершины: (-1,-1,-1), (1,-1,-1), (1,-1,1), (-1,-1,1)
+    addFace(3, -1, -1, -1, 1, -1, -1, 1, -1, 1, -1, -1, 1);
 
-    // 4: up (+Z) - верхняя грань, нормаль +Z
+    // 4: up (+Z) - верхняя грань, нормаль +Z (вверх в HL1)
     // Вершины: (-1,1,1), (1,1,1), (1,-1,1), (-1,-1,1)
     addFace(4, -1, 1, 1, 1, 1, 1, 1, -1, 1, -1, -1, 1);
 
-    // 5: dn (-Z) - нижняя грань, нормаль -Z
+    // 5: dn (-Z) - нижняя грань, нормаль -Z (вниз в HL1)
     // Вершины: (-1,1,-1), (-1,-1,-1), (1,-1,-1), (1,1,-1)
     addFace(5, -1, 1, -1, -1, -1, -1, 1, -1, -1, 1, 1, -1);
 
@@ -301,9 +328,13 @@ bool SkyboxRenderer::loadSkyTextures(const std::string& skyName, WADLoader& wadL
     // HL1 порядок: rt, bk, lf, ft, up, dn
     const char* hl1Suffixes[6] = { "rt", "bk", "lf", "ft", "up", "dn" };
 
-    // Маппинг HL1 индексов на наши индексы куба
-    // HL1: 0=rt, 1=bk, 2=lf, 3=ft, 4=up, 5=dn
-    // Куб:  0=rt, 1=lf, 2=bk, 3=ft, 4=up, 5=dn
+    // Правильный маппинг HL1 → наш куб:
+    // HL1 0=rt → куб 0=rt (+X вперёд)
+    // HL1 1=bk → куб 2=bk (+Y влево)  
+    // HL1 2=lf → куб 1=lf (-X назад)
+    // HL1 3=ft → куб 3=ft (-Y вправо)
+    // HL1 4=up → куб 4=up (+Z вверх)
+    // HL1 5=dn → куб 5=dn (-Z вниз)
     const int hl1ToCube[6] = { 0, 2, 1, 3, 4, 5 };
 
     int loadedCount = 0;

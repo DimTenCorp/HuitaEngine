@@ -79,7 +79,7 @@ bool Engine::initGLFW() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     SettingsData settings;
     settings.load();
@@ -95,8 +95,9 @@ bool Engine::initGLFW() {
         height = settings.screenHeight;
     }
     else {
-        monitor = glfwGetPrimaryMonitor();
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        monitor = nullptr;  // ← ВАЖНО: nullptr для оконного режима
+        GLFWmonitor* primary = glfwGetPrimaryMonitor();  // ← Для центрирования используем временную переменную
+        const GLFWvidmode* mode = glfwGetVideoMode(primary);
         windowX = (mode->width - settings.screenWidth) / 2;
         windowY = (mode->height - settings.screenHeight) / 2;
         width = settings.screenWidth;
