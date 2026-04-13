@@ -310,33 +310,22 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
                 // Расчет lightmap UV координат с использованием точных данных из BSP
-                // Ключевое изменение: используем данные о размерах напрямую из BSP через LightmapManager
-                // Это обеспечивает независимость от разрешения текстур и масштаба карты
+                // Получаем размеры лайтмапа и минимальные S/T координаты из FaceLightmap
+                // Эти данные были рассчитаны в BSPLoader::getFaceLightmapDims при инициализации
                 
-                // Вычисляем позицию в пространстве лайтмапа (в текселях)
-                // Формула точно соответствует той, что используется в BSPLoader::getFaceLightmapDims
-                // для расчета ширины и высоты лайтмапа
+                int lmW = lm.width;
+                int lmH = lm.height;
+                float localMinS = lm.minS;
+                float localMinT = lm.minT;
                 
-                // Используем реальные размеры лайтмапа из BSP для вычисления масштаба
-                // Это критично для карт с нестандартным шагом освещения или искажениями
-                float faceSizeS = faceMaxS - faceMinS;
-                float faceSizeT = faceMaxT - faceMinT;
+                // Вычисляем масштаб текселя: 16 единиц мира на один тексель лайтмапа
+                // Это стандартный размер шага освещения в GoldSrc/Half-Life
+                const float LIGHTMAP_SCALE = 16.0f;
                 
-                int lmW = face->lightmapWidth;
-                int lmH = face->lightmapHeight;
-                
-                // Вычисляем масштаб текселя на основе данных грани BSP
-                // Если размеры лайтмапа больше 1, используем их для точного расчета
-                float scaleU = (lmW > 1) ? (faceSizeS / (float)(lmW - 1)) : 16.0f;
-                float scaleV = (lmH > 1) ? (faceSizeT / (float)(lmH - 1)) : 16.0f;
-                
-                // Защита от деления на ноль или слишком малых значений
-                if (scaleU <= 0.0f) scaleU = 16.0f;
-                if (scaleV <= 0.0f) scaleV = 16.0f;
-
                 // Вычисляем координаты в текселях относительно начала грани
-                float sInTexels = (s - faceMinS) / scaleU;
-                float tInTexels = (t - faceMinT) / scaleV;
+                // Используем floor для получения целочисленных координат текселей
+                float sInTexels = std::floor(s / LIGHTMAP_SCALE) - std::floor(localMinS / LIGHTMAP_SCALE);
+                float tInTexels = std::floor(t / LIGHTMAP_SCALE) - std::floor(localMinT / LIGHTMAP_SCALE);
 
                 // Ограничиваем координаты пределами лайтмапа, чтобы избежать выхода за границы
                 // Это предотвращает артефакты на стыках и обрезание освещения
@@ -344,9 +333,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
                 tInTexels = std::clamp(tInTexels, 0.0f, (float)lmH - 0.001f);
 
                 // Нормализуем к диапазону [0, 1] внутри этого лайтмапа
-                // Добавляем 0.5 для попадания в центр текселя (texel centering)
-                float normU = (sInTexels + 0.5f) / (float)lmW;
-                float normV = (tInTexels + 0.5f) / (float)lmH;
+                // Half-pixel offset уже учтен в uvMin/uvMax при упаковке в LightmapAtlas::packLightmap
+                float normU = sInTexels / (float)lmW;
+                float normV = tInTexels / (float)lmH;
                 
                 // Вычисляем итоговые UV координаты в атласе
                 // Интерполируем между uvMin и uvMax (которые уже содержат half-pixel offset из packLightmap)
