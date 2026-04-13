@@ -266,8 +266,10 @@ void BSPLoader::getFaceLightmapDims(int faceIndex, int& width, int& height, floa
     width = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
     height = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
 
-    width = std::max(1, std::min(width, 512));
-    height = std::max(1, std::min(height, 512));
+    // Увеличиваем максимальный размер лайтмапа для поддержки детальных карт
+    // Не сжимаем нечетные разрешения, позволяем любые размеры до MAX_LIGHTMAP_SIZE
+    width = std::max(1, std::min(width, 4096));
+    height = std::max(1, std::min(height, 4096));
 }
 
 bool BSPLoader::loadTextures(FILE* file, const BSPHeader& header, WADLoader& wadLoader) {
