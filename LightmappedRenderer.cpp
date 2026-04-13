@@ -316,14 +316,37 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
                 // Вычисляем позицию в пространстве лайтмапа (в текселях)
                 // Формула точно соответствует той, что используется в BSPLoader::getFaceLightmapDims
                 // для расчета ширины и высоты лайтмапа
-                float sInTexels = std::floor(s / 16.0f) - std::floor(lm.minS / 16.0f);
-                float tInTexels = std::floor(t / 16.0f) - std::floor(lm.minT / 16.0f);
+                
+                // Используем реальные размеры лайтмапа из BSP для вычисления масштаба
+                // Это критично для карт с нестандартным шагом освещения или искажениями
+                float faceSizeS = faceMaxS - faceMinS;
+                float faceSizeT = faceMaxT - faceMinT;
+                
+                int lmW = face->lightmapWidth;
+                int lmH = face->lightmapHeight;
+                
+                // Вычисляем масштаб текселя на основе данных грани BSP
+                // Если размеры лайтмапа больше 1, используем их для точного расчета
+                float scaleU = (lmW > 1) ? (faceSizeS / (float)(lmW - 1)) : 16.0f;
+                float scaleV = (lmH > 1) ? (faceSizeT / (float)(lmH - 1)) : 16.0f;
+                
+                // Защита от деления на ноль или слишком малых значений
+                if (scaleU <= 0.0f) scaleU = 16.0f;
+                if (scaleV <= 0.0f) scaleV = 16.0f;
+
+                // Вычисляем координаты в текселях относительно начала грани
+                float sInTexels = (s - faceMinS) / scaleU;
+                float tInTexels = (t - faceMinT) / scaleV;
+
+                // Ограничиваем координаты пределами лайтмапа, чтобы избежать выхода за границы
+                // Это предотвращает артефакты на стыках и обрезание освещения
+                sInTexels = std::clamp(sInTexels, 0.0f, (float)lmW - 0.001f);
+                tInTexels = std::clamp(tInTexels, 0.0f, (float)lmH - 0.001f);
 
                 // Нормализуем к диапазону [0, 1] внутри этого лайтмапа
-                // Делим на width и height (не width-1!), так как мы маппим на центры текселей
-                // Half-pixel offset уже учтен в uvMin/uvMax при упаковке в packLightmap()
-                float normU = sInTexels / (float)lm.width;
-                float normV = tInTexels / (float)lm.height;
+                // Добавляем 0.5 для попадания в центр текселя (texel centering)
+                float normU = (sInTexels + 0.5f) / (float)lmW;
+                float normV = (tInTexels + 0.5f) / (float)lmH;
                 
                 // Вычисляем итоговые UV координаты в атласе
                 // Интерполируем между uvMin и uvMax (которые уже содержат half-pixel offset из packLightmap)
