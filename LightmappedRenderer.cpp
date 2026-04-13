@@ -309,14 +309,23 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             v.texCoord = glm::vec2(s / texWidth, t / texHeight);
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
-                float lmU = (s / 16.0f) - std::floor(lm.minS / 16.0f);
-                float lmV = (t / 16.0f) - std::floor(lm.minT / 16.0f);
+                // Расчет lightmap UV координат для атласа произвольного размера
+                // S и T - это текстурные координаты в мире (в единицах текстуры)
+                // Lightmap используется с шагом 16 единиц на тексель
 
-                lmU = (lmU + 0.5f) / (float)lm.width;
-                lmV = (lmV + 0.5f) / (float)lm.height;
+                // Вычисляем позицию в пространстве лайтмапа (в текселях)
+                // Используем floor для получения целочисленных координат
+                float localU = std::floor(s / 16.0f) - std::floor(lm.minS / 16.0f);
+                float localV = std::floor(t / 16.0f) - std::floor(lm.minT / 16.0f);
 
-                v.lightmapCoord.x = lm.uvMin.x + lmU * (lm.uvMax.x - lm.uvMin.x);
-                v.lightmapCoord.y = lm.uvMin.y + lmV * (lm.uvMax.y - lm.uvMin.y);
+                // Нормализуем локальные координаты относительно размеров лайтмапа
+                float normU = localU / (float)lm.width;
+                float normV = localV / (float)lm.height;
+                
+                // Вычисляем итоговые UV координаты в атласе
+                // Начинаем от uvMin и добавляем нормализованную позицию внутри лайтмапа
+                v.lightmapCoord.x = lm.uvMin.x + normU * (lm.uvMax.x - lm.uvMin.x);
+                v.lightmapCoord.y = lm.uvMin.y + normV * (lm.uvMax.y - lm.uvMin.y);
             }
             else {
                 v.lightmapCoord = glm::vec2(0.001f, 0.001f);
