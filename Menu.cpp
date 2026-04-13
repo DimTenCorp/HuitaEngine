@@ -191,6 +191,14 @@ void Menu::handleKey(int key, int action) {
             if (onReturnToGame) onReturnToGame();
         }
     }
+
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        if (currentState == State::PAUSE) {
+            // Закрываем паузу
+            setActive(false);
+            return;
+        }
+    }
 }
 
 void Menu::handleScroll(double xoffset, double yoffset) {
@@ -285,6 +293,7 @@ void Menu::render() {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2((float)width, (float)height));
 
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
@@ -300,50 +309,36 @@ void Menu::render() {
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-    // Фон: для паузы — полупрозрачный чёрный, для главного меню — темный
-    if (currentState == State::PAUSE) {
-        // Полупрозрачный чёрный фон для паузы
-        drawList->AddRectFilled(
-            ImVec2(0, 0),
-            ImVec2((float)width, (float)height),
-            IM_COL32(0, 0, 0, 160)  // <-- полупрозрачный
-        );
-    }
-    else {
-        // Обычный фон для главного меню
+    // Фон ТОЛЬКО для главного меню и настроек (когда НЕ пауза)
+    if (currentState != State::PAUSE && currentState != State::LOADING) {
         drawList->AddRectFilled(
             ImVec2(0, 0),
             ImVec2((float)width, (float)height),
             IM_COL32(0, 0, 0, 180)
         );
     }
+    // Для PAUSE — полупрозрачный чёрный фон (темнее, чем в меню)
+    else if (currentState == State::PAUSE) {
+        drawList->AddRectFilled(
+            ImVec2(0, 0),
+            ImVec2((float)width, (float)height),
+            IM_COL32(0, 0, 0, 120)  // Полупрозрачный чёрный, менее затемнённый чем в меню
+        );
+    }
 
     switch (currentState) {
-    case State::MAIN_MENU:
-        renderMainMenu();
-        break;
-    case State::MAP_SELECT:
-        renderMapSelect();
-        break;
-    case State::CONFIRM_EXIT:
-        renderConfirmExit();
-        break;
-    case State::CONFIRM_QUIT:
-        renderConfirmQuit();
-        break;
-    case State::LOADING:
-        renderLoading();
-        break;
-    case State::SETTINGS:
-        renderSettings();
-        break;
-    case State::PAUSE:      // <-- НОВОЕ
-        renderPause();
-        break;
+    case State::MAIN_MENU: renderMainMenu(); break;
+    case State::MAP_SELECT: renderMapSelect(); break;
+    case State::CONFIRM_EXIT: renderConfirmExit(); break;
+    case State::CONFIRM_QUIT: renderConfirmQuit(); break;
+    case State::LOADING: renderLoading(); break;
+    case State::SETTINGS: renderSettings(); break;
+    case State::PAUSE: renderPause(); break;
     }
 
     ImGui::End();
     ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 void Menu::renderPause() {

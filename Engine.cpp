@@ -580,9 +580,10 @@ void Engine::hideMenu() {
 }
 
 void Engine::run() {
+    bool wasEscapePressed = false;  // ← ДОБАВЛЕНО: отслеживание состояния ESC
+
     while (!glfwWindowShouldClose(window)) {
         updateTime();
-
         processPendingLoad();
 
         if (menuActive && menu) {
@@ -596,24 +597,54 @@ void Engine::run() {
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
             menu->handleMouseMove(xpos, ypos);
-
             menu->update(deltaTime);
 
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
+            bool isPause = (menu->getState() == Menu::State::PAUSE);
 
-            glClearColor(0.05f, 0.05f, 0.1f, 0.5f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            if (isPause && game) {
+                game->setPaused(true);
 
-            menu->render();
+                glEnable(GL_DEPTH_TEST);
+                glDepthFunc(GL_LESS);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                render();
 
-            ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+                ImGui_ImplOpenGL3_NewFrame();
+                ImGui_ImplGlfw_NewFrame();
+                ImGui::NewFrame();
 
-            glfwSwapBuffers(window);
-            glfwPollEvents();
-            continue;
+                menu->render();
+
+                ImGui::Render();
+                ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue;
+            }
+            else {
+                if (game) game->setPaused(false);
+
+                glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                ImGui_ImplOpenGL3_NewFrame();
+                ImGui_ImplGlfw_NewFrame();
+                ImGui::NewFrame();
+
+                menu->render();
+
+                ImGui::Render();
+                ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+                glfwSwapBuffers(window);
+                glfwPollEvents();
+                continue;
+            }
+        }
+
+        if (game && game->getPaused()) {
+            game->setPaused(false);
         }
 
         if (!game) {
@@ -626,7 +657,9 @@ void Engine::run() {
             game->processInput(window);
         }
 
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !menuActive) {
+        // ← ИСПРАВЛЕНО: edge detection для ESC
+        bool escapePressed = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+        if (escapePressed && !wasEscapePressed && !menuActive) {
             menuActive = true;
             if (menu) {
                 menu->setActive(true);
@@ -636,6 +669,7 @@ void Engine::run() {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
         }
+        wasEscapePressed = escapePressed;  // ← Сохраняем состояние для следующего кадра
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

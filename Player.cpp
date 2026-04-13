@@ -822,6 +822,10 @@ void Player::moveNoclip(float deltaTime) {
 }
 
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
+    if (isPaused) {
+        return; // Просто выходим, не трогая скорость
+    }
+
     yaw = cameraYaw;
     pitch = cameraPitch;
     meshCollider = collider;
@@ -834,7 +838,6 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     else {
         moveWithCollision(deltaTime);
 
-        // Применяем водную физику если в воде
         if (IsInWater()) {
             ApplyWaterPhysics(deltaTime);
         }

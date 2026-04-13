@@ -46,7 +46,10 @@ public:
     }
     float getMouseSensitivity() const { return mouseSensitivity; }
 
-    // Обновлённое значение по умолчанию 0.5 вместо 0.1
+    // Управление паузой
+    void setPaused(bool paused);
+    bool getPaused() const { return isPaused; }
+
     float mouseSensitivity = 0.5f;
 
 private:
@@ -63,6 +66,12 @@ private:
     bool f5Pressed = false, f6Pressed = false;
     bool noclipPressed = false, bhopPressed = false;
     bool f10Pressed = false;
+
+    bool isPaused = false;
+
+    // Сохраняем состояние для возобновления
+    glm::vec3 savedVelocity;
+    bool wasOnGround = false;
 
     void processMouse(GLFWwindow* window);
 };
