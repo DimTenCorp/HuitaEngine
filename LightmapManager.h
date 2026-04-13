@@ -12,6 +12,7 @@ struct FaceLightmap {
     int height = 0;                 // Высота в пикселях
     int offset = 0;                 // Смещение в lighting lump
     float minS = 0.0f, minT = 0.0f; // Минимальные UV для расчета координат
+    float maxS = 0.0f, maxT = 0.0f; // Максимальные UV для расчета координат
     glm::vec2 uvMin{ 0.0f };        // UV в атласе (min)
     glm::vec2 uvMax{ 0.0f };        // UV в атласе (max)
     bool valid = false;             // Валиден ли лайтмап

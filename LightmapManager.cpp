@@ -314,6 +314,8 @@ bool LightmapManager::initializeFromBSP(const BSPLoader& bsp) {
 
         lm.minS = sMin;
         lm.minT = tMin;
+        lm.maxS = sMax;
+        lm.maxT = tMax;
 
         int sSize = static_cast<int>(std::ceil(sMax / 16.0f) - std::floor(sMin / 16.0f)) + 1;
         int tSize = static_cast<int>(std::ceil(tMax / 16.0f) - std::floor(tMin / 16.0f)) + 1;
