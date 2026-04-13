@@ -310,20 +310,22 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
             if (lm.valid && lm.width > 0 && lm.height > 0) {
                 // Расчет lightmap UV координат для атласа произвольного размера
-                // S и T - это текстурные координаты в мире (в единицах текстуры)
-                // Lightmap используется с шагом 16 единиц на тексель
-
+                // Используем точные данные из BSP о минимальных S/T координатах
+                
                 // Вычисляем позицию в пространстве лайтмапа (в текселях)
-                // Используем floor для получения целочисленных координат
-                float localU = std::floor(s / 16.0f) - std::floor(lm.minS / 16.0f);
-                float localV = std::floor(t / 16.0f) - std::floor(lm.minT / 16.0f);
+                // Важно: используем ту же формулу, что и при расчете размеров в LightmapManager
+                // Формула: floor(coord / 16.0) - floor(minCoord / 16.0)
+                // Это дает нам целочисленные координаты текселей [0, width-1] x [0, height-1]
+                float sInTexels = std::floor(s / 16.0f) - std::floor(lm.minS / 16.0f);
+                float tInTexels = std::floor(t / 16.0f) - std::floor(lm.minT / 16.0f);
 
-                // Нормализуем локальные координаты относительно размеров лайтмапа
-                float normU = localU / (float)lm.width;
-                float normV = localV / (float)lm.height;
+                // Нормализуем к диапазону [0, 1] внутри этого лайтмапа
+                // Half-pixel offset уже учтен в lm.uvMin/lm.uvMax при упаковке в LightmapAtlas::packLightmap()
+                float normU = sInTexels / (float)lm.width;
+                float normV = tInTexels / (float)lm.height;
                 
                 // Вычисляем итоговые UV координаты в атласе
-                // Начинаем от uvMin и добавляем нормализованную позицию внутри лайтмапа
+                // Интерполируем между uvMin и uvMax (которые уже содержат half-pixel offset)
                 v.lightmapCoord.x = lm.uvMin.x + normU * (lm.uvMax.x - lm.uvMin.x);
                 v.lightmapCoord.y = lm.uvMin.y + normV * (lm.uvMax.y - lm.uvMin.y);
             }
