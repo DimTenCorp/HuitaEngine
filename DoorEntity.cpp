@@ -502,3 +502,79 @@ glm::mat4 DoorEntity::getTransform() const {
 
     return transform;
 }
+
+// Рендеринг двери
+void DoorEntity::render(GLuint shaderProgram, const glm::mat4& view, const glm::mat4& projection) {
+    if (!geometryBuilt || vertices.empty() || indices.empty()) return;
+
+    // Создаем VAO если еще не создан
+    if (VAO == 0) {
+        glGenVertexArrays(1, &VAO);
+        glGenBuffers(1, &VBO);
+        glGenBuffers(1, &EBO);
+
+        glBindVertexArray(VAO);
+
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(BSPVertex), vertices.data(), GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+        // Position attribute
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, position));
+        glEnableVertexAttribArray(0);
+
+        // TexCoord attribute
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, texCoord));
+        glEnableVertexAttribArray(1);
+
+        // Normal attribute
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)offsetof(BSPVertex, normal));
+        glEnableVertexAttribArray(2);
+
+        glBindVertexArray(0);
+        geometryBuilt = true;
+    }
+
+    // Получаем локации униформ
+    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
+    GLint projLoc = glGetUniformLocation(shaderProgram, "projection");
+    GLint texLoc = glGetUniformLocation(shaderProgram, "texture1");
+
+    // Активируем текстуру
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glUniform1i(texLoc, 0);
+
+    // Рендерим
+    glBindVertexArray(VAO);
+
+    glm::mat4 model = getTransform();
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
+
+    glBindVertexArray(0);
+}
+
+// Очистка OpenGL ресурсов
+void DoorEntity::cleanupGeometry() {
+    if (VAO != 0) {
+        glDeleteVertexArrays(1, &VAO);
+        glDeleteBuffers(1, &VBO);
+        glDeleteBuffers(1, &EBO);
+        VAO = 0;
+        VBO = 0;
+        EBO = 0;
+        geometryBuilt = false;
+    }
+}
+
+// Деструктор
+DoorEntity::~DoorEntity() {
+    cleanupGeometry();
+}

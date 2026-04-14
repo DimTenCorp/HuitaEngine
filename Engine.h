@@ -20,6 +20,7 @@ class LightmapManager;
 class MeshCollider;
 class Menu;
 class CFuncWater;
+class DoorEntity;
 
 class Engine {
 public:
