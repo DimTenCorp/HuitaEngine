@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <functional>
+#include <vector>
 #include "AABB.h"
 
 enum class DoorType { SLIDING, ROTATING };
@@ -19,6 +20,18 @@ namespace DoorFlags {
     constexpr unsigned int START_LOCKED = 2048;
     constexpr unsigned int SILENT = 4096;
 }
+
+// OBB для точных коллизий вращающихся дверей
+struct OBB {
+    glm::vec3 center;
+    glm::vec3 halfExtents;
+    glm::mat3 rotation;  // Матрица вращения (колонки - локальные оси)
+    
+    OBB() : center(0.0f), halfExtents(0.0f), rotation(1.0f) {}
+    
+    // Проверка пересечения OBB с AABB
+    bool intersectsAABB(const AABB& aabb) const;
+};
 
 class DoorEntity {
 public:
@@ -38,6 +51,7 @@ public:
     bool tryActivate(float touchDistance, bool isPlayerUse = false);
     void update(float deltaTime);
     bool checkBlocked(const Capsule& playerCapsule, float deltaTime);
+    void applyDamageToPlayer(class Player* player, float deltaTime);
 
     bool hasFlag(unsigned int flag) const { return (spawnFlags & flag) != 0; }
     bool isTouchOpens() const { return hasFlag(DoorFlags::TOUCH_OPENS); }
@@ -81,15 +95,20 @@ private:
     bool locked;             // Закрыта на замок
 
     float moveProgress;      // 0.0 = закрыта, 1.0 = открыта
-    float nextCloseTime;     // Время до автозакрытия (в секундах)
     float timeSinceOpen;     // Время с момента открытия (для автозакрытия)
     bool touchLogged;        // Флаг для логирования
     bool touched;            // Касались ли в этом кадре
+    
+    float damageAccumulator; // Накопленный урон для игрока
 
     std::string targetName;  // Имя для активации триггерами
     std::string className;   // Класс энтити
 
     float currentAngle;      // Текущий угол вращения (для rotating)
+    
+    // OBB для вращающихся дверей
+    OBB obb;
+    void updateOBB();
 
     void calculateBoundsFromModel(int modelIndex, const class BSPLoader& bsp);
     void updateRotatedBounds();
