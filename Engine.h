@@ -20,6 +20,7 @@ class LightmapManager;
 class MeshCollider;
 class Menu;
 class CFuncWater;
+class DoorEntity;
 
 class Engine {
 public:
@@ -41,6 +42,7 @@ public:
     MeshCollider* getCollider() const { return meshCollider.get(); }
     Menu* getMenu() const { return menu.get(); }
     const std::vector<CFuncWater*>& getWaterZones() const { return waterZones; }
+    const std::vector<DoorEntity*>& getDoors() const { return doors; }
 
     bool useLightmappedRenderer() const { return useLightmapped; }
     void toggleLightmappedRenderer();
@@ -83,6 +85,7 @@ private:
     std::unique_ptr<Menu> menu;
     std::unique_ptr<SkyboxRenderer> skyboxRenderer;
     std::vector<CFuncWater*> waterZones;
+    std::vector<DoorEntity*> doors;
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
