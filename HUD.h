@@ -15,7 +15,7 @@ struct HUDSettings {
     bool showFPS = true;
     bool showPosition = true;
     bool showCrosshair = true;
-    bool showSpeed = false;  // Счетчик скорости игрока
+    bool showSpeed = true;  // Счетчик скорости игрока (включен по умолчанию)
     CrosshairStyle crosshair;
 };
 
