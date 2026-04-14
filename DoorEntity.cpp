@@ -154,7 +154,7 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
 void CFuncDoor::Update(float deltaTime) {
     switch (state) {
         case DOOR_CLOSED:
-            // Дверь закрыта, ждем触发ления
+            // Дверь закрыта, ждем триггеринга
             touchTriggered = false;
             break;
             
@@ -171,6 +171,7 @@ void CFuncDoor::Update(float deltaTime) {
                     currentPos = 1.0f;
                     state = DOOR_OPEN;
                     stateTimer = openWaitTime;
+                    std::cout << "[func_door] Door fully opened\n";
                 }
                 
                 // Обновляем позицию сущности
@@ -184,6 +185,7 @@ void CFuncDoor::Update(float deltaTime) {
             stateTimer -= deltaTime;
             if (stateTimer <= 0.0f) {
                 state = DOOR_CLOSING;
+                std::cout << "[func_door] Door started closing\n";
             }
             break;
             
@@ -199,6 +201,7 @@ void CFuncDoor::Update(float deltaTime) {
                 if (currentPos <= 0.0f) {
                     currentPos = 0.0f;
                     state = DOOR_CLOSED;
+                    std::cout << "[func_door] Door fully closed\n";
                     // Сбрасываем позицию
                     glm::vec3 center = (originalBounds.min + originalBounds.max) * 0.5f;
                     setPosition(center);
@@ -253,9 +256,15 @@ AABB CFuncDoor::getCurrentBounds() const {
 }
 
 void CFuncDoor::triggerOpen() {
-    if (state == DOOR_CLOSED || state == DOOR_CLOSING) {
+    if (state == DOOR_CLOSED) {
         state = DOOR_OPENING;
         currentPos = 0.0f;
-        std::cout << "[func_door] Door triggered to open\n";
+        std::cout << "[func_door] Door triggered to open from closed\n";
+    }
+    else if (state == DOOR_CLOSING) {
+        // Дверь закрывается - прерываем закрытие и начинаем открывать с текущей позиции
+        state = DOOR_OPENING;
+        // Не сбрасываем currentPos - продолжаем с текущей позиции
+        std::cout << "[func_door] Door triggered to open while closing (pos=" << currentPos << ")\n";
     }
 }

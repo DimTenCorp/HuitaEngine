@@ -943,8 +943,9 @@ void Player::CheckDoors(const std::vector<CFuncDoor*>& doors) {
     // Проверяем пересечение с каждой дверью
     for (auto* door : doors) {
         if (door->intersectsCapsule(capsule)) {
-            // Игрок касается двери -触发 открытие
+            // Игрок касается двери - триггер открытие
             door->triggerOpen();
+            std::cout << "[Player] Door collision detected! Triggering open.\n";
         }
     }
 }
