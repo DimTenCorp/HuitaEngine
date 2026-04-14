@@ -440,16 +440,41 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
         return false;
     }
 
-    if (isUseOnly() && !isPlayerUse) return false;
-    if (!isTouchOpens() && !isPlayerUse && touchDistance >= 1.0f) return false;
+    // Проверяем флаги активации
+    bool useOnly = isUseOnly();
+    bool touchOpens = isTouchOpens();
+    bool toggle = hasFlag(DoorFlags::TOGGLE);
 
+    // Если дверь требует использования (USE_ONLY), игнорируем касания
+    if (useOnly && !isPlayerUse) {
+        return false;
+    }
+
+    // Если дверь не открывается по касанию и это не использование игроком
+    if (!touchOpens && !isPlayerUse) {
+        return false;
+    }
+
+    // Обработка состояний
     if (state == DoorState::CLOSED || state == DoorState::CLOSING) {
+        // Открываем дверь
         open();
         return true;
     }
-    else if (state == DoorState::OPEN && hasFlag(DoorFlags::TOGGLE)) {
-        close();
-        return true;
+    else if (state == DoorState::OPEN) {
+        // Если есть флаг TOGGLE - закрываем при активации
+        if (toggle || isPlayerUse) {
+            close();
+            return true;
+        }
+        // Иначе ждём автозакрытия
+    }
+    else if (state == DoorState::OPENING) {
+        // Если дверь уже открывается и есть TOGGLE - останавливаем
+        if (toggle && isPlayerUse) {
+            stop();
+            return true;
+        }
     }
 
     return false;
