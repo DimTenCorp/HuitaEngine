@@ -26,12 +26,19 @@ CFuncDoor::CFuncDoor()
 
 void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::string>& props, const AABB& modelBounds) {
     // Инициализируем границы двери из модели
-    bounds = modelBounds;
+    // originalBounds - это локальные bounds двери относительно её позиции
     originalBounds = modelBounds;
 
-    // Вычисляем центр для позиции сущности
-    glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
+    // Позиция двери - это центр модели в мировых координатах
+    glm::vec3 center = (originalBounds.min + originalBounds.max) * 0.5f;
     setPosition(center);
+
+    // Преобразуем originalBounds в локальные координаты (относительно центра)
+    originalBounds.min -= center;
+    originalBounds.max -= center;
+    
+    // bounds используется для начальной проверки, инициализируем его мировыми координатами
+    bounds = modelBounds;
 
     // Читаем параметры из BSP сущности
     // Speed - скорость открытия двери (units per second)
@@ -90,13 +97,14 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
     }
 
     // Определяем направление движения двери
+    // Используем originalBounds (локальные) для вычислений
     if (!hasAngles) {
         // Нет углов - определяем направление автоматически на основе геометрии двери
         // Дверь открывается перпендикулярно своей плоскости (вдоль наименьшей оси)
         
-        float dx = bounds.max.x - bounds.min.x;
-        float dy = bounds.max.y - bounds.min.y;
-        float dz = bounds.max.z - bounds.min.z;
+        float dx = originalBounds.max.x - originalBounds.min.x;
+        float dy = originalBounds.max.y - originalBounds.min.y;
+        float dz = originalBounds.max.z - originalBounds.min.z;
 
         // Находим толщину двери (наименьший размер)
         // Дверь должна открываться перпендикулярно своей плоскости
@@ -159,8 +167,8 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
         moveDirection = glm::normalize(baseDir);
         
         // Расстояние открытия - максимальный размер двери минус lip
-        float doorHeight = bounds.max.y - bounds.min.y;
-        float doorWidth = std::max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
+        float doorHeight = originalBounds.max.y - originalBounds.min.y;
+        float doorWidth = std::max(originalBounds.max.x - originalBounds.min.x, originalBounds.max.z - originalBounds.min.z);
         moveDistance = std::max(doorHeight, doorWidth) - lip;
     }
 
@@ -169,9 +177,10 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
         moveDistance = 0.0f;
     }
 
-    std::cout << "[func_door] Created door: mins("
-        << bounds.min.x << ", " << bounds.min.y << ", " << bounds.min.z
-        << ") maxs(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z
+    std::cout << "[func_door] Created door: local_mins("
+        << originalBounds.min.x << ", " << originalBounds.min.y << ", " << originalBounds.min.z
+        << ") local_maxs(" << originalBounds.max.x << ", " << originalBounds.max.y << ", " << originalBounds.max.z
+        << ") world_pos(" << getPosition().x << ", " << getPosition().y << ", " << getPosition().z
         << ") speed=" << speed << " lip=" << lip
         << " direction(" << moveDirection.x << ", " << moveDirection.y << ", " << moveDirection.z
         << ") distance=" << moveDistance;
@@ -203,10 +212,7 @@ void CFuncDoor::Update(float deltaTime) {
             stateTimer = openWaitTime;
             std::cout << "[func_door] Door fully opened\n";
         }
-
-        // Обновляем позицию сущности
-        glm::vec3 offset = moveDirection * (currentPos * moveDistance);
-        setPosition(originalBounds.min + offset + (originalBounds.max - originalBounds.min) * 0.5f);
+        // Позиция сущности не меняется, смещение применяется в getCurrentBounds()
     }
     break;
 
@@ -232,14 +238,8 @@ void CFuncDoor::Update(float deltaTime) {
             currentPos = 0.0f;
             state = DOOR_CLOSED;
             std::cout << "[func_door] Door fully closed\n";
-            // Сбрасываем позицию
-            glm::vec3 center = (originalBounds.min + originalBounds.max) * 0.5f;
-            setPosition(center);
         }
-
-        // Обновляем позицию сущности
-        glm::vec3 offset = moveDirection * (currentPos * moveDistance);
-        setPosition(originalBounds.min + offset + (originalBounds.max - originalBounds.min) * 0.5f);
+        // Позиция сущности не меняется, смещение применяется в getCurrentBounds()
     }
     break;
     }
@@ -275,12 +275,16 @@ bool CFuncDoor::intersectsCapsule(const Capsule& capsule) const {
 }
 
 AABB CFuncDoor::getCurrentBounds() const {
+    // Получаем мировую позицию двери
+    glm::vec3 worldPos = getPosition();
+    
     // Вычисляем смещение двери на основе текущего состояния
     glm::vec3 offset = moveDirection * (currentPos * moveDistance);
 
     AABB currentBounds;
-    currentBounds.min = originalBounds.min + offset;
-    currentBounds.max = originalBounds.max + offset;
+    // Преобразуем локальные bounds в мировые с учетом смещения при открытии
+    currentBounds.min = worldPos + originalBounds.min + offset;
+    currentBounds.max = worldPos + originalBounds.max + offset;
 
     return currentBounds;
 }
