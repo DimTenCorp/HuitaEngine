@@ -7,6 +7,7 @@
 
 class MeshCollider;
 class CFuncWater;
+class CFuncDoor;
 
 // HL Physics flags
 #define PFLAG_ONLADDER      (1<<0)
@@ -169,6 +170,9 @@ public:
     bool IsInWater() const { return (m_afPhysicsFlags & PFLAG_INWATER) != 0; }
     void CheckWater(const std::vector<CFuncWater*>& waterZones);
     void ApplyWaterPhysics(float deltaTime);
+
+    // Двери
+    void CheckDoors(const std::vector<CFuncDoor*>& doors);
 
     // === НОВЫЕ МЕТОДЫ ДЛЯ ПАУЗЫ ===
     void setPausedState(bool paused) { isPaused = paused; }

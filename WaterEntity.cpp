@@ -1,4 +1,7 @@
 #include "pch.h"
+
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "WaterEntity.h"
 #include <iostream>
 
@@ -36,19 +39,19 @@ void CFuncWater::initFromProperties(const std::unordered_map<std::string, std::s
     
     auto it = props.find("mins");
     if (it != props.end()) {
-        sscanf_s(it->second.c_str(), "%f %f %f", &mins.x, &mins.y, &mins.z);
+        sscanf(it->second.c_str(), "%f %f %f", &mins.x, &mins.y, &mins.z);
     }
     
     it = props.find("maxs");
     if (it != props.end()) {
-        sscanf_s(it->second.c_str(), "%f %f %f", &maxs.x, &maxs.y, &maxs.z);
+        sscanf(it->second.c_str(), "%f %f %f", &maxs.x, &maxs.y, &maxs.z);
     }
     
     // Если есть origin, смещаем границы относительно него
     glm::vec3 origin(0.0f, 0.0f, 0.0f);
     it = props.find("origin");
     if (it != props.end()) {
-        sscanf_s(it->second.c_str(), "%f %f %f", &origin.x, &origin.y, &origin.z);
+        sscanf(it->second.c_str(), "%f %f %f", &origin.x, &origin.y, &origin.z);
         // Конвертация координат как в BSPLoader
         origin = glm::vec3(-origin.x, origin.z, origin.y);
     }

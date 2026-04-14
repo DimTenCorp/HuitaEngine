@@ -4,6 +4,7 @@
 #include "Engine.h"
 #include "Mesh.h"
 #include "LightmappedRenderer.h"
+#include "DoorEntity.h"
 #include <iostream>
 
 Game::Game() = default;
@@ -90,8 +91,10 @@ void Game::update(float deltaTime) {
 
     auto* collider = Engine::getInstance()->getCollider();
     auto& waterZones = Engine::getInstance()->getWaterZones();
+    auto& doors = Engine::getInstance()->getDoors();
 
     player->CheckWater(waterZones);
+    player->CheckDoors(doors);
 
     if (collider) {
         player->update(deltaTime, yaw, pitch, collider);

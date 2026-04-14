@@ -8,6 +8,7 @@
 #include <cmath>
 #include "TriangleCollider.h"
 #include "WaterEntity.h"
+#include "DoorEntity.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -933,6 +934,19 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
     }
 
     m_bWasInWater = currentlyInWater;
+}
+
+void Player::CheckDoors(const std::vector<CFuncDoor*>& doors) {
+    // Получаем капсулу игрока
+    Capsule capsule = getPlayerCapsule(position);
+
+    // Проверяем пересечение с каждой дверью
+    for (auto* door : doors) {
+        if (door->intersectsCapsule(capsule)) {
+            // Игрок касается двери -触发 открытие
+            door->triggerOpen();
+        }
+    }
 }
 
 void Player::ApplyWaterPhysics(float deltaTime) {
