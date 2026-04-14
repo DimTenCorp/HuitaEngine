@@ -63,6 +63,7 @@ private:
     bool firstMouse = true;
 
     bool f1Pressed = false, f2Pressed = false, f3Pressed = false;
+    bool f4Pressed = false;
     bool f5Pressed = false, f6Pressed = false;
     bool noclipPressed = false, bhopPressed = false;
     bool f10Pressed = false;

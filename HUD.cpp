@@ -27,8 +27,9 @@ HUD::HUD() {
 HUD::~HUD() {
 }
 
-void HUD::update(float deltaTime, const glm::vec3& position) {
+void HUD::update(float deltaTime, const glm::vec3& position, float speed) {
     playerPos = position;
+    playerSpeed = speed;
 
     frameCount++;
     fpsTimer += deltaTime;
@@ -73,6 +74,10 @@ void HUD::render() {  // Больше без параметров
     if (settings.showPosition) {
         ImGui::Text("Pos: (%.1f, %.1f, %.1f)",
             playerPos.x, playerPos.y, playerPos.z);
+    }
+
+    if (settings.showSpeed) {
+        ImGui::Text("Speed: %.1f", playerSpeed);
     }
 
     ImGui::End();

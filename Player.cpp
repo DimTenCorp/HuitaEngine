@@ -1009,3 +1009,7 @@ void Player::ApplyWaterPhysics(float deltaTime) {
 
     m_flSwimTime += deltaTime;
 }
+
+float Player::getCurrentSpeed() const {
+    return glm::length(velocity);
+}
