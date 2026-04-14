@@ -62,87 +62,106 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
         lip = 8.0f;
     }
 
-    // Pitch Yaw Roll (Y Z X) angles - направление открытия двери
-    // В Half-Life angles задаются как "pitch yaw roll" (Y Z X)
-    glm::vec3 angles(0.0f, 0.0f, 0.0f);
+    // Pitch Yaw Roll angles - направление открытия двери
+    // В Half-Life angles задаются как "pitch yaw roll" где:
+    //   pitch - угол вверх/вниз (положительный = вверх, отрицательный = вниз)
+    //   yaw   - угол влево/вправо  
+    //   roll  - угол наклона (редко используется для дверей)
+    // 
+    // Для func_door в Half-Life:
+    // - Если angles не заданы или "0 0 0" - дверь открывается перпендикулярно своей плоскости
+    // - Если angles заданы, они определяют направление движения:
+    //   * angles.x (pitch) > 0 - дверь открывается вверх
+    //   * angles.x (pitch) < 0 - дверь открывается вниз
+    //   * angles.y (yaw) - поворот направления по горизонтали
+    
+    glm::vec3 hlAngles(0.0f, 0.0f, 0.0f);
+    bool hasAngles = false;
+    
     it = props.find("angles");
     if (it != props.end()) {
-        int parsed = sscanf(it->second.c_str(), "%f %f %f", &angles.y, &angles.z, &angles.x);
-        if (parsed != 3) {
+        int parsed = sscanf(it->second.c_str(), "%f %f %f", &hlAngles.x, &hlAngles.y, &hlAngles.z);
+        if (parsed == 3) {
+            hasAngles = !(hlAngles.x == 0.0f && hlAngles.y == 0.0f && hlAngles.z == 0.0f);
+        }
+        else {
             std::cerr << "[DOOR] Failed to parse angles: \"" << it->second << "\"\n";
-            angles = glm::vec3(0.0f, 0.0f, 0.0f);
         }
     }
 
-    // Конвертируем углы Half-Life в нашу систему координат
-    // Half-Life: X=forward, Y=left, Z=up
-    // Наша система: X=-HL_X, Y=HL_Z, Z=HL_Y
-    // Углы: pitch (X), yaw (Y), roll (Z)
-    float pitch = glm::radians(angles.x); // Roll в HL -> X rotation у нас
-    float yaw = glm::radians(angles.y);   // Pitch в HL -> Y rotation у нас
-    float roll = glm::radians(angles.z);  // Yaw в HL -> Z rotation у нас
-
-    // Создаем матрицу вращения из углов Эйлера
-    // В Half-Life дверь обычно открывается вдоль своей локальной оси
-    // По умолчанию дверь открывается вверх (по мировой Y)
-    // Но если заданы angles, то открываться должна вдоль локальной оси после поворота
-
-    // Для func_door в Half-Life angles определяют направление движения двери
-    // Если angles не заданы, дверь открывается перпендикулярно своей плоскости
-
-    // Вычисляем направление движения на основе углов
-    // В Half-Life door движется вдоль своей локальной оси после применения углов
-    glm::vec3 baseDirection(0.0f, 1.0f, 0.0f); // Базовое направление - вверх
-
-    // Применяем вращение к базовому направлению
-    glm::mat3 rotation = glm::mat3_cast(glm::quat(roll, glm::vec3(0, 0, 1)) *
-        glm::quat(yaw, glm::vec3(0, 1, 0)) *
-        glm::quat(pitch, glm::vec3(1, 0, 0)));
-
-    moveDirection = glm::normalize(rotation * baseDirection);
-
-    // Вычисляем расстояние открытия на основе размеров двери
-    // В Half-Life дверь открывается на свою высоту минус lip
-    float doorHeight = bounds.max.y - bounds.min.y;
-    float doorWidth = std::max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
-
-    // Определяем направление открытия по умолчанию на основе ориентации двери
-    // Если дверь широкая по X/Z и низкая по Y - она вероятно открывается вверх
-    // Если дверь высокая по Y - она вероятно открывается в сторону
-
-    // Проверяем angles для определения направления
-    bool hasAngles = (angles.x != 0.0f || angles.y != 0.0f || angles.z != 0.0f);
-
+    // Определяем направление движения двери
     if (!hasAngles) {
-        // Нет углов - определяем направление автоматически
-        // Дверь открывается перпендикулярно своей плоскости
-
-        // Находим наименьшую грань - это толщина двери
+        // Нет углов - определяем направление автоматически на основе геометрии двери
+        // Дверь открывается перпендикулярно своей плоскости (вдоль наименьшей оси)
+        
         float dx = bounds.max.x - bounds.min.x;
         float dy = bounds.max.y - bounds.min.y;
         float dz = bounds.max.z - bounds.min.z;
 
+        // Находим толщину двери (наименьший размер)
+        // Дверь должна открываться перпендикулярно своей плоскости
         if (dx <= dy && dx <= dz) {
-            // Дверь тонкая по X - открывается вдоль X
+            // Дверь тонкая по X - плоскость YZ, открывается вдоль X
             moveDirection = glm::vec3(1.0f, 0.0f, 0.0f);
             moveDistance = dx - lip;
         }
-        else if (dy <= dx && dy <= dz) {
-            // Дверь тонкая по Y - открывается вдоль Y (вверх)
-            moveDirection = glm::vec3(0.0f, 1.0f, 0.0f);
-            moveDistance = dy - lip;
-        }
-        else {
-            // Дверь тонкая по Z - открывается вдоль Z
+        else if (dz <= dx && dz <= dy) {
+            // Дверь тонкая по Z - плоскость XY, открывается вдоль Z
             moveDirection = glm::vec3(0.0f, 0.0f, 1.0f);
             moveDistance = dz - lip;
         }
+        else {
+            // Дверь тонкая по Y - плоскость XZ (горизонтальная), открывается вверх/вниз
+            // По умолчанию открываем вверх
+            moveDirection = glm::vec3(0.0f, 1.0f, 0.0f);
+            moveDistance = dy - lip;
+        }
     }
     else {
-        // Есть angles - используем вычисленное направление
+        // Есть angles - используем их для определения направления
+        // В Half-Life angles определяют направление движения двери:
+        // - pitch (angles.x) > 0 : вверх, < 0 : вниз
+        // - yaw (angles.y) : поворот по горизонтали
+        
+        // Базовое направление - вперед по локальной оси двери
+        // В нашей системе координат: Y = up, X/Z = horizontal
+        glm::vec3 baseDir(0.0f, 1.0f, 0.0f);  // По умолчанию вверх
+        
+        // Если pitch положительный - дверь открывается вверх
+        // Если pitch отрицательный - дверь открывается вниз
+        if (hlAngles.x != 0.0f) {
+            // Вертикальное открытие (вверх/вниз)
+            baseDir = glm::vec3(0.0f, 1.0f, 0.0f);  // Вверх
+            if (hlAngles.x < 0.0f) {
+                baseDir = glm::vec3(0.0f, -1.0f, 0.0f);  // Вниз
+            }
+        }
+        
+        // Применяем yaw для горизонтального поворота
+        if (hlAngles.y != 0.0f) {
+            float yawRad = glm::radians(hlAngles.y);
+            // Поворачиваем базовое направление вокруг Y оси
+            float cosYaw = cos(yawRad);
+            float sinYaw = sin(yawRad);
+            
+            // Если дверь открывается вертикально, yaw не влияет
+            if (baseDir.y != 0.0f) {
+                // Вертикальная дверь с yaw - это редкий случай
+                // Обычно yaw применяется к горизонтальному направлению
+            }
+            else {
+                // Горизонтальное направление - применяем yaw
+                glm::vec3 horizDir(cosYaw, 0.0f, sinYaw);
+                baseDir = horizDir;
+            }
+        }
+        
+        moveDirection = glm::normalize(baseDir);
+        
         // Расстояние открытия - максимальный размер двери минус lip
-        moveDistance = std::max({ doorHeight, doorWidth,
-                                bounds.max.x - bounds.min.x }) - lip;
+        float doorHeight = bounds.max.y - bounds.min.y;
+        float doorWidth = std::max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
+        moveDistance = std::max(doorHeight, doorWidth) - lip;
     }
 
     // Убеждаемся что расстояние положительное
@@ -155,7 +174,11 @@ void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::st
         << ") maxs(" << bounds.max.x << ", " << bounds.max.y << ", " << bounds.max.z
         << ") speed=" << speed << " lip=" << lip
         << " direction(" << moveDirection.x << ", " << moveDirection.y << ", " << moveDirection.z
-        << ") distance=" << moveDistance << std::endl;
+        << ") distance=" << moveDistance;
+    if (hasAngles) {
+        std::cout << " angles(" << hlAngles.x << ", " << hlAngles.y << ", " << hlAngles.z << ")";
+    }
+    std::cout << std::endl;
 }
 
 void CFuncDoor::Update(float deltaTime) {
