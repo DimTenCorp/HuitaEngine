@@ -259,6 +259,7 @@
   <ItemGroup>
     <ClCompile Include="BSPLoader.cpp" />
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="DoorEntity.cpp" />
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="Entity.cpp" />
     <ClCompile Include="Game.cpp" />
@@ -282,6 +283,7 @@
     <ClInclude Include="AABB.h" />
     <ClInclude Include="BSPLoader.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="DoorEntity.h" />
     <ClInclude Include="Engine.h" />
     <ClInclude Include="Entity.h" />
     <ClInclude Include="Game.h" />

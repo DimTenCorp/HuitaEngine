@@ -1,3 +1,6 @@
+#define _CRT_SECURE_NO_WARNINGS
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include "pch.h"
 
 #include "WaterEntity.h"
