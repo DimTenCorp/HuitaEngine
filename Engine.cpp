@@ -501,6 +501,26 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
+    // Загружаем двери из энтити
+    doors.clear();
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    auto rotatingDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
+    
+    // Объединяем оба типа дверей
+    doorEntities.insert(doorEntities.end(), rotatingDoorEntities.begin(), rotatingDoorEntities.end());
+
+    for (const auto& entity : doorEntities) {
+        if (entity.model.empty() || entity.model[0] != '*') {
+            std::cerr << "[DOOR] Skipping door without valid model: " << entity.classname << std::endl;
+            continue;
+        }
+
+        auto door = std::make_unique<DoorEntity>();
+        door->initFromEntity(entity, *bspLoader);
+        doors.push_back(std::move(door));
+    }
+    std::cout << "[DOOR] Loaded " << doors.size() << " doors\n";
+
     std::cout << "=== MAP LOADED ===\n\n";
 
     if (menu) {
@@ -657,6 +677,26 @@ void Engine::run() {
             game->processInput(window);
         }
 
+        // Обновляем двери и проверяем коллизию с игроком
+        if (!doors.empty() && game && game->getPlayer()) {
+            Player* player = game->getPlayer();
+            glm::vec3 playerPos = player->getPosition();
+            Capsule playerCapsule;
+            playerCapsule.centerTop = playerPos + glm::vec3(0.0f, 18.0f, 0.0f);
+            playerCapsule.radius = 16.0f;
+            playerCapsule.height = 36.0f;
+
+            for (auto& door : doors) {
+                door->update(deltaTime, meshCollider.get());
+
+                // Проверяем столкновение с игроком
+                if (door->intersectsPlayer(playerPos, playerCapsule)) {
+                    // Игрок касается двери - открываем её
+                    door->activate();
+                }
+            }
+        }
+
         // ← ИСПРАВЛЕНО: edge detection для ESC
         bool escapePressed = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         if (escapePressed && !wasEscapePressed && !menuActive) {
@@ -737,6 +777,15 @@ void Engine::render() {
 
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
+    }
+
+    // Рендерим двери
+    for (auto& door : doors) {
+        GLuint shaderProg = 0;
+        if (lmRenderer && lmRenderer->getLightmappedShader()) {
+            shaderProg = lmRenderer->getLightmappedShader()->getID();
+        }
+        door->render(shaderProg, view, projection);
     }
 
     if (game) {

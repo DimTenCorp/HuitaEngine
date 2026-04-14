@@ -67,6 +67,8 @@ public:
     void setSkipSkyFaces(bool skip) { skipSkyFaces = skip; }
     bool getSkipSkyFaces() const { return skipSkyFaces; }
 
+    Shader* getLightmappedShader() const { return lightmappedShader.get(); }
+
 private:
     std::unique_ptr<Shader> lightmappedShader;
     GLuint worldVAO = 0, worldVBO = 0, worldEBO = 0;

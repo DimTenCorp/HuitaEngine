@@ -1,4 +1,4 @@
-```
+```cpp
 # Compiled and build artifacts
 *.o
 *.obj
@@ -23,11 +23,6 @@ target/
 *.tmp
 *.swp
 
-# Environment
-.env
-.env.local
-*.env.*
-
 # Editors
 .vscode/
 .idea/
@@ -36,7 +31,7 @@ target/
 .DS_Store
 Thumbs.db
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
@@ -60,8 +55,4 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```
