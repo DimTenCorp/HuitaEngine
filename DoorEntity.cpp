@@ -11,41 +11,41 @@ bool OBB::intersectsAABB(const AABB& aabb) const {
     // Преобразуем AABB в OBB с нулевым вращением для унификации
     glm::vec3 aabbCenter = (aabb.min + aabb.max) * 0.5f;
     glm::vec3 aabbHalfExtents = (aabb.max - aabb.min) * 0.5f;
-    
+
     // Вектор между центрами
     glm::vec3 d = aabbCenter - center;
-    
+
     // Оси для проверки: локальные оси OBB + мировые оси AABB
     glm::vec3 axes[6] = {
         rotation[0], rotation[1], rotation[2],  // Локальные оси OBB
         glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)  // Мировые оси
     };
-    
+
     for (int i = 0; i < 6; i++) {
         glm::vec3 axis = axes[i];
         if (glm::length(axis) < 0.001f) continue;
         axis = glm::normalize(axis);
-        
+
         // Проекция половинных размеров OBB на ось
         float rOBB = 0.0f;
         for (int j = 0; j < 3; j++) {
             rOBB += halfExtents[j] * glm::abs(glm::dot(rotation[j], axis));
         }
-        
+
         // Проекция половинных размеров AABB на ось
-        float rAABB = aabbHalfExtents.x * glm::abs(glm::dot(glm::vec3(1,0,0), axis)) +
-                      aabbHalfExtents.y * glm::abs(glm::dot(glm::vec3(0,1,0), axis)) +
-                      aabbHalfExtents.z * glm::abs(glm::dot(glm::vec3(0,0,1), axis));
-        
+        float rAABB = aabbHalfExtents.x * glm::abs(glm::dot(glm::vec3(1, 0, 0), axis)) +
+            aabbHalfExtents.y * glm::abs(glm::dot(glm::vec3(0, 1, 0), axis)) +
+            aabbHalfExtents.z * glm::abs(glm::dot(glm::vec3(0, 0, 1), axis));
+
         // Проекция расстояния между центрами
         float projD = glm::abs(glm::dot(d, axis));
-        
+
         // Проверка разделения
         if (projD > rOBB + rAABB) {
             return false;  // Есть разделяющая ось - нет пересечения
         }
     }
-    
+
     return true;  // Нет разделяющей оси - есть пересечение
 }
 
@@ -171,10 +171,10 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         // 1. Если angles.y задан (не 0), используем его для определения направления
         // 2. Иначе определяем автоматически по наибольшей грани двери
         // Дверь движется перпендикулярно своей плоскости (вдоль нормали к поверхности)
-        
+
         float yaw = angles.y;
         bool useAngle = (yaw != 0.0f);
-        
+
         if (useAngle) {
             // Нормализуем угол [0, 360)
             while (yaw < 0) yaw += 360.0f;
@@ -203,7 +203,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
             // Автоматическое определение по оригинальному SDK:
             // Дверь движется вдоль оси с НАИМЕНЬШИМ размером (перпендикулярно наибольшей поверхности)
             // Это соответствует тому, что дверь - это плоская панель, и она движется в направлении своей толщины
-            
+
             // Находим наименьшую ось (это направление движения)
             if (size.x <= size.y && size.x <= size.z) {
                 // Наименьшая ось X - движемся вдоль X
@@ -259,7 +259,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         }
 
         updatePosition(1.0f);
-        
+
         // Устанавливаем время закрытия если wait > 0
         if (wait > 0) {
             timeSinceOpen = 0.0f;  // Начинаем отсчёт с момента инициализации
@@ -405,7 +405,7 @@ void DoorEntity::updateRotatedBounds() {
     // Y остаётся без изменений
     currentMins = glm::vec3(newMin.x, mins.y, newMin.z);
     currentMaxs = glm::vec3(newMax.x, maxs.y, newMax.z);
-    
+
     // Обновляем OBB для точных коллизий
     updateOBB();
 }
@@ -413,18 +413,18 @@ void DoorEntity::updateRotatedBounds() {
 // Обновление OBB для вращающихся дверей
 void DoorEntity::updateOBB() {
     if (type != DoorType::ROTATING) return;
-    
+
     // Центр OBB - это центр двери в мировых координатах
     obb.center = (currentMins + currentMaxs) * 0.5f;
-    
+
     // Половинные размеры в локальном пространстве
     obb.halfExtents = (maxs - mins) * 0.5f;
-    
+
     // Матрица вращения вокруг Y
     float angleRad = glm::radians(currentAngle);
     float cosA = cos(angleRad);
     float sinA = sin(angleRad);
-    
+
     // Колонки матрицы вращения - локальные оси OBB
     obb.rotation[0] = glm::vec3(cosA, 0.0f, sinA);   // Локальная X ось
     obb.rotation[1] = glm::vec3(0.0f, 1.0f, 0.0f);   // Локальная Y ось (без изменений)
@@ -458,37 +458,37 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
 // Проверка блокировки двери игроком и нанесение урона
 bool DoorEntity::checkBlocked(const Capsule& playerCapsule, float deltaTime) {
     if (dmg <= 0.0f || health <= 0) return false;
-    
+
     // Проверяем только когда дверь движется
     if (state != DoorState::OPENING && state != DoorState::CLOSING) {
         return false;
     }
-    
+
     if (intersectsCapsule(playerCapsule)) {
-        // Дверь заблокирована игроком - наносим урон
+        // Дверь заблокирована игроком - наносит урон
         // В оригинальном Half-Life дверь наносит урон каждый кадр пока блокируется
         return true;
     }
-    
+
     return false;
 }
 
 // Нанесение урона игроку при блокировке двери
 void DoorEntity::applyDamageToPlayer(Player* player, float deltaTime) {
     if (dmg <= 0.0f || health <= 0 || !player) return;
-    
+
     // Проверяем только когда дверь движется
     if (state != DoorState::OPENING && state != DoorState::CLOSING) {
         damageAccumulator = 0.0f;  // Сбрасываем накопленный урон
         return;
     }
-    
+
     Capsule playerCapsule = player->getPlayerCapsule(player->getPosition());
-    
+
     if (intersectsCapsule(playerCapsule)) {
         // Накопление урона пропорционально времени блокировки
         damageAccumulator += dmg * deltaTime;
-        
+
         // В Half-Life урон наносится discretely - здесь применяем порогово
         if (damageAccumulator >= 10.0f) {  // Каждые 10 единиц накопленного урона
             // Здесь должна быть логика нанесения урона игроку
