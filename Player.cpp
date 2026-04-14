@@ -72,7 +72,7 @@ Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
 
     return Capsule(
         pos - offset,  // Нижняя сфера
-        pos + offset,  // Верхняя сфера  
+        pos + offset,  // Верхняя сфера
         m_fHullRadius  // Радиус
     );
 }
