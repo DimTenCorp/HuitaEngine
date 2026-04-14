@@ -8,6 +8,7 @@
 #include <vector>
 #include "Menu.h"
 #include "SkyboxRenderer.h"
+#include "DoorEntity.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -65,6 +66,9 @@ public:
     void setLightingEnabled(bool enabled);
 
     void applySettings(const SettingsData& settings);
+    const std::vector<DoorEntity*>& getDoors() const { return doors; }
+
+    void renderDoors(const glm::mat4& view, const glm::mat4& projection);
 
 private:
     static Engine* instance;
@@ -83,6 +87,7 @@ private:
     std::unique_ptr<Menu> menu;
     std::unique_ptr<SkyboxRenderer> skyboxRenderer;
     std::vector<CFuncWater*> waterZones;
+    std::vector<DoorEntity*> doors;
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;

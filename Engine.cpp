@@ -297,6 +297,26 @@ void Engine::unloadCurrentMap() {
     }
     waterZones.clear();
 
+    for (auto* door : doors) {
+        delete door;
+    }
+    doors.clear();
+
+    // === ВОТ ЭТО ЛИШНЕЕ - удалить отсюда! ===
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
+    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
+
+    for (const auto& entity : doorEntities) {
+        DoorEntity* door = new DoorEntity();
+        door->initFromEntity(entity, *bspLoader);
+        doors.push_back(door);
+    }
+
+    if (!doors.empty()) {
+        std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
+    }
+
     useLightmapped = false;
     showLightmapsOnly = false;
 
@@ -501,6 +521,34 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
+    for (auto* door : doors) {
+        delete door;
+    }
+    doors.clear();
+
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
+
+    // Объединяем
+    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
+
+    for (const auto& entity : doorEntities) {
+        DoorEntity* door = new DoorEntity();
+        door->initFromEntity(entity, *bspLoader);
+        doors.push_back(door);
+    }
+    std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
+
+    for (auto& dc : bspLoader->getDrawCalls()) {
+        if (dc.isDoor) continue;  // Уже помечено
+
+        // Проверяем, принадлежит ли эта геометрия какой-то двери
+        for (int i = 0; i < doors.size(); i++) {
+            // Проверяем пересечение bounds
+            // Если да - помечаем и связываем
+        }
+    }
+
     std::cout << "=== MAP LOADED ===\n\n";
 
     if (menu) {
@@ -531,6 +579,10 @@ void Engine::updateTime() {
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
     if (deltaTime > 0.05f) deltaTime = 0.05f;
+
+    for (auto* door : doors) {
+        door->update(deltaTime);
+    }
 }
 
 void Engine::setShowLightmapsOnly(bool show) {
@@ -585,6 +637,10 @@ void Engine::run() {
     while (!glfwWindowShouldClose(window)) {
         updateTime();
         processPendingLoad();
+
+        for (auto* door : doors) {
+            door->update(deltaTime);
+        }
 
         if (menuActive && menu) {
             if (menu->shouldReturnToMenu()) {
@@ -755,5 +811,34 @@ void Engine::shutdown() {
     if (window) {
         glfwDestroyWindow(window);
         glfwTerminate();
+    }
+}
+
+void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
+    if (!bspLoader || !renderer) return;
+
+    // Получаем VAO мира (двери используют тот же меш)
+    // Нам нужен доступ к VAO мира - добавь метод в Renderer или используй публичный доступ
+
+    for (auto* door : doors) {
+        if (!door) continue;
+
+        // Получаем трансформацию двери
+        glm::mat4 model = door->getRenderTransform();
+
+        // Здесь нужно нарисовать меш двери с этой трансформацией
+        // Это зависит от твоей архитектуры рендерера
+
+        // Пример: если у тебя есть доступ к шейдеру и VAO:
+        /*
+        Shader* shader = renderer->getGeometryShader();
+        shader->bind();
+        shader->setMat4("model", model);
+        shader->setMat4("view", view);
+        shader->setMat4("projection", projection);
+
+        // Привязываем VAO и рисуем
+        // Но нужно знать какие вершины/индексы принадлежат этой двери!
+        */
     }
 }

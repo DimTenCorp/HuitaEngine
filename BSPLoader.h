@@ -70,6 +70,9 @@ struct FaceDrawCall {
     bool isTransparent = false;
     bool isWater = false;
     bool isSky = false;
+
+    bool isDoor = false;
+    int doorIndex = -1;
 };
 
 class BSPLoader {

@@ -8,6 +8,7 @@
 #include <cmath>
 #include "TriangleCollider.h"
 #include "WaterEntity.h"
+#include "Engine.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -840,6 +841,33 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
 
         if (IsInWater()) {
             ApplyWaterPhysics(deltaTime);
+        }
+    }
+
+    auto& doors = Engine::getInstance()->getDoors();
+    if (!doors.empty()) {
+        Capsule playerCapsule = getPlayerCapsule(position);
+
+        for (auto* door : doors) {
+            if (door->intersectsCapsule(playerCapsule)) {
+                glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
+                float distance = glm::length(position - doorCenter);
+
+                bool activated = door->tryActivate(0.0f, false);
+
+                if (!door->wasTouched()) {
+                    std::cout << "[DOOR] Player touching " << door->getClassName()
+                        << " at distance=" << distance
+                        << (door->isTouchOpens() ? " [TOUCH_OPENS]" : "")
+                        << (activated ? " -> ACTIVATED" : "")
+                        << (door->isLocked() ? " [LOCKED]" : "")
+                        << std::endl;
+                    door->setTouched(true);
+                }
+            }
+            else {
+                door->setTouched(false);
+            }
         }
     }
 }
