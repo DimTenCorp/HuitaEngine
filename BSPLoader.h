@@ -183,6 +183,8 @@ public:
         return textureNames[index];
     }
 
+    const std::vector<std::string>& getTextureNames() const { return textureNames; }
+
     bool isSkyTexture(int textureIndex) const {
         if (textureIndex < 0 || textureIndex >= (int)textureNames.size()) return false;
         const std::string& name = textureNames[textureIndex];

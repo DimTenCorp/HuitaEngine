@@ -248,12 +248,14 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
         // === ИСПРАВЛЕНО: берем текстуру только один раз ===
         if (!textureFound) {
             int texIdx = texInfo.textureIndex;
-            if (texIdx < 0 || texIdx >= (int)bsp.getTextureCount()) texIdx = 0;
+            if (texIdx < 0 || texIdx >= static_cast<int>(bsp.getTextureNames().size())) texIdx = 0;
             textureID = bsp.getTextureID(texIdx);
             textureFound = true;
         }
 
-        glm::uvec2 texDim = bsp.getTextureDimensions(texInfo.textureIndex);
+        int currentTexIdx = texInfo.textureIndex;
+        if (currentTexIdx < 0 || currentTexIdx >= static_cast<int>(bsp.getTextureNames().size())) currentTexIdx = 0;
+        glm::uvec2 texDim = bsp.getTextureDimensions(currentTexIdx);
         int texW = texDim.x > 0 ? texDim.x : 256;
         int texH = texDim.y > 0 ? texDim.y : 256;
 
@@ -263,7 +265,7 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
         glm::vec3 worldNormal(-bspNormal.x, bspNormal.z, bspNormal.y);
         worldNormal = glm::normalize(worldNormal);
 
-        unsigned int baseIdx = vertices.size();
+        unsigned int baseIdx = static_cast<unsigned int>(vertices.size());
 
         // Вершины относительно modelOrigin (для правильного преобразования)
         for (const auto& v : faceVerts) {
@@ -277,7 +279,7 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
             // UV
             float s = v.x * texInfo.s[0] + v.y * texInfo.s[1] + v.z * texInfo.s[2] + texInfo.s[3];
             float t = v.x * texInfo.t[0] + v.y * texInfo.t[1] + v.z * texInfo.t[2] + texInfo.t[3];
-            bv.texCoord = glm::vec2(s / texW, t / texH);
+            bv.texCoord = glm::vec2(s / static_cast<float>(texW), t / static_cast<float>(texH));
             bv.normal = worldNormal;
 
             vertices.push_back(bv);
@@ -286,8 +288,8 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
         // Триангуляция веером
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
             indices.push_back(baseIdx);
-            indices.push_back(baseIdx + j + 1);
-            indices.push_back(baseIdx + j);
+            indices.push_back(static_cast<unsigned int>(baseIdx + j + 1));
+            indices.push_back(static_cast<unsigned int>(baseIdx + j));
         }
     }
 
