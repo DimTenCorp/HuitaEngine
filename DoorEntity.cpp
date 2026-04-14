@@ -27,6 +27,7 @@ DoorEntity::DoorEntity()
     , locked(false)
     , moveProgress(0.0f)
     , nextCloseTime(0.0f)
+    , timeSinceOpen(0.0f)
     , touchLogged(false)
     , touched(false)
     , currentAngle(0.0f)
@@ -118,38 +119,60 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         // Размеры двери
         glm::vec3 size = maxs - mins;
 
-        // Угол определяет направление движения
+        // В Half-Life направление движения определяется самой большой гранью двери
+        // Дверь движется перпендикулярно своей наибольшей поверхности
+        
+        // Находим ось с наибольшим размером (это будет направление "толщины" двери)
+        float maxX = size.x;
+        float maxY = size.y;
+        float maxZ = size.z;
+        
+        // Определяем направление по angles.y только если оно явно задано
         float yaw = angles.y;
-        while (yaw < 0) yaw += 360.0f;
-        while (yaw >= 360.0f) yaw -= 360.0f;
+        bool useAngle = (yaw != 0.0f);
+        
+        if (useAngle) {
+            while (yaw < 0) yaw += 360.0f;
+            while (yaw >= 360.0f) yaw -= 360.0f;
 
-        // В HL дверь движется ВДОЛЬ своей длины (в стену)
-        // Направление перпендикулярно "лицевой" стороне
-
-        if (yaw >= 315.0f || yaw < 45.0f) {
-            // Движение в +Z (вперёд)
-            moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
-            // Размер движения = глубина по Z минус lip
-            moveDistance = size.z - lip;
-        }
-        else if (yaw >= 45.0f && yaw < 135.0f) {
-            // Движение в -X (влево)
-            moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
-            // Размер движения = ширина по X минус lip
-            moveDistance = size.x - lip;
-        }
-        else if (yaw >= 135.0f && yaw < 225.0f) {
-            // Движение в -Z (назад)
-            moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
-            moveDistance = size.z - lip;
+            if (yaw >= 315.0f || yaw < 45.0f) {
+                moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
+                moveDistance = size.z - lip;
+            }
+            else if (yaw >= 45.0f && yaw < 135.0f) {
+                moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
+                moveDistance = size.x - lip;
+            }
+            else if (yaw >= 135.0f && yaw < 225.0f) {
+                moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
+                moveDistance = size.z - lip;
+            }
+            else {
+                moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
+                moveDistance = size.x - lip;
+            }
         }
         else {
-            // Движение в +X (вправо)
-            moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
-            moveDistance = size.x - lip;
+            // Автоматическое определение направления по наибольшей грани
+            // Дверь движется вдоль оси наименьшего размера (перпендикулярно большой поверхности)
+            if (size.x >= size.y && size.x >= size.z) {
+                // Наибольшая грань по X - движемся вдоль X
+                moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
+                moveDistance = size.x - lip;
+            }
+            else if (size.y >= size.x && size.y >= size.z) {
+                // Наибольшая грань по Y - движемся вдоль Y
+                moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+                moveDistance = size.y - lip;
+            }
+            else {
+                // Наибольшая грань по Z - движемся вдоль Z
+                moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
+                moveDistance = size.z - lip;
+            }
         }
 
-        // Защита
+        // Защита от отрицательного расстояния
         if (moveDistance < 0.0f) moveDistance = 0.0f;
 
         pos2 = pos1 + moveDir * moveDistance;
@@ -175,15 +198,10 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
             << " angle=" << moveDistance << " speed=" << speed << std::endl;
     }
 
-    // STARTS_OPEN - меняем местами
+    // STARTS_OPEN - инвертируем состояние без изменения pos1/pos2
     if (hasFlag(DoorFlags::STARTS_OPEN)) {
-        if (type == DoorType::SLIDING) {
-            std::swap(pos1, pos2);
-            moveDir = -moveDir;
-        }
         state = DoorState::OPEN;
-        origin = pos1;
-        currentPos = pos1;
+        currentPos = pos2;
         moveProgress = 1.0f;
 
         if (type == DoorType::ROTATING) {
@@ -191,11 +209,17 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         }
 
         updatePosition(1.0f);
+        
+        // Устанавливаем время закрытия если wait > 0
+        if (wait > 0) {
+            nextCloseTime = wait;  // Отсчитываем от текущего момента в update()
+        }
     }
     else {
         state = DoorState::CLOSED;
         moveProgress = 0.0f;
         currentAngle = 0.0f;
+        currentPos = pos1;
         updatePosition(0.0f);
     }
 }
@@ -302,20 +326,18 @@ void DoorEntity::updateRotatedBounds() {
     float cosA = cos(angleRad);
     float sinA = sin(angleRad);
 
-    glm::vec3 corners[8] = {
-        glm::vec3(mins.x, mins.y, mins.z),
-        glm::vec3(maxs.x, mins.y, mins.z),
-        glm::vec3(mins.x, maxs.y, mins.z),
-        glm::vec3(maxs.x, maxs.y, mins.z),
-        glm::vec3(mins.x, mins.y, maxs.z),
-        glm::vec3(maxs.x, mins.y, maxs.z),
-        glm::vec3(mins.x, maxs.y, maxs.z),
-        glm::vec3(maxs.x, maxs.y, maxs.z)
+    // Для вращающихся дверей используем tight AABB вместо избыточного
+    // Вычисляем границы только в плоскости вращения (XZ)
+    glm::vec3 corners[4] = {
+        glm::vec3(mins.x, 0.0f, mins.z),
+        glm::vec3(maxs.x, 0.0f, mins.z),
+        glm::vec3(mins.x, 0.0f, maxs.z),
+        glm::vec3(maxs.x, 0.0f, maxs.z)
     };
 
     glm::vec3 newMin(FLT_MAX), newMax(-FLT_MAX);
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 4; i++) {
         // Локальные координаты относительно origin
         glm::vec3 local = corners[i] - origin;
 
@@ -330,8 +352,9 @@ void DoorEntity::updateRotatedBounds() {
         newMax = glm::max(newMax, world);
     }
 
-    currentMins = newMin;
-    currentMaxs = newMax;
+    // Y остаётся без изменений
+    currentMins = glm::vec3(newMin.x, mins.y, newMin.z);
+    currentMaxs = glm::vec3(newMax.x, maxs.y, newMax.z);
 }
 
 bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
@@ -358,6 +381,25 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
     return false;
 }
 
+// Проверка блокировки двери игроком и нанесение урона
+bool DoorEntity::checkBlocked(const Capsule& playerCapsule, float deltaTime) {
+    if (dmg <= 0.0f || health <= 0) return false;
+    
+    // Проверяем только когда дверь движется
+    if (state != DoorState::OPENING && state != DoorState::CLOSING) {
+        return false;
+    }
+    
+    if (intersectsCapsule(playerCapsule)) {
+        // Дверь заблокирована игроком - наносим урон
+        // В оригинальном Half-Life дверь наносит урон каждый кадр пока блокируется
+        // Здесь мы можем добавить логику урона
+        return true;
+    }
+    
+    return false;
+}
+
 void DoorEntity::open() {
     if (state == DoorState::OPENING || state == DoorState::OPEN) return;
 
@@ -376,9 +418,14 @@ void DoorEntity::stop() {
     if (state == DoorState::OPENING) {
         state = DoorState::OPEN;
         moveProgress = 1.0f;
+        currentPos = pos2;
+        if (type == DoorType::ROTATING) {
+            currentAngle = moveDistance;
+        }
 
         if (wait > 0) {
-            nextCloseTime = glfwGetTime() + wait;
+            timeSinceOpen = 0.0f;  // Начинаем отсчёт с момента открытия
+            nextCloseTime = wait;
         }
         else if (wait < 0) {
             nextCloseTime = -1.0f;  // Никогда не закрываться
@@ -391,14 +438,16 @@ void DoorEntity::stop() {
     else if (state == DoorState::CLOSING) {
         state = DoorState::CLOSED;
         moveProgress = 0.0f;
+        currentPos = pos1;
+        if (type == DoorType::ROTATING) {
+            currentAngle = 0.0f;
+        }
     }
 
     updatePosition(moveProgress);
 }
 
 void DoorEntity::update(float deltaTime) {
-    float now = glfwGetTime();
-
     // === ОТКРЫВАЕМСЯ ===
     if (state == DoorState::OPENING) {
         if (type == DoorType::SLIDING) {
@@ -494,16 +543,22 @@ void DoorEntity::update(float deltaTime) {
     }
     // === ОТКРЫТА - проверяем автозакрытие ===
     else if (state == DoorState::OPEN) {
-        if (wait > 0 && nextCloseTime > 0 && now >= nextCloseTime) {
-            close();
+        if (wait > 0 && nextCloseTime > 0) {
+            timeSinceOpen += deltaTime;
+            if (timeSinceOpen >= nextCloseTime) {
+                close();
+            }
         }
     }
 
     // Сброс лога касания
     static float lastLogReset = 0;
-    if (touchLogged && now - lastLogReset > 2.0f) {
-        touchLogged = false;
-        lastLogReset = now;
+    if (touchLogged) {
+        lastLogReset += deltaTime;
+        if (lastLogReset > 2.0f) {
+            touchLogged = false;
+            lastLogReset = 0.0f;
+        }
     }
 }
 

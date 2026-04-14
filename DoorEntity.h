@@ -37,6 +37,7 @@ public:
 
     bool tryActivate(float touchDistance, bool isPlayerUse = false);
     void update(float deltaTime);
+    bool checkBlocked(const Capsule& playerCapsule, float deltaTime);
 
     bool hasFlag(unsigned int flag) const { return (spawnFlags & flag) != 0; }
     bool isTouchOpens() const { return hasFlag(DoorFlags::TOUCH_OPENS); }
@@ -80,7 +81,8 @@ private:
     bool locked;             // Закрыта на замок
 
     float moveProgress;      // 0.0 = закрыта, 1.0 = открыта
-    float nextCloseTime;     // Время когда закрываться
+    float nextCloseTime;     // Время до автозакрытия (в секундах)
+    float timeSinceOpen;     // Время с момента открытия (для автозакрытия)
     bool touchLogged;        // Флаг для логирования
     bool touched;            // Касались ли в этом кадре
 
