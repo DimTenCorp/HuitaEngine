@@ -15,6 +15,7 @@ struct HUDSettings {
     bool showFPS = true;
     bool showPosition = true;
     bool showCrosshair = true;
+    bool showSpeed = true;  // Счетчик скорости игрока (включен по умолчанию)
     CrosshairStyle crosshair;
 };
 
@@ -25,6 +26,7 @@ private:
     float fpsTimer = 0.0f;
     int frameCount = 0;
     glm::vec3 playerPos;
+    float playerSpeed = 0.0f;  // Текущая скорость игрока
     ImFont* smallFont = nullptr;
     int screenWidth = 1280;
     int screenHeight = 720;
@@ -33,12 +35,13 @@ public:
     HUD();
     ~HUD();
 
-    void update(float deltaTime, const glm::vec3& position);
+    void update(float deltaTime, const glm::vec3& position, float speed = 0.0f);
 
     HUDSettings& getSettings() { return settings; }
     void toggleFPS() { settings.showFPS = !settings.showFPS; }
     void togglePosition() { settings.showPosition = !settings.showPosition; }
     void toggleCrosshair() { settings.showCrosshair = !settings.showCrosshair; }
+    void toggleSpeed() { settings.showSpeed = !settings.showSpeed; }
 
     void setScreenSize(int width, int height) {
         screenWidth = width;

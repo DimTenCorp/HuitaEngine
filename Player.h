@@ -177,4 +177,7 @@ public:
     // Доступ к скорости
     glm::vec3 getVelocity() const { return velocity; }
     void setVelocity(const glm::vec3& vel) { velocity = vel; }
+    
+    // Получить текущую скорость (модуль вектора скорости)
+    float getCurrentSpeed() const;
 };

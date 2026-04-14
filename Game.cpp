@@ -82,7 +82,7 @@ void Game::processMouse(GLFWwindow* window) {
 void Game::update(float deltaTime) {
     if (isPaused) {
         // Только HUD обновляем для FPS счетчика
-        hud->update(deltaTime, player->getPosition());
+        hud->update(deltaTime, player->getPosition(), player->getCurrentSpeed());
         return;
     }
 
@@ -97,7 +97,7 @@ void Game::update(float deltaTime) {
         player->update(deltaTime, yaw, pitch, collider);
     }
 
-    hud->update(deltaTime, player->getPosition());
+    hud->update(deltaTime, player->getPosition(), player->getCurrentSpeed());
 }
 
 void Game::processInput(GLFWwindow* window) {
@@ -117,6 +117,11 @@ void Game::processInput(GLFWwindow* window) {
         hud->togglePosition(); f3Pressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_RELEASE) f3Pressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS && !f4Pressed) {
+        hud->toggleSpeed(); f4Pressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_RELEASE) f4Pressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && !f5Pressed) {
         Engine::getInstance()->toggleLightmappedRenderer();

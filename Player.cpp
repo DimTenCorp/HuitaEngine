@@ -1009,3 +1009,8 @@ void Player::ApplyWaterPhysics(float deltaTime) {
 
     m_flSwimTime += deltaTime;
 }
+
+float Player::getCurrentSpeed() const {
+    // Считаем скорость только по горизонтали (X и Z), игнорируя падение/подъем по Y
+    return glm::length(glm::vec2(velocity.x, velocity.z));
+}
