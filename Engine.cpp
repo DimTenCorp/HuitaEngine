@@ -56,8 +56,35 @@ static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     Engine* engine = Engine::getInstance();
-    if (engine && engine->isMenuActive() && engine->getMenu()) {
+    if (!engine) return;
+
+    // Обработка меню
+    if (engine->isMenuActive() && engine->getMenu()) {
         engine->getMenu()->handleKey(key, action);
+        return;
+    }
+
+    // Обработка использования двери (клавиша E)
+    if (key == GLFW_KEY_E && action == GLFW_PRESS) {
+        auto& doors = engine->getDoors();
+        if (!doors.empty() && engine->getGame()) {
+            auto* player = engine->getGame()->getPlayer();
+            if (player) {
+                glm::vec3 playerPos = player->getPosition();
+                Capsule playerCapsule = player->getPlayerCapsule(playerPos);
+
+                for (auto* door : doors) {
+                    if (door->intersectsCapsule(playerCapsule)) {
+                        // Игрок использует дверь
+                        bool activated = door->tryActivate(0.0f, true);
+                        if (activated) {
+                            std::cout << "[DOOR] Player USED " << door->getClassName()
+                                << " '" << door->getTargetName() << "'" << std::endl;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
