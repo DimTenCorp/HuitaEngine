@@ -1,1 +1,41 @@
-Nothing needs to be added to .gitignore since only a source code file (DoorEntity.cpp) was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+# Compiled and build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+target/
+.gradle/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Build directories
+dist/
+build/
+coverage/
+htmlcov/
+*.pyc
+.julia/
+zig*/

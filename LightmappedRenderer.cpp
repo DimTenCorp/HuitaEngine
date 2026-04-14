@@ -196,9 +196,10 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     }
 
     std::unordered_set<int> triggerFaceIndices;
+    std::unordered_map<int, int> doorFaceToModelIndex; // face index -> model index для дверей
 
     for (const auto& entity : entities) {
-        if (entity.classname.find("trigger_") != 0) continue;
+        if (entity.classname.find("trigger_") != 0 && entity.classname != "func_door") continue;
         if (entity.model.empty() || entity.model[0] != '*') continue;
 
         int modelIndex = 0;
@@ -214,6 +215,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             int faceIdx = model.firstFace + i;
             if (faceIdx >= 0 && faceIdx < (int)faces.size()) {
                 triggerFaceIndices.insert(faceIdx);
+                if (entity.classname == "func_door") {
+                    doorFaceToModelIndex[faceIdx] = modelIndex;
+                }
             }
         }
     }
