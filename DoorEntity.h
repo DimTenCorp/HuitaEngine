@@ -3,6 +3,15 @@
 #include "AABB.h"
 #include <unordered_map>
 #include <string>
+#include <glad/glad.h>
+#include <vector>
+#include <glm/glm.hpp>
+
+struct DoorVertex {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 texCoord;
+};
 
 // Сущность func_door - дверь как в Half-Life
 class CFuncDoor : public CBaseEntity {
@@ -26,13 +35,29 @@ private:
     DoorState state;
     float stateTimer;         // Таймер для состояния
     bool touchTriggered;      // Флаг触发ления от игрока
+    
+    // Данные для рендеринга
+    std::vector<DoorVertex> vertices;
+    std::vector<unsigned int> indices;
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ebo = 0;
+    GLuint textureID = 0;
+    bool hasGeometry = false;
 
 public:
     CFuncDoor();
-    virtual ~CFuncDoor() {}
+    virtual ~CFuncDoor();
 
     // Инициализация из параметров BSP сущности
     void initFromProperties(const std::unordered_map<std::string, std::string>& props, const AABB& modelBounds);
+    
+    // Инициализация геометрии двери из BSP
+    void initGeometry(const std::vector<glm::vec3>& bspVertices, 
+                      const std::vector<glm::vec3>& bspNormals,
+                      const std::vector<glm::vec2>& bspTexCoords,
+                      const std::vector<unsigned int>& bspIndices,
+                      GLuint texId);
     
     // Обновление состояния двери
     void Update(float deltaTime) override;
@@ -57,4 +82,7 @@ public:
     
     // Получить направление движения
     glm::vec3 getMoveDirection() const { return moveDirection; }
+    
+    // Есть ли геометрия
+    bool hasGeom() const { return hasGeometry; }
 };

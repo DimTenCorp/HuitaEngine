@@ -66,6 +66,9 @@ public:
 
     void setSkipSkyFaces(bool skip) { skipSkyFaces = skip; }
     bool getSkipSkyFaces() const { return skipSkyFaces; }
+    
+    // Получить информацию о дверях (face -> model index)
+    const std::unordered_map<int, int>& getDoorFaceToModelIndex() const { return doorFaceToModelIndex; }
 
 private:
     std::unique_ptr<Shader> lightmappedShader;
@@ -80,6 +83,9 @@ private:
     std::vector<LMFaceDrawCall> faceDrawCalls;
     bool hasTransparentFaces = false;
     bool skipSkyFaces = false;
+    
+    // Информация о дверях для исключения из статического меша
+    std::unordered_map<int, int> doorFaceToModelIndex;
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;

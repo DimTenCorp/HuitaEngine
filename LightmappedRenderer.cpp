@@ -194,9 +194,11 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         std::cerr << "LightmappedRenderer: Empty BSP data" << std::endl;
         return false;
     }
+    
+    // Сохраняем информацию о дверях в член класса
+    doorFaceToModelIndex.clear();
 
     std::unordered_set<int> triggerFaceIndices;
-    std::unordered_map<int, int> doorFaceToModelIndex; // face index -> model index для дверей
 
     for (const auto& entity : entities) {
         if (entity.classname.find("trigger_") != 0 && entity.classname != "func_door") continue;

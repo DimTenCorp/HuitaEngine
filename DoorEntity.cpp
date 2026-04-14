@@ -19,9 +19,16 @@ CFuncDoor::CFuncDoor()
     currentPos(0.0f),
     state(DOOR_CLOSED),
     stateTimer(0.0f),
-    touchTriggered(false) {
+    touchTriggered(false),
+    hasGeometry(false) {
     // По умолчанию дверь имеет размер 64x64x64 единиц
     // и открывается вверх (по оси Y в нашей системе координат)
+}
+
+CFuncDoor::~CFuncDoor() {
+    if (vao != 0) glDeleteVertexArrays(1, &vao);
+    if (vbo != 0) glDeleteBuffers(1, &vbo);
+    if (ebo != 0) glDeleteBuffers(1, &ebo);
 }
 
 void CFuncDoor::initFromProperties(const std::unordered_map<std::string, std::string>& props, const AABB& modelBounds) {
@@ -245,9 +252,87 @@ void CFuncDoor::Update(float deltaTime) {
     }
 }
 
+void CFuncDoor::initGeometry(const std::vector<glm::vec3>& bspVertices, 
+                              const std::vector<glm::vec3>& bspNormals,
+                              const std::vector<glm::vec2>& bspTexCoords,
+                              const std::vector<unsigned int>& bspIndices,
+                              GLuint texId) {
+    if (bspVertices.empty() || bspIndices.empty()) {
+        hasGeometry = false;
+        return;
+    }
+
+    textureID = texId;
+    
+    // Копируем вершины и индексы
+    vertices.resize(bspVertices.size());
+    for (size_t i = 0; i < bspVertices.size(); i++) {
+        vertices[i].position = bspVertices[i];
+        if (i < bspNormals.size()) {
+            vertices[i].normal = bspNormals[i];
+        } else {
+            vertices[i].normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+        if (i < bspTexCoords.size()) {
+            vertices[i].texCoord = bspTexCoords[i];
+        } else {
+            vertices[i].texCoord = glm::vec2(0.0f, 0.0f);
+        }
+    }
+    
+    indices = bspIndices;
+    hasGeometry = true;
+    
+    // Создаем VAO/VBO/EBO
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
+    
+    glBindVertexArray(vao);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(DoorVertex), 
+                 vertices.data(), GL_STATIC_DRAW);
+    
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), 
+                 indices.data(), GL_STATIC_DRAW);
+    
+    // position
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DoorVertex), (void*)0);
+    
+    // normal
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DoorVertex), 
+                         (void*)offsetof(DoorVertex, normal));
+    
+    // texCoord
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(DoorVertex), 
+                         (void*)offsetof(DoorVertex, texCoord));
+    
+    glBindVertexArray(0);
+    
+    std::cout << "[DOOR] Geometry initialized with " << vertices.size() 
+              << " vertices and " << indices.size() << " indices\n";
+}
+
 void CFuncDoor::Render() {
-    // Дверь рендерится как часть BSP карты
-    // Этот метод может быть использован для отладки или специальных эффектов
+    if (!hasGeometry || vao == 0) return;
+    
+    // Вычисляем матрицу модели с учетом смещения двери
+    glm::vec3 offset = moveDirection * (currentPos * moveDistance);
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), getPosition() + offset);
+    
+    // Рендерим дверь
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    
+    glBindVertexArray(vao);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), 
+                   GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 bool CFuncDoor::intersectsCapsule(const Capsule& capsule) const {

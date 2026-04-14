@@ -510,6 +510,12 @@ void Engine::doLoadMap(const std::string& mapPath) {
     // Загрузка дверей func_door
     doors.clear();
     auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    
+    // Получаем информацию о дверях из lightmapped renderer (face -> model index)
+    const std::unordered_map<int, int>* doorFaceToModel = nullptr;
+    if (lmRenderer) {
+        doorFaceToModel = &lmRenderer->getDoorFaceToModelIndex();
+    }
 
     for (const auto& entity : doorEntities) {
         if (entity.model.empty() || entity.model[0] != '*') {
@@ -544,6 +550,84 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
         CFuncDoor* door = new CFuncDoor();
         door->initFromProperties(entity.properties, modelBounds);
+        
+        // Инициализируем геометрию двери из BSP данных
+        if (doorFaceToModel && !doorFaceToModel->empty()) {
+            // Собираем все faces для этой двери
+            const BSPModel& doorModel = models[modelIndex];
+            std::vector<glm::vec3> doorVerts;
+            std::vector<glm::vec3> doorNormals;
+            std::vector<glm::vec2> doorTexCoords;
+            std::vector<unsigned int> doorIndices;
+            GLuint doorTexId = bspLoader->getDefaultTextureID();
+            
+            for (int i = 0; i < doorModel.numFaces; i++) {
+                int faceIdx = doorModel.firstFace + i;
+                if (faceIdx < 0 || faceIdx >= (int)bspLoader->getFaces().size()) continue;
+                
+                const BSPFace& face = bspLoader->getFaces()[faceIdx];
+                if (face.texInfo < 0 || face.texInfo >= (int)bspLoader->getTexInfos().size()) continue;
+                
+                const BSPTexInfo& texInfo = bspLoader->getTexInfos()[face.texInfo];
+                int texIdx = texInfo.textureIndex;
+                if (texIdx >= 0 && texIdx < (int)bspLoader->getDrawCalls().size()) {
+                    // Пытаемся получить текстуру из draw calls
+                    const auto& drawCalls = bspLoader->getDrawCalls();
+                    for (const auto& dc : drawCalls) {
+                        if (dc.faceIndex == faceIdx) {
+                            doorTexId = dc.texID;
+                            break;
+                        }
+                    }
+                }
+                
+                // Собираем вершины фейса
+                unsigned int baseVertIdx = (unsigned int)doorVerts.size();
+                for (int j = 0; j < face.numEdges; j++) {
+                    int surfEdgeIdx = face.firstEdge + j;
+                    if (surfEdgeIdx < 0 || surfEdgeIdx >= (int)bspLoader->getSurfEdges().size()) continue;
+                    
+                    int surfEdge = bspLoader->getSurfEdges()[surfEdgeIdx];
+                    int vertIdx = (surfEdge >= 0) ? 
+                        bspLoader->getEdges()[surfEdge].v[0] : 
+                        bspLoader->getEdges()[-surfEdge].v[1];
+                    
+                    if (vertIdx < 0 || vertIdx >= (int)bspLoader->getOriginalVertices().size()) continue;
+                    
+                    // Конвертируем позицию
+                    glm::vec3 bspPos = bspLoader->getOriginalVertices()[vertIdx];
+                    glm::vec3 worldPos = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
+                    
+                    // Нормаль
+                    glm::vec3 bspNormal = bspLoader->getPlanes()[face.planeNum].normal;
+                    if (face.side != 0) bspNormal = -bspNormal;
+                    glm::vec3 worldNormal = glm::normalize(glm::vec3(-bspNormal.x, bspNormal.z, bspNormal.y));
+                    
+                    // UV координаты
+                    glm::vec2 uv;
+                    uv.x = glm::dot(bspLoader->getOriginalVertices()[vertIdx], 
+                                   glm::vec3(texInfo.s[0], texInfo.s[1], texInfo.s[2])) + texInfo.s[3];
+                    uv.y = glm::dot(bspLoader->getOriginalVertices()[vertIdx], 
+                                   glm::vec3(texInfo.t[0], texInfo.t[1], texInfo.t[2])) + texInfo.t[3];
+                    
+                    doorVerts.push_back(worldPos);
+                    doorNormals.push_back(worldNormal);
+                    doorTexCoords.push_back(uv);
+                }
+                
+                // Индексы для треугольников (fan triangulation)
+                for (unsigned int k = 1; k + 1 < face.numEdges; k++) {
+                    doorIndices.push_back(baseVertIdx);
+                    doorIndices.push_back(baseVertIdx + k);
+                    doorIndices.push_back(baseVertIdx + k + 1);
+                }
+            }
+            
+            if (!doorVerts.empty()) {
+                door->initGeometry(doorVerts, doorNormals, doorTexCoords, doorIndices, doorTexId);
+            }
+        }
+        
         doors.push_back(door);
     }
     std::cout << "[DOOR] Loaded " << doors.size() << " func_door entities\n";
@@ -789,6 +873,13 @@ void Engine::render() {
 
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
+    }
+
+    // 3. Рендерим двери отдельно с учетом их анимации
+    for (auto* door : doors) {
+        if (door && door->hasGeom()) {
+            door->Render();
+        }
     }
 
     if (game) {
