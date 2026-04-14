@@ -282,16 +282,6 @@ void Engine::unloadCurrentMap() {
         meshCollider.reset();
     }
 
-    if (bspLoader) {
-        bspLoader->cleanupTextures();
-        bspLoader.reset();
-    }
-
-    if (wadLoader) {
-        wadLoader->cleanup();
-        wadLoader->init();
-    }
-
     for (auto* water : waterZones) {
         delete water;
     }
@@ -302,19 +292,14 @@ void Engine::unloadCurrentMap() {
     }
     doors.clear();
 
-    // === ВОТ ЭТО ЛИШНЕЕ - удалить отсюда! ===
-    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
-    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
-    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
-
-    for (const auto& entity : doorEntities) {
-        DoorEntity* door = new DoorEntity();
-        door->initFromEntity(entity, *bspLoader);
-        doors.push_back(door);
+    if (wadLoader) {
+        wadLoader->cleanup();
+        wadLoader->init();
     }
 
-    if (!doors.empty()) {
-        std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
+    if (bspLoader) {
+        bspLoader->cleanupTextures();
+        bspLoader.reset();
     }
 
     useLightmapped = false;
