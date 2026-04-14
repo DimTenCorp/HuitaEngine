@@ -552,7 +552,19 @@ void Engine::doLoadMap(const std::string& mapPath) {
         door->initFromProperties(entity.properties, modelBounds);
         
         // Инициализируем геометрию двери из BSP данных
-        if (doorFaceToModel && !doorFaceToModel->empty()) {
+        // Проверяем что есть информация о дверях и что этот modelIndex присутствует в ней
+        bool hasDoorFaces = false;
+        if (doorFaceToModel) {
+            for (int i = 0; i < model.numFaces; i++) {
+                int faceIdx = model.firstFace + i;
+                if (doorFaceToModel->count(faceIdx)) {
+                    hasDoorFaces = true;
+                    break;
+                }
+            }
+        }
+        
+        if (hasDoorFaces) {
             // Собираем все faces для этой двери
             const BSPModel& doorModel = models[modelIndex];
             std::vector<glm::vec3> doorVerts;
@@ -625,7 +637,12 @@ void Engine::doLoadMap(const std::string& mapPath) {
             
             if (!doorVerts.empty()) {
                 door->initGeometry(doorVerts, doorNormals, doorTexCoords, doorIndices, doorTexId);
+                std::cout << "[DOOR] Initialized geometry with " << doorVerts.size() << " vertices\n";
+            } else {
+                std::cerr << "[DOOR] Warning: No vertices collected for door model " << modelIndex << "\n";
             }
+        } else {
+            std::cerr << "[DOOR] Warning: No door faces found in doorFaceToModel for model " << modelIndex << "\n";
         }
         
         doors.push_back(door);
