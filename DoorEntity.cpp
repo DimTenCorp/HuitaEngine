@@ -27,14 +27,9 @@ bool OBB::intersectsAABB(const AABB& aabb) const {
         axis = glm::normalize(axis);
         
         // Проекция половинных размеров OBB на ось
-        float rOBB = glm::abs(glm::dot(halfExtents.x, glm::vec3(glm::column(rotation, 0)))) * glm::abs(glm::dot(glm::vec3(1,0,0), axis)) +
-                     glm::abs(glm::dot(halfExtents.y, glm::vec3(glm::column(rotation, 1)))) * glm::abs(glm::dot(glm::vec3(0,1,0), axis)) +
-                     glm::abs(glm::dot(halfExtents.z, glm::vec3(glm::column(rotation, 2)))) * glm::abs(glm::dot(glm::vec3(0,0,1), axis));
-        
-        // Упрощённая проекция OBB
-        rOBB = 0.0f;
+        float rOBB = 0.0f;
         for (int j = 0; j < 3; j++) {
-            rOBB += halfExtents[j] * glm::abs(glm::dot(glm::column(rotation, j), axis));
+            rOBB += halfExtents[j] * glm::abs(glm::dot(rotation[j], axis));
         }
         
         // Проекция половинных размеров AABB на ось
