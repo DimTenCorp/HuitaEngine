@@ -9,6 +9,7 @@
 #include "TriangleCollider.h"
 #include "Menu.h"
 #include "WaterEntity.h"
+#include "DoorEntity.h"
 #include "AABB.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -296,6 +297,11 @@ void Engine::unloadCurrentMap() {
         delete water;
     }
     waterZones.clear();
+    
+    for (auto* door : doors) {
+        delete door;
+    }
+    doors.clear();
 
     useLightmapped = false;
     showLightmapsOnly = false;
@@ -501,6 +507,47 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
+    // Загрузка дверей func_door
+    doors.clear();
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+
+    for (const auto& entity : doorEntities) {
+        if (entity.model.empty() || entity.model[0] != '*') {
+            std::cerr << "[DOOR] Skipping func_door without valid model: " << entity.classname << std::endl;
+            continue;
+        }
+
+        int modelIndex = 0;
+        try {
+            modelIndex = std::stoi(entity.model.substr(1));
+        }
+        catch (...) {
+            std::cerr << "[DOOR] Failed to parse model index from: " << entity.model << std::endl;
+            continue;
+        }
+
+        if (modelIndex <= 0 || modelIndex >= (int)bspLoader->getModels().size()) {
+            std::cerr << "[DOOR] Invalid model index: " << modelIndex << std::endl;
+            continue;
+        }
+
+        const auto& models = bspLoader->getModels();
+        const BSPModel& model = models[modelIndex];
+
+        AABB modelBounds;
+        modelBounds.min = glm::vec3(-model.min[0], model.min[2], model.min[1]);
+        modelBounds.max = glm::vec3(-model.max[0], model.max[2], model.max[1]);
+
+        if (modelBounds.min.x > modelBounds.max.x) std::swap(modelBounds.min.x, modelBounds.max.x);
+        if (modelBounds.min.y > modelBounds.max.y) std::swap(modelBounds.min.y, modelBounds.max.y);
+        if (modelBounds.min.z > modelBounds.max.z) std::swap(modelBounds.min.z, modelBounds.max.z);
+
+        CFuncDoor* door = new CFuncDoor();
+        door->initFromProperties(entity.properties, modelBounds);
+        doors.push_back(door);
+    }
+    std::cout << "[DOOR] Loaded " << doors.size() << " func_door entities\n";
+
     std::cout << "=== MAP LOADED ===\n\n";
 
     if (menu) {
@@ -655,6 +702,11 @@ void Engine::run() {
         if (game) {
             game->update(deltaTime);
             game->processInput(window);
+        }
+        
+        // Обновление дверей
+        for (auto* door : doors) {
+            door->Update(deltaTime);
         }
 
         // ← ИСПРАВЛЕНО: edge detection для ESC
