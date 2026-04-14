@@ -16,3 +16,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+// Enable experimental GLM extensions
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/euler_angles.hpp>
+
+// Disable deprecation warnings for standard C functions
+#define _CRT_SECURE_NO_WARNINGS

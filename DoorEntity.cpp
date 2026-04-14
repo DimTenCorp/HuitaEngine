@@ -1,8 +1,5 @@
 #include "pch.h"
 
-#define _CRT_SECURE_NO_WARNINGS
-#define GLM_ENABLE_EXPERIMENTAL
-
 #include "DoorEntity.h"
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
