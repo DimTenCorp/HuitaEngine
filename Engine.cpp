@@ -282,26 +282,21 @@ void Engine::unloadCurrentMap() {
         meshCollider.reset();
     }
 
-    for (auto* water : waterZones) {
-        delete water;
+    if (bspLoader) {
+        bspLoader->cleanupTextures();
+        bspLoader.reset();
     }
-    waterZones.clear();
-
-    for (auto* door : doors) {
-        delete door;
-    }
-    doors.clear();
 
     if (wadLoader) {
         wadLoader->cleanup();
         wadLoader->init();
     }
 
-    if (bspLoader) {
-        bspLoader->cleanupTextures();
-        bspLoader.reset();
+    for (auto* water : waterZones) {
+        delete water;
     }
-
+    waterZones.clear();
+    cleanupDoors();
     useLightmapped = false;
     showLightmapsOnly = false;
 
@@ -381,6 +376,26 @@ void Engine::doLoadMap(const std::string& mapPath) {
         }
         return;
     }
+
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
+
+    // Объединяем
+    std::vector<BSPEntity> allDoors = doorEntities;
+    allDoors.insert(allDoors.end(), rotDoorEntities.begin(), rotDoorEntities.end());
+
+    for (const auto& entity : allDoors) {
+        if (entity.model.empty() || entity.model[0] != '*') continue;
+
+        auto door = std::make_unique<DoorEntity>();
+        door->initFromEntity(entity, *bspLoader);
+
+        if (door->modelIndex > 0) {
+            doors.push_back(std::move(door));
+        }
+    }
+
+    std::cout << "[ENGINE] Loaded " << doors.size() << " doors" << std::endl;
 
     // Загружаем скайбокс
     std::string skyName = bspLoader->getSkyName();
@@ -506,34 +521,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
 
-    for (auto* door : doors) {
-        delete door;
-    }
-    doors.clear();
-
-    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
-    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
-
-    // Объединяем
-    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
-
-    for (const auto& entity : doorEntities) {
-        DoorEntity* door = new DoorEntity();
-        door->initFromEntity(entity, *bspLoader);
-        doors.push_back(door);
-    }
-    std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
-
-    for (auto& dc : bspLoader->getDrawCalls()) {
-        if (dc.isDoor) continue;  // Уже помечено
-
-        // Проверяем, принадлежит ли эта геометрия какой-то двери
-        for (int i = 0; i < doors.size(); i++) {
-            // Проверяем пересечение bounds
-            // Если да - помечаем и связываем
-        }
-    }
-
     std::cout << "=== MAP LOADED ===\n\n";
 
     if (menu) {
@@ -564,10 +551,6 @@ void Engine::updateTime() {
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
     if (deltaTime > 0.05f) deltaTime = 0.05f;
-
-    for (auto* door : doors) {
-        door->update(deltaTime);
-    }
 }
 
 void Engine::setShowLightmapsOnly(bool show) {
@@ -617,15 +600,10 @@ void Engine::hideMenu() {
 }
 
 void Engine::run() {
-    bool wasEscapePressed = false;  // ← ДОБАВЛЕНО: отслеживание состояния ESC
-
     while (!glfwWindowShouldClose(window)) {
         updateTime();
-        processPendingLoad();
 
-        for (auto* door : doors) {
-            door->update(deltaTime);
-        }
+        processPendingLoad();
 
         if (menuActive && menu) {
             if (menu->shouldReturnToMenu()) {
@@ -638,54 +616,24 @@ void Engine::run() {
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
             menu->handleMouseMove(xpos, ypos);
+
             menu->update(deltaTime);
 
-            bool isPause = (menu->getState() == Menu::State::PAUSE);
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
 
-            if (isPause && game) {
-                game->setPaused(true);
+            glClearColor(0.05f, 0.05f, 0.1f, 0.5f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                glEnable(GL_DEPTH_TEST);
-                glDepthFunc(GL_LESS);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                render();
+            menu->render();
 
-                ImGui_ImplOpenGL3_NewFrame();
-                ImGui_ImplGlfw_NewFrame();
-                ImGui::NewFrame();
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-                menu->render();
-
-                ImGui::Render();
-                ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-                glfwSwapBuffers(window);
-                glfwPollEvents();
-                continue;
-            }
-            else {
-                if (game) game->setPaused(false);
-
-                glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-                ImGui_ImplOpenGL3_NewFrame();
-                ImGui_ImplGlfw_NewFrame();
-                ImGui::NewFrame();
-
-                menu->render();
-
-                ImGui::Render();
-                ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-                glfwSwapBuffers(window);
-                glfwPollEvents();
-                continue;
-            }
-        }
-
-        if (game && game->getPaused()) {
-            game->setPaused(false);
+            glfwSwapBuffers(window);
+            glfwPollEvents();
+            continue;
         }
 
         if (!game) {
@@ -698,9 +646,7 @@ void Engine::run() {
             game->processInput(window);
         }
 
-        // ← ИСПРАВЛЕНО: edge detection для ESC
-        bool escapePressed = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
-        if (escapePressed && !wasEscapePressed && !menuActive) {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !menuActive) {
             menuActive = true;
             if (menu) {
                 menu->setActive(true);
@@ -710,7 +656,6 @@ void Engine::run() {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
         }
-        wasEscapePressed = escapePressed;  // ← Сохраняем состояние для следующего кадра
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -763,21 +708,23 @@ void Engine::render() {
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)width / (float)height, 0.1f, 10000.0f);
 
-    // ИСПРАВЛЕНО: Очищаем буферы ПЕРЕД скайбоксом
+    // Очищаем буферы
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // 1. Сначала скайбокс (на чистом экране)
+    // 1. Скайбокс
     if (skyboxRenderer && skyboxRenderer->isLoaded()) {
         skyboxRenderer->render(view, projection, eyePos);
     }
 
-    // 2. Потом мир (с очисткой depth, чтобы скайбокс был дальше всех)
-    // Но НЕ очищаем цвет - скайбокс уже нарисовал фон!
+    // 2. Мир (с очисткой depth)
     glClear(GL_DEPTH_BUFFER_BIT);
 
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
+
+        // === РЕНДЕРИНГ ДВЕРЕЙ ===
+        lmRenderer->renderDoors(doors, view, projection);
     }
 
     if (game) {
@@ -799,31 +746,85 @@ void Engine::shutdown() {
     }
 }
 
-void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
-    if (!bspLoader || !renderer) return;
-
-    // Получаем VAO мира (двери используют тот же меш)
-    // Нам нужен доступ к VAO мира - добавь метод в Renderer или используй публичный доступ
-
-    for (auto* door : doors) {
-        if (!door) continue;
-
-        // Получаем трансформацию двери
-        glm::mat4 model = door->getRenderTransform();
-
-        // Здесь нужно нарисовать меш двери с этой трансформацией
-        // Это зависит от твоей архитектуры рендерера
-
-        // Пример: если у тебя есть доступ к шейдеру и VAO:
-        /*
-        Shader* shader = renderer->getGeometryShader();
-        shader->bind();
-        shader->setMat4("model", model);
-        shader->setMat4("view", view);
-        shader->setMat4("projection", projection);
-
-        // Привязываем VAO и рисуем
-        // Но нужно знать какие вершины/индексы принадлежат этой двери!
-        */
+void Engine::updateDoors(float deltaTime) {
+    // Обновляем состояние дверей
+    for (auto& door : doors) {
+        door->update(deltaTime, meshCollider.get());
     }
+
+    // === ДОБАВИТЬ: обновляем коллайдер дверей ===
+    // Перестраиваем коллайдер дверей каждый кадр
+    if (meshCollider) {
+        // Собираем треугольники всех дверей
+        std::vector<Triangle> doorTriangles;
+
+        for (const auto& door : doors) {
+            if (!door->passable) { // Только непроходимые двери
+                // Получаем трансформ двери
+                glm::mat4 transform = door->getTransform();
+
+                // Трансформируем вершины и создаем треугольники
+                const auto& verts = door->vertices;
+                const auto& idxs = door->indices;
+
+                for (size_t i = 0; i < idxs.size(); i += 3) {
+                    Triangle tri;
+                    for (int j = 0; j < 3; j++) {
+                        glm::vec4 v = transform * glm::vec4(verts[idxs[i + j]].position, 1.0f);
+                        tri.vertices[j] = glm::vec3(v);
+                    }
+                    tri.normal = glm::normalize(glm::cross(
+                        tri.vertices[1] - tri.vertices[0],
+                        tri.vertices[2] - tri.vertices[0]
+                    ));
+                    doorTriangles.push_back(tri);
+                }
+            }
+        }
+
+        // Обновляем коллайдер мира с дверями
+        // NOTE: Нужно добавить метод в MeshCollider для обновления динамических объектов
+        meshCollider->updateDynamicTriangles(doorTriangles);
+    }
+}
+
+void Engine::checkDoorInteractions(Player* player) {
+    if (!player) return;
+
+    glm::vec3 playerPos = player->getPosition();
+    Capsule playerCapsule = player->getPlayerCapsule(playerPos);
+
+    for (auto& door : doors) {
+        // Проверяем касание
+        if (door->intersectsPlayer(playerPos, playerCapsule)) {
+            // === ИСПРАВЛЕНО: открываем только если закрыта или закрывается ===
+            if (door->state == DoorState::Closed || door->state == DoorState::Closing) {
+                if (!door->useOnly) {
+                    door->open();
+                }
+            }
+            else if (door->state == DoorState::Open || door->state == DoorState::Opening) {
+                // Если дверь уже открыта/открывается - сбрасываем таймер автозакрытия
+                // (игрок стоит в дверном проеме, "держит" дверь открытой)
+                door->stateTimer = 0.0f;
+            }
+        }
+    }
+}
+
+void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
+    if (doors.empty()) return;
+
+    // Используем LightmappedRenderer если доступен, иначе обычный
+    if (lmRenderer && useLightmapped) {
+        lmRenderer->renderDoors(doors, view, projection);
+    }
+    else if (renderer) {
+        // Fallback - рендерим через обычный renderer
+        // Нужно добавить поддержку в Renderer
+    }
+}
+
+void Engine::cleanupDoors() {
+    doors.clear();
 }

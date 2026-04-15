@@ -18,30 +18,6 @@ void Game::init() {
     mouseSensitivity = settings.mouseSensitivity;
 }
 
-void Game::setPaused(bool paused) {
-    if (isPaused == paused) return;
-
-    isPaused = paused;
-
-    if (isPaused) {
-        // СТАВИМ НА ПАУЗУ - сохраняем скорость
-        savedVelocity = player->getVelocity();
-        wasOnGround = player->isOnGround();
-
-        // НЕ сбрасываем скорость игроку - просто не обновляем его позицию в update
-        player->setPausedState(true);
-
-        std::cout << "[GAME] PAUSED (vel: " << savedVelocity.x << ", " << savedVelocity.y << ", " << savedVelocity.z << ")" << std::endl;
-    }
-    else {
-        // СНИМАЕМ С ПАУЗЫ - восстанавливаем скорость!
-        player->setVelocity(savedVelocity);
-        player->setPausedState(false);
-
-        std::cout << "[GAME] RESUMED (vel restored: " << savedVelocity.x << ", " << savedVelocity.y << ", " << savedVelocity.z << ")" << std::endl;
-    }
-}
-
 void Game::setViewAngles(float newYaw, float newPitch) {
     yaw = newYaw;
     pitch = newPitch;
@@ -50,8 +26,6 @@ void Game::setViewAngles(float newYaw, float newPitch) {
 }
 
 void Game::processMouse(GLFWwindow* window) {
-    if (isPaused) return;
-
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
 
@@ -67,6 +41,8 @@ void Game::processMouse(GLFWwindow* window) {
     lastX = (float)xpos;
     lastY = (float)ypos;
 
+    // Умножаем на сенсу, но с нелинейной шкалой для лучшего контроля
+    // При сенсе 0.5 получаем множитель ~0.05, при 2.0 - ~0.4
     float sensMultiplier = mouseSensitivity * 0.1f;
 
     yaw += xoffset * sensMultiplier;
@@ -80,16 +56,14 @@ void Game::processMouse(GLFWwindow* window) {
 }
 
 void Game::update(float deltaTime) {
-    if (isPaused) {
-        // Только HUD обновляем для FPS счетчика
-        hud->update(deltaTime, player->getPosition(), player->getCurrentSpeed());
-        return;
-    }
-
     processMouse(Engine::getInstance()->getWindow());
 
-    auto* collider = Engine::getInstance()->getCollider();
-    auto& waterZones = Engine::getInstance()->getWaterZones();
+    auto* engine = Engine::getInstance();
+    auto* collider = engine->getCollider();
+    auto& waterZones = engine->getWaterZones();
+
+    // Обновляем двери
+    engine->updateDoors(deltaTime);
 
     player->CheckWater(waterZones);
 
@@ -97,12 +71,13 @@ void Game::update(float deltaTime) {
         player->update(deltaTime, yaw, pitch, collider);
     }
 
-    hud->update(deltaTime, player->getPosition(), player->getCurrentSpeed());
+    // Проверяем взаимодействие с дверями ПОСЛЕ обновления позиции
+    engine->checkDoorInteractions(player.get());
+
+    hud->update(deltaTime, player->getPosition());
 }
 
 void Game::processInput(GLFWwindow* window) {
-    if (isPaused) return;
-
     if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS && !f1Pressed) {
         hud->toggleCrosshair(); f1Pressed = true;
     }
@@ -117,11 +92,6 @@ void Game::processInput(GLFWwindow* window) {
         hud->togglePosition(); f3Pressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_F3) == GLFW_RELEASE) f3Pressed = false;
-
-    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_PRESS && !f4Pressed) {
-        hud->toggleSpeed(); f4Pressed = true;
-    }
-    if (glfwGetKey(window, GLFW_KEY_F4) == GLFW_RELEASE) f4Pressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && !f5Pressed) {
         Engine::getInstance()->toggleLightmappedRenderer();

@@ -99,8 +99,8 @@ bool CFuncWater::intersectsCapsule(const Capsule& capsule) const {
     };
     
     // Если хотя бы одна сфера капсулы в воде - считаем что игрок в воде
-    if (pointInAABB(capsule.a)) return true;
-    if (pointInAABB(capsule.b)) return true;
+    if (pointInAABB(capsule.start)) return true;
+    if (pointInAABB(capsule.end)) return true;
     
     // Проверяем пересечение линии между сферами с водой
     // Упрощенно: если капсула пересекает любую грань воды

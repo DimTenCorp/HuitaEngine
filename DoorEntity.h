@@ -1,98 +1,87 @@
-#pragma once
+п»ї#pragma once
 #include <glm/glm.hpp>
+#include <vector>
+#include <memory>
+#include <unordered_map>
 #include <string>
-#include <functional>
+#include "BSPLoader.h"
 #include "AABB.h"
 
-enum class DoorType { SLIDING, ROTATING };
-enum class DoorState { CLOSED, OPENING, OPEN, CLOSING };
+class BSPLoader;
+class MeshCollider;
 
-namespace DoorFlags {
-    constexpr unsigned int STARTS_OPEN = 1;
-    constexpr unsigned int UNUSED_2 = 2;
-    constexpr unsigned int NON_SOLID_PLAYER = 4;
-    constexpr unsigned int PASSABLE = 8;
-    constexpr unsigned int TOGGLE = 32;
-    constexpr unsigned int USE_ONLY = 256;
-    constexpr unsigned int NO_MONSTERS = 512;
-    constexpr unsigned int TOUCH_OPENS = 1024;
-    constexpr unsigned int START_LOCKED = 2048;
-    constexpr unsigned int SILENT = 4096;
-}
+enum class DoorMoveType {
+    Linear,
+    Rotating
+};
 
-class DoorEntity {
-public:
-    DoorEntity();
-    ~DoorEntity();
+enum class DoorState {
+    Closed,
+    Opening,
+    Open,
+    Closing
+};
 
-    void initFromEntity(const struct BSPEntity& entity, const class BSPLoader& bsp);
-    bool intersectsCapsule(const Capsule& capsule) const;
+struct DoorEntity {
+    int modelIndex = -1;
+    std::string targetname;
+    std::string classname;
+    std::unordered_map<std::string, std::string> entityProperties; // РЎРѕС…СЂР°РЅСЏРµРј РІСЃРµ СЃРІРѕР№СЃС‚РІР°
 
-    AABB getBounds() const;
+    glm::vec3 origin;
+    glm::vec3 startOrigin;
+    glm::vec3 endOrigin;
+    glm::vec3 angles;
+    glm::vec3 startAngles;
+    glm::vec3 endAngles;
 
-    // === ТРАНСФОРМАЦИЯ ДЛЯ РЕНДЕРИНГА ===
-    glm::mat4 getRenderTransform() const;
-    glm::vec3 getCurrentOrigin() const { return currentPos; }
-    float getCurrentAngle() const { return currentAngle; }
+    glm::vec3 modelOrigin;
+    glm::vec3 modelMins;
+    glm::vec3 modelMaxs;
 
-    bool tryActivate(float touchDistance, bool isPlayerUse = false);
-    void update(float deltaTime);
+    DoorMoveType moveType = DoorMoveType::Linear;
+    float speed = 100.0f;
+    float waitTime = 3.0f;
+    float lip = 8.0f;
+    float damage = 0.0f;
 
-    bool hasFlag(unsigned int flag) const { return (spawnFlags & flag) != 0; }
-    bool isTouchOpens() const { return hasFlag(DoorFlags::TOUCH_OPENS); }
-    bool isUseOnly() const { return hasFlag(DoorFlags::USE_ONLY); }
-    bool isLocked() const { return locked; }
-    bool isPassable() const { return hasFlag(DoorFlags::PASSABLE); }
-    bool isSilent() const { return hasFlag(DoorFlags::SILENT); }
+    glm::vec3 moveDir;
+    float moveDistance = 0.0f;
 
-    DoorType getType() const { return type; }
-    DoorState getState() const { return state; }
-    const std::string& getTargetName() const { return targetName; }
-    const std::string& getClassName() const { return className; }
+    DoorState state = DoorState::Closed;
+    float stateTimer = 0.0f;
+    float moveProgress = 0.0f;
 
-    glm::vec3 getCurrentMins() const { return currentMins; }
-    glm::vec3 getCurrentMaxs() const { return currentMaxs; }
+    bool startOpen = false;
+    bool passable = false;
+    bool useOnly = false;
+    bool noAutoReturn = false;
+    bool oneWay = false;
+    bool silent = false;
 
-    void setTouched(bool t) { touched = t; }
-    bool wasTouched() const { return touched; }
+    AABB bounds;
+    std::vector<BSPVertex> vertices;
+    std::vector<unsigned int> indices;
+    GLuint textureID = 0;
 
-private:
-    DoorType type;
-    DoorState state;
+    int moveSound = 0;
+    int stopSound = 0;
+    int lockedSound = 0;
+    int unlockedSound = 0;
 
-    glm::vec3 origin;        // Оригинальная позиция (закрыто)
-    glm::vec3 angles;        // Оригинальные углы
-    glm::vec3 mins, maxs;    // Оригинальные bounds (относительно origin)
-    glm::vec3 currentMins, currentMaxs;  // Текущие мировые bounds
-
-    glm::vec3 pos1;          // Закрытая позиция origin
-    glm::vec3 pos2;          // Открытая позиция origin  
-    glm::vec3 currentPos;    // Текущая позиция origin
-    glm::vec3 moveDir;       // Направление движения (для sliding)
-    float moveDistance;      // Расстояние движения
-
-    float speed;             // Скорость (юнитов в секунду)
-    float wait;              // Время до автозакрытия (-1 = не закрывать)
-    float lip;               // Сколько остаётся торчать
-    float dmg;               // Урон при блокировке
-    int health;              // Здоровье (0 = не ломается)
-    unsigned int spawnFlags; // Флаги спавна
-    bool locked;             // Закрыта на замок
-
-    float moveProgress;      // 0.0 = закрыта, 1.0 = открыта
-    float nextCloseTime;     // Время когда закрываться
-    bool touchLogged;        // Флаг для логирования
-    bool touched;            // Касались ли в этом кадре
-
-    std::string targetName;  // Имя для активации триггерами
-    std::string className;   // Класс энтити
-
-    float currentAngle;      // Текущий угол вращения (для rotating)
-
-    void calculateBoundsFromModel(int modelIndex, const class BSPLoader& bsp);
-    void updateRotatedBounds();
+    void initFromEntity(const BSPEntity& entity, const BSPLoader& bsp);
+    void update(float deltaTime, MeshCollider* worldCollider);
+    void activate();
     void open();
     void close();
-    void stop();
-    void updatePosition(float progress);
+
+    bool intersectsPlayer(const glm::vec3& playerPos, const Capsule& playerCapsule) const;
+    AABB getCurrentBounds() const;
+
+    glm::mat4 getTransform() const;
+
+private:
+    void calculateEndPosition(const BSPLoader& bsp);
+    void buildGeometry(const BSPLoader& bsp);
+    void updateBounds();
 };

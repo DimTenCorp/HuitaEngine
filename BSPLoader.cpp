@@ -457,6 +457,20 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
 void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel) {
     unsigned int baseVertex = (unsigned int)meshVertices.size();
 
+    int modelIdx = -1;
+    for (size_t i = 0; i < models.size(); i++) {
+        if (&models[i] == &subModel) {
+            modelIdx = (int)i;
+            break;
+        }
+    }
+
+    // Пропускаем двери - они будут динамическими
+    if (modelIdx > 0 && isModelDoor(modelIdx)) {
+        std::cout << "[BSP] Skipping door model *" << modelIdx << " from static mesh" << std::endl;
+        return;
+    }
+
     for (int i = 0; i < subModel.numFaces; i++) {
         int faceIdx = subModel.firstFace + i;
         if (faceIdx < 0 || faceIdx >= (int)faces.size()) continue;
@@ -799,4 +813,15 @@ void BSPLoader::debugPrintEntities() const {
         }
         std::cout << std::endl;
     }
+}
+
+bool BSPLoader::isModelDoor(int modelIndex) const {
+    std::string modelStr = "*" + std::to_string(modelIndex);
+    for (const auto& ent : entities) {
+        if ((ent.classname == "func_door" || ent.classname == "func_door_rotating")
+            && ent.model == modelStr) {
+            return true;
+        }
+    }
+    return false;
 }

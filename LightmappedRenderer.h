@@ -4,6 +4,9 @@
 #include <memory>
 #include <unordered_set>
 
+// Forward declaration
+struct DoorEntity;
+
 struct BSPVertexLightmapped {
     glm::vec3 position;
     glm::vec3 normal;
@@ -66,6 +69,9 @@ public:
 
     void setSkipSkyFaces(bool skip) { skipSkyFaces = skip; }
     bool getSkipSkyFaces() const { return skipSkyFaces; }
+
+    void renderDoors(const std::vector<std::unique_ptr<DoorEntity>>& doors,
+        const glm::mat4& view, const glm::mat4& projection);
 
 private:
     std::unique_ptr<Shader> lightmappedShader;

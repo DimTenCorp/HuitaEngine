@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "DoorEntity.h"
 
 const char* LightmappedRenderer::getVertexShaderSource() {
     return R"glsl(
@@ -196,24 +197,35 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     }
 
     std::unordered_set<int> triggerFaceIndices;
+    std::unordered_set<int> doorModelIndices;
 
+    // Находим модели дверей
     for (const auto& entity : entities) {
-        if (entity.classname.find("trigger_") != 0) continue;
-        if (entity.model.empty() || entity.model[0] != '*') continue;
-
-        int modelIndex = 0;
-        try {
-            modelIndex = std::stoi(entity.model.substr(1));
+        if (entity.classname.find("trigger_") == 0) {
+            if (entity.model.empty() || entity.model[0] != '*') continue;
+            try {
+                int modelIndex = std::stoi(entity.model.substr(1));
+                if (modelIndex > 0 && modelIndex < (int)models.size()) {
+                    const BSPModel& model = models[modelIndex];
+                    for (int i = 0; i < model.numFaces; i++) {
+                        int faceIdx = model.firstFace + i;
+                        if (faceIdx >= 0 && faceIdx < (int)faces.size()) {
+                            triggerFaceIndices.insert(faceIdx);
+                        }
+                    }
+                }
+            }
+            catch (...) {}
         }
-        catch (...) { continue; }
 
-        if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
-
-        const BSPModel& model = models[modelIndex];
-        for (int i = 0; i < model.numFaces; i++) {
-            int faceIdx = model.firstFace + i;
-            if (faceIdx >= 0 && faceIdx < (int)faces.size()) {
-                triggerFaceIndices.insert(faceIdx);
+        // Отмечаем модели дверей
+        if (entity.classname == "func_door" || entity.classname == "func_door_rotating") {
+            if (!entity.model.empty() && entity.model[0] == '*') {
+                try {
+                    int modelIndex = std::stoi(entity.model.substr(1));
+                    doorModelIndices.insert(modelIndex);
+                }
+                catch (...) {}
             }
         }
     }
@@ -234,9 +246,11 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     int processedFaces = 0;
     int skippedFaces = 0;
     int triggerSkipped = 0;
+    int doorSkipped = 0;
     int skySkipped = 0;
 
     for (size_t faceIdx = 0; faceIdx < faces.size(); faceIdx++) {
+        // Пропускаем триггеры
         if (triggerFaceIndices.count((int)faceIdx)) {
             triggerSkipped++;
             continue;
@@ -252,9 +266,25 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         const std::string& texName = bsp.getTextureName(tex.textureIndex);
 
         // Пропускаем SKY-фейсы если нужно
-        if (texName == "sky" || texName == "SKY" ||
-            texName.find("sky") == 0 || texName.find("SKY") == 0) {
+        if (skipSkyFaces && (texName == "sky" || texName == "SKY" ||
+            texName.find("sky") == 0 || texName.find("SKY") == 0)) {
             skySkipped++;
+            continue;
+        }
+
+        // Пропускаем двери - они будут динамическими
+        // Определяем принадлежность модели по face
+        bool isDoorFace = false;
+        for (int modelIdx : doorModelIndices) {
+            if (modelIdx <= 0 || modelIdx >= (int)models.size()) continue;
+            const BSPModel& model = models[modelIdx];
+            if ((int)faceIdx >= model.firstFace && (int)faceIdx < model.firstFace + model.numFaces) {
+                isDoorFace = true;
+                break;
+            }
+        }
+        if (isDoorFace) {
+            doorSkipped++;
             continue;
         }
 
@@ -408,7 +438,8 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         << " vertices, " << indexCount << " indices, "
         << faceDrawCalls.size() << " face draw calls"
         << " (transparent: " << (hasTransparentFaces ? "yes" : "no")
-        << ", sky skipped: " << skySkipped << ")" << std::endl;
+        << ", sky skipped: " << skySkipped
+        << ", door skipped: " << doorSkipped << ")" << std::endl;
 
     return true;
 }
@@ -517,6 +548,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     lightmappedShader->unbind();
 
+    // Прозрачные фейсы
     if (hasTransparentFaces) {
         struct SortedDrawCall {
             const LMFaceDrawCall* dc;
@@ -591,6 +623,87 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     }
 
     glBindVertexArray(0);
+}
+
+// === НОВОЕ: Рендеринг дверей ===
+void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEntity>>& doors,
+    const glm::mat4& view, const glm::mat4& projection) {
+    if (doors.empty() || !lightmappedShader) return;
+
+    lightmappedShader->bind();
+    lightmappedShader->setMat4("view", view);
+    lightmappedShader->setMat4("projection", projection);
+    lightmappedShader->setFloat("lightmapIntensity", lightmapIntensity);
+    lightmappedShader->setBool("useLighting", useLighting);
+    lightmappedShader->setBool("showLightmapsOnly", false);
+    lightmappedShader->setFloat("uAlpha", 1.0f);
+    lightmappedShader->setVec3("ambientColor", glm::vec3(0.05f));
+
+    // Активируем атлас лайтмапов (двери используют fallback)
+    glActiveTexture(GL_TEXTURE1);
+    if (lmManager) {
+        lmManager->getAtlas().bind(GL_TEXTURE1);
+    }
+    else {
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // Временные буферы для всех дверей (переиспользуем)
+    GLuint tempVAO = 0, tempVBO = 0, tempEBO = 0;
+    glGenVertexArrays(1, &tempVAO);
+    glGenBuffers(1, &tempVBO);
+    glGenBuffers(1, &tempEBO);
+
+    for (const auto& door : doors) {
+        if (door->vertices.empty()) continue;
+
+        // Устанавливаем трансформацию
+        lightmappedShader->setMat4("model", door->getTransform());
+
+        // Загружаем геометрию
+        glBindVertexArray(tempVAO);
+
+        glBindBuffer(GL_ARRAY_BUFFER, tempVBO);
+        glBufferData(GL_ARRAY_BUFFER,
+            door->vertices.size() * sizeof(BSPVertex),
+            door->vertices.data(), GL_STREAM_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+            door->indices.size() * sizeof(unsigned int),
+            door->indices.data(), GL_STREAM_DRAW);
+
+        // Настраиваем атрибуты (layout должен совпадать с шейдером)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, normal));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, texCoord));
+        glEnableVertexAttribArray(2);
+        // Lightmap coord - используем texCoord как fallback
+        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, texCoord));
+        glEnableVertexAttribArray(3);
+
+        // Текстура двери
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, door->textureID);
+
+        // Рисуем
+        glDrawElements(GL_TRIANGLES, door->indices.size(), GL_UNSIGNED_INT, 0);
+
+        stats.drawCalls++;
+        stats.triangles += door->indices.size() / 3;
+    }
+
+    glBindVertexArray(0);
+    glDeleteVertexArrays(1, &tempVAO);
+    glDeleteBuffers(1, &tempVBO);
+    glDeleteBuffers(1, &tempEBO);
+
+    lightmappedShader->unbind();
 }
 
 void LightmappedRenderer::cleanup() {

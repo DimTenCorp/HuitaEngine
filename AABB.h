@@ -1,53 +1,44 @@
 #pragma once
 #include <glm/glm.hpp>
-#include <algorithm>
-#include <cmath>
 
 struct AABB {
     glm::vec3 min;
     glm::vec3 max;
 
-    AABB() : min(0.0f), max(0.0f) {}
-    AABB(const glm::vec3& mn, const glm::vec3& mx)
-        : min(mn),
-        max(glm::max(mx, mn)) {
+    // Добавить конструкторы:
+    AABB() : min(0), max(0) {}
+    AABB(const glm::vec3& min_, const glm::vec3& max_) : min(min_), max(max_) {}
+
+    bool contains(const glm::vec3& p) const {
+        return p.x >= min.x && p.x <= max.x &&
+            p.y >= min.y && p.y <= max.y &&
+            p.z >= min.z && p.z <= max.z;
     }
 
-    void validate() {
-        for (int i = 0; i < 3; ++i) {
-            if (min[i] > max[i]) {
-                std::swap(min[i], max[i]);
-            }
-        }
-    }
-
-    bool isValid() const {
-        return min.x <= max.x && min.y <= max.y && min.z <= max.z;
+    bool intersects(const AABB& other) const {
+        return (min.x <= other.max.x && max.x >= other.min.x) &&
+            (min.y <= other.max.y && max.y >= other.min.y) &&
+            (min.z <= other.max.z && max.z >= other.min.z);
     }
 };
 
-// === НОВОЕ: Капсульный коллайдер ===
 struct Capsule {
-    glm::vec3 a;        // Нижняя точка (центр нижней сферы)
-    glm::vec3 b;        // Верхняя точка (центр верхней сферы)
+    glm::vec3 start;
+    glm::vec3 end;
     float radius;
 
-    Capsule() : a(0.0f), b(0.0f), radius(0.0f) {}
-    Capsule(const glm::vec3& start, const glm::vec3& end, float r)
-        : a(start), b(end), radius(r) {
+    Capsule() : start(0), end(0), radius(0) {}
+    Capsule(const glm::vec3& s, const glm::vec3& e, float r)
+        : start(s), end(e), radius(r) {
     }
 
-    // Получить центр капсулы
-    glm::vec3 getCenter() const { return (a + b) * 0.5f; }
+    glm::vec3 getCenter() const { return (start + end) * 0.5f; }
+    float getHeight() const { return glm::length(end - start); }
 
-    // Получить высоту (расстояние между сферами)
-    float getHeight() const { return glm::length(b - a); }
-
-    // Получить AABB для broad-phase
     AABB getBounds() const {
         AABB bounds;
-        bounds.min = glm::min(a, b) - glm::vec3(radius);
-        bounds.max = glm::max(a, b) + glm::vec3(radius);
+        bounds.min = glm::min(start, end) - glm::vec3(radius);
+        bounds.max = glm::max(start, end) + glm::vec3(radius);
         return bounds;
     }
 };

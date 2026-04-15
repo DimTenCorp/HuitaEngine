@@ -70,9 +70,6 @@ struct FaceDrawCall {
     bool isTransparent = false;
     bool isWater = false;
     bool isSky = false;
-
-    bool isDoor = false;
-    int doorIndex = -1;
 };
 
 class BSPLoader {
@@ -193,5 +190,9 @@ public:
             name.find("sky") == 0 || name.find("SKY") == 0);
     }
 
+    bool isModelDoor(int modelIndex) const;
+
     const std::string& getSkyName() const { return skyName; }
+
+    int getTextureCount() const { return (int)glTextureIds.size(); }
 };

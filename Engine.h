@@ -21,6 +21,7 @@ class LightmapManager;
 class MeshCollider;
 class Menu;
 class CFuncWater;
+class Player;
 
 class Engine {
 public:
@@ -66,12 +67,17 @@ public:
     void setLightingEnabled(bool enabled);
 
     void applySettings(const SettingsData& settings);
-    const std::vector<DoorEntity*>& getDoors() const { return doors; }
 
+    void updateDoors(float deltaTime);
+    void checkDoorInteractions(Player* player);
+    const std::vector<std::unique_ptr<DoorEntity>>& getDoors() const { return doors; }
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
+    void cleanupDoors();
 
 private:
     static Engine* instance;
+
+    std::vector<std::unique_ptr<DoorEntity>> doors;
 
     GLFWwindow* window = nullptr;
     int width = 1280;
@@ -87,7 +93,6 @@ private:
     std::unique_ptr<Menu> menu;
     std::unique_ptr<SkyboxRenderer> skyboxRenderer;
     std::vector<CFuncWater*> waterZones;
-    std::vector<DoorEntity*> doors;
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;

@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 #include <glm/glm.hpp>
 #include <memory>
 #include "Player.h"
@@ -46,10 +46,7 @@ public:
     }
     float getMouseSensitivity() const { return mouseSensitivity; }
 
-    // Управление паузой
-    void setPaused(bool paused);
-    bool getPaused() const { return isPaused; }
-
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ 0.5 пїЅпїЅпїЅпїЅпїЅпїЅ 0.1
     float mouseSensitivity = 0.5f;
 
 private:
@@ -63,16 +60,9 @@ private:
     bool firstMouse = true;
 
     bool f1Pressed = false, f2Pressed = false, f3Pressed = false;
-    bool f4Pressed = false;
     bool f5Pressed = false, f6Pressed = false;
     bool noclipPressed = false, bhopPressed = false;
     bool f10Pressed = false;
-
-    bool isPaused = false;
-
-    // Сохраняем состояние для возобновления
-    glm::vec3 savedVelocity;
-    bool wasOnGround = false;
 
     void processMouse(GLFWwindow* window);
 };
