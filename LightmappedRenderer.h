@@ -3,6 +3,9 @@
 #include "LightmapManager.h"
 #include <memory>
 #include <unordered_set>
+#include <vector>
+
+class DoorEntity;  // Предварительное объявление для использования в сигнатуре
 
 struct BSPVertexLightmapped {
     glm::vec3 position;

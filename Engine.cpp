@@ -488,18 +488,18 @@ void Engine::doLoadMap(const std::string& mapPath) {
     std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
 
     // Связываем draw calls с дверьми по model index
-    for (auto& dc : bspLoader->getDrawCalls()) {
-        if (dc.isDoor) continue;  // Уже помечено
-
-        // Находим face и проверяем, принадлежит ли он двери
-        if (dc.faceIndex < 0) continue;
-
-        // Получаем модель из entities и сравниваем bounds
-        for (int i = 0; i < (int)doors.size(); i++) {
-            DoorEntity* door = doors[i];
-            AABB doorBounds = door->getBounds();
-
-            // Проверяем пересечение bounds draw call с bounds двери
+    for (const auto& door : doors) {
+        AABB doorBounds = door->getBounds();
+        
+        // Получаем модель двери из entity
+        const std::string& doorModel = door->getClassName() == "func_door_rotating" ? 
+            "" : "";  // Нужно получить model из door entity
+        
+        // Ищем все draw calls которые принадлежат этой двери по пересечению bounds
+        for (auto& dc : bspLoader->getDrawCalls()) {
+            if (dc.isDoor) continue;  // Уже помечено
+            if (dc.faceIndex < 0) continue;
+            
             AABB dcBounds;
             if (dc.faceIndex < (int)bspLoader->getFaceBounds().size()) {
                 dcBounds = bspLoader->getFaceBounds()[dc.faceIndex];
@@ -507,13 +507,25 @@ void Engine::doLoadMap(const std::string& mapPath) {
             else {
                 continue;
             }
-
+            
             // Если draw call пересекается с дверью - помечаем его
             if (dcBounds.min.x <= doorBounds.max.x && dcBounds.max.x >= doorBounds.min.x &&
                 dcBounds.min.y <= doorBounds.max.y && dcBounds.max.y >= doorBounds.min.y &&
                 dcBounds.min.z <= doorBounds.max.z && dcBounds.max.z >= doorBounds.min.z) {
-                dc.isDoor = true;
-                dc.doorIndex = i;
+                
+                // Находим индекс двери в массиве
+                int doorIdx = -1;
+                for (int i = 0; i < (int)doors.size(); i++) {
+                    if (doors[i] == door) {
+                        doorIdx = i;
+                        break;
+                    }
+                }
+                
+                if (doorIdx >= 0) {
+                    dc.isDoor = true;
+                    dc.doorIndex = doorIdx;
+                }
             }
         }
     }

@@ -604,6 +604,12 @@ void BSPLoader::buildMesh() {
             continue;
         }
 
+        // Пропускаем двери - они будут обработаны отдельно
+        if (entity.classname == "func_door" || entity.classname == "func_door_rotating") {
+            std::cout << "[BSP] Skipping door entity for mesh build: " << entity.classname << " model *" << modelIndex << std::endl;
+            continue;
+        }
+
         int rendermode = 0;
         int renderamt = 255;
         bool isWater = false;
