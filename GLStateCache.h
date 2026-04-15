@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GL/glew.h> // Или ваш заголовок OpenGL
+#include <glad/glad.h>
 
 class GLStateCache {
 public:

@@ -51,6 +51,14 @@ typedef void* (*GLADloadproc)(const char *name);
 #define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_MAX_TEXTURE_SIZE 0x0D33
+#define GL_BACK 0x0405
+#define GL_LESS 0x0201
+#define GL_TRUE 1
+#define GL_FALSE 0
+#define GL_CULL_FACE 0x0B44
+#define GL_CULL_FACE_MODE 0x0B45
+#define GL_DEPTH_FUNC 0x0B74
+#define GL_DEPTH_WRITEMASK 0x0B72
 
 typedef unsigned int GLenum;
 typedef unsigned int GLuint;
@@ -128,6 +136,9 @@ extern void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers);
 extern void glDeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers);
 extern void glDeleteTextures(GLsizei n, const GLuint* textures);
 extern void glDrawBuffers(GLsizei n, const GLenum* bufs);
+extern void glGetBooleanv(GLenum pname, GLboolean* params);
+extern void glCullFace(GLenum mode);
+extern void glDepthFunc(GLenum func);
 
 extern int gladLoadGLLoader(GLADloadproc load);
 

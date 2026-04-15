@@ -61,4 +61,7 @@ void glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {}
 void glDeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) {}
 void glDeleteTextures(GLsizei n, const GLuint* textures) {}
 void glDrawBuffers(GLsizei n, const GLenum* bufs) {}
+void glGetBooleanv(GLenum pname, GLboolean* params) { if(params) *params = 0; }
+void glCullFace(GLenum mode) {}
+void glDepthFunc(GLenum func) {}
 int gladLoadGLLoader(GLADloadproc load) { return 1; }

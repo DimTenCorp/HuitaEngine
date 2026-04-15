@@ -1,4 +1,5 @@
 #include "GLStateCache.h"
+#include <glad/glad.h>
 
 // Статические переменные
 bool GLStateCache::depthTestEnabled = false;
@@ -13,10 +14,11 @@ void GLStateCache::init() {
     if (initialized) return;
     
     // Получаем начальное состояние OpenGL
-    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
-    glGetBooleanv(GL_BLEND, &blendingEnabled);
-    glGetBooleanv(GL_CULL_FACE, &cullFaceEnabled);
+    GLboolean tempBool;
+    glGetBooleanv(GL_DEPTH_TEST, &tempBool); depthTestEnabled = (tempBool != 0);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &tempBool); depthMaskEnabled = (tempBool != 0);
+    glGetBooleanv(GL_BLEND, &tempBool); blendingEnabled = (tempBool != 0);
+    glGetBooleanv(GL_CULL_FACE, &tempBool); cullFaceEnabled = (tempBool != 0);
     glGetIntegerv(GL_CULL_FACE_MODE, (GLint*)&cullMode);
     glGetIntegerv(GL_DEPTH_FUNC, (GLint*)&depthFunc);
     

@@ -736,4 +736,3 @@ const glm::mat4& Renderer::getProjectionMatrix(float fov, float aspectRatio, flo
     
     return cachedProjectionMatrix;
 }
-}
