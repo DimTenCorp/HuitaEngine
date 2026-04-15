@@ -121,7 +121,7 @@ private:
     glm::mat4 cachedProjection = glm::mat4(1.0f);
     bool projectionDirty = true;
     std::vector<glm::mat4> lastDoorTransforms;
-    std::vector<std::vector<Triangle>> perDoorTriangles;
+    std::vector<std::vector<Triangle> > perDoorTriangles;
     std::vector<Triangle> cachedDoorTriangles;
     bool doorColliderDirty = true;
 };
