@@ -90,11 +90,12 @@ void Game::update(float deltaTime) {
 
     auto* collider = Engine::getInstance()->getCollider();
     auto& waterZones = Engine::getInstance()->getWaterZones();
+    auto& doors = Engine::getInstance()->getDoors();
 
     player->CheckWater(waterZones);
 
     if (collider) {
-        player->update(deltaTime, yaw, pitch, collider);
+        player->update(deltaTime, yaw, pitch, collider, &doors);
     }
 
     hud->update(deltaTime, player->getPosition(), player->getCurrentSpeed());

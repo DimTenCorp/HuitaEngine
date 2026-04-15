@@ -449,9 +449,35 @@ void Player::PostThink(float deltaTime) {
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
-    if (!meshCollider) return false;
+    bool collision = false;
+    
+    // Проверка статической геометрии
+    if (meshCollider) {
+        Capsule capsule = getPlayerCapsule(pos);
+        collision = meshCollider->intersectCapsule(capsule);
+    }
+    
+    // Проверка дверей
+    if (!collision && checkDoorCollision(pos)) {
+        collision = true;
+    }
+    
+    return collision;
+}
+
+// Проверка столкновений с дверьми
+bool Player::checkDoorCollision(const glm::vec3& pos) const {
+    if (!doors) return false;
+    
     Capsule capsule = getPlayerCapsule(pos);
-    return meshCollider->intersectCapsule(capsule);
+    
+    for (DoorEntity* door : *doors) {
+        if (door && door->intersectsCapsule(capsule)) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 // Проверка столкновений с AABB (для совместимости)
@@ -822,7 +848,7 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
-void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
+void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider, const std::vector<DoorEntity*>* doorsPtr) {
     if (isPaused) {
         return; // Просто выходим, не трогая скорость
     }
@@ -830,6 +856,7 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     yaw = cameraYaw;
     pitch = cameraPitch;
     meshCollider = collider;
+    doors = doorsPtr;
 
     handleInput(deltaTime);
 

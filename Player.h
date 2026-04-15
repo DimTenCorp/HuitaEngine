@@ -5,6 +5,8 @@
 #include "AABB.h"
 #include <GLFW/glfw3.h>
 
+class DoorEntity;
+
 class MeshCollider;
 class CFuncWater;
 
@@ -61,6 +63,7 @@ private:
     float noclipSpeed;
 
     const MeshCollider* meshCollider = nullptr;
+    const std::vector<DoorEntity*>* doors = nullptr;
 
     float stepHeight = 18.0f;
 
@@ -98,7 +101,7 @@ public:
     // === МЕТОДЫ ===
     Player();
 
-    void update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider);
+    void update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider, const std::vector<DoorEntity*>* doors = nullptr);
     void handleInput(float deltaTime);
     void moveWithCollision(float deltaTime);
     void moveNoclip(float deltaTime);
@@ -119,6 +122,7 @@ public:
 
     bool checkCollision(const glm::vec3& pos, const AABB& box);
     bool checkCollisionMesh(const glm::vec3& pos) const;
+    bool checkDoorCollision(const glm::vec3& pos) const;
     bool checkOnGround() const;
 
     void EnableAutoJump(bool enable) { m_bAutoJump = enable; }
