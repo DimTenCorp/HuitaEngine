@@ -880,7 +880,9 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
                 glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
                 float distance = glm::length(position - doorCenter);
 
-                bool activated = door->tryActivate(0.0f, false);
+                // Для TOUCH_OPENS дверей передаём true, для USE_ONLY - false (требуют явного использования)
+                bool isTouchActivate = door->isTouchOpens() && !door->isUseOnly();
+                bool activated = door->tryActivate(distance, isTouchActivate);
 
                 if (!door->wasTouched()) {
                     std::cout << "[DOOR] Player touching " << door->getClassName()
@@ -1068,4 +1070,14 @@ void Player::ApplyWaterPhysics(float deltaTime) {
 float Player::getCurrentSpeed() const {
     // Считаем скорость только по горизонтали (X и Z), игнорируя падение/подъем по Y
     return glm::length(glm::vec2(velocity.x, velocity.z));
+}
+
+void Player::TakeDamage(float damage) {
+    // Здесь должна быть логика нанесения урона игроку
+    // В текущей реализации просто выводим в консоль
+    std::cout << "[PLAYER] Took " << damage << " damage!" << std::endl;
+    // В будущем можно добавить:
+    // - health -= damage;
+    // - проверку на смерть
+    // - эффекты крови/ранений
 }

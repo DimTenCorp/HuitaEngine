@@ -647,6 +647,16 @@ void Engine::updateTime() {
 
     for (auto* door : doors) {
         door->update(deltaTime);
+        
+        // Проверяем блокировку двери игроком и наносим урон
+        if (game && game->getPlayer()) {
+            Player* player = game->getPlayer();
+            Capsule playerCapsule = player->getPlayerCapsule(player->getPosition());
+            
+            if (door->checkBlocked(playerCapsule, deltaTime)) {
+                door->applyDamageToPlayer(player, deltaTime);
+            }
+        }
     }
 }
 

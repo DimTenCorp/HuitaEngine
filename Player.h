@@ -184,4 +184,7 @@ public:
     
     // Получить текущую скорость (модуль вектора скорости)
     float getCurrentSpeed() const;
+
+    // Нанесение урона
+    void TakeDamage(float damage);
 };

@@ -262,7 +262,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
 
         // Устанавливаем время закрытия если wait > 0
         if (wait > 0) {
-            timeSinceOpen = 0.0f;  // Начинаем отсчёт с момента инициализации
+            timeSinceOpen = wait;  // Начинаем с wait, чтобы закрыть через wait секунд после начала игры
         }
     }
     else {
@@ -386,17 +386,21 @@ void DoorEntity::updateRotatedBounds() {
     float sinA = sin(angleRad);
 
     // Для вращающихся дверей используем tight AABB вместо избыточного
-    // Вычисляем границы только в плоскости вращения (XZ)
-    glm::vec3 corners[4] = {
-        glm::vec3(mins.x, 0.0f, mins.z),
-        glm::vec3(maxs.x, 0.0f, mins.z),
-        glm::vec3(mins.x, 0.0f, maxs.z),
-        glm::vec3(maxs.x, 0.0f, maxs.z)
+    // Вычисляем границы во всех осях с учётом вращения
+    glm::vec3 corners[8] = {
+        glm::vec3(mins.x, mins.y, mins.z),
+        glm::vec3(maxs.x, mins.y, mins.z),
+        glm::vec3(mins.x, maxs.y, mins.z),
+        glm::vec3(maxs.x, maxs.y, mins.z),
+        glm::vec3(mins.x, mins.y, maxs.z),
+        glm::vec3(maxs.x, mins.y, maxs.z),
+        glm::vec3(mins.x, maxs.y, maxs.z),
+        glm::vec3(maxs.x, maxs.y, maxs.z)
     };
 
     glm::vec3 newMin(FLT_MAX), newMax(-FLT_MAX);
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 8; i++) {
         // Локальные координаты относительно origin
         glm::vec3 local = corners[i] - origin;
 
@@ -411,9 +415,8 @@ void DoorEntity::updateRotatedBounds() {
         newMax = glm::max(newMax, world);
     }
 
-    // Y остаётся без изменений
-    currentMins = glm::vec3(newMin.x, mins.y, newMin.z);
-    currentMaxs = glm::vec3(newMax.x, maxs.y, newMax.z);
+    currentMins = newMin;
+    currentMaxs = newMax;
 
     // Обновляем OBB для точных коллизий
     updateOBB();
@@ -471,8 +474,8 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
         return true;
     }
     else if (state == DoorState::OPEN) {
-        // Если есть флаг TOGGLE - закрываем при активации
-        if (toggle || isPlayerUse) {
+        // Если есть флаг TOGGLE - закрываем ТОЛЬКО при явном использовании игроком
+        if (toggle && isPlayerUse) {
             close();
             return true;
         }
@@ -525,8 +528,9 @@ void DoorEntity::applyDamageToPlayer(Player* player, float deltaTime) {
 
         // В Half-Life урон наносится discretely - здесь применяем порогово
         if (damageAccumulator >= 10.0f) {  // Каждые 10 единиц накопленного урона
-            // Здесь должна быть логика нанесения урона игроку
-            // player->TakeDamage(damageAccumulator);
+            // Наносим урон игроку через Engine
+            Player* p = player;
+            p->TakeDamage(damageAccumulator);
             std::cout << "[DOOR] Dealing " << damageAccumulator << " damage to player!" << std::endl;
             damageAccumulator = 0.0f;
         }
@@ -686,14 +690,9 @@ void DoorEntity::update(float deltaTime) {
         // wait < 0 - никогда не закрываться
     }
 
-    // Сброс лога касания
-    static float lastLogReset = 0;
+    // Сбрасываем touchLogged для каждой двери индивидуально
     if (touchLogged) {
-        lastLogReset += deltaTime;
-        if (lastLogReset > 2.0f) {
-            touchLogged = false;
-            lastLogReset = 0.0f;
-        }
+        touchLogged = false;
     }
 }
 
