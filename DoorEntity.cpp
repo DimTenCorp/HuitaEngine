@@ -315,13 +315,14 @@ void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) 
     worldMin -= glm::vec3(epsilon);
     worldMax += glm::vec3(epsilon);
 
-    // mins/maxs хранятся в МИРОВЫХ координатах (вершины уже конвертированы через convertPosition)
-    mins = worldMin;
-    maxs = worldMax;
+    // mins/maxs хранятся в ЛОКАЛЬНЫХ координатах относительно pos1 (без смещения)
+    // Конвертируем из мировых (worldMin/worldMax) в локальные, вычитая pos1 (= origin)
+    mins = worldMin - pos1;
+    maxs = worldMax - pos1;
 
-    // Инициализируем currentMins/maxs как мировые + смещение (изначально 0)
-    currentMins = mins;
-    currentMaxs = maxs;
+    // Инициализируем currentMins/maxs как локальные + текущая позиция
+    currentMins = mins + currentPos;
+    currentMaxs = maxs + currentPos;
 }
 
 bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
