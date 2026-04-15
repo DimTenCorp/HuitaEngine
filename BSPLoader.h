@@ -126,6 +126,7 @@ public:
     const std::vector<AABB>& getFaceBounds() const { return faceBoundingBoxes; }
     const AABB& getWorldBounds() const { return worldBounds; }
     const std::vector<BSPEntity>& getEntities() const { return entities; }
+    std::vector<FaceDrawCall>& getDrawCalls() { return drawCalls; }
     const std::vector<FaceDrawCall>& getDrawCalls() const { return drawCalls; }
     const std::vector<std::string>& getRequiredWADs() const { return requiredWADs; }
     const std::vector<BSPModel>& getModels() const { return models; }

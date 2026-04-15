@@ -1,1 +1,1 @@
-Nothing needs to be added to the .gitignore file since only source code files (.cpp, .h) were modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+Nothing should be ignored in this case, as only a header file (.h) was modified and there are no build artifacts, dependencies, or temporary files in the changes.
