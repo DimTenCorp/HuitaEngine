@@ -5,6 +5,31 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+glm::vec3 convertHLToEngineDir(const glm::vec3& hlDir) {
+    // HL: X=right, Y=forward, Z=up
+    // Engine: X=left, Y=up, Z=forward
+    return glm::normalize(glm::vec3(-hlDir.x, hlDir.z, hlDir.y));
+}
+
+glm::vec3 buildHLMoveDir(float pitchDeg, float yawDeg) {
+    const float pitch = glm::radians(pitchDeg);
+    const float yaw = glm::radians(yawDeg);
+
+    // AngleVectors forward (HL/Quake style).
+    // Positive pitch looks down, so Z has negative sign.
+    glm::vec3 dirHL;
+    dirHL.x = std::cos(pitch) * std::cos(yaw);
+    dirHL.y = std::cos(pitch) * std::sin(yaw);
+    dirHL.z = -std::sin(pitch);
+
+    if (glm::dot(dirHL, dirHL) < 0.000001f) {
+        return glm::vec3(0.0f, 1.0f, 0.0f);
+    }
+    return convertHLToEngineDir(glm::normalize(dirHL));
+}
+}
+
 // Half-Life 1 door spawnflags - определения только в заголовочном файле!
 
 DoorEntity::DoorEntity()
@@ -119,53 +144,43 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     currentPos = pos1;
 
     if (type == DoorType::SLIDING) {
-        // Размеры двери
         glm::vec3 size = maxs - mins;
-        
-        // В HL1 углы: X=pitch, Y=yaw, Z=roll
-        // Для func_door используется Y (yaw) для определения направления
-        float yaw = angles.y;
-        
-        // Нормализуем угол к диапазону [0, 360)
-        while (yaw < 0) yaw += 360.0f;
-        while (yaw >= 360.0f) yaw -= 360.0f;
 
-        // HL1 логика определения направления по углу:
-        // -1 = вниз (отрицательный Z)
-        // 90 = вправо (положительный X)  
-        // 180 = вперед (отрицательный Y в HL, положительный Z у нас)
-        // 270 = влево (отрицательный X)
-        // По умолчанию (0 или нет угла) = вверх (положительный Y у нас)
+        // В BSP приоритетно используем ключ "angles" (Pitch Yaw Roll).
+        // Для совместимости с HL/Quake также поддерживаем key "angle":
+        // -1 = вверх, -2 = вниз.
+        float hlPitch = angles.x;
+        float hlYaw = angles.y;
 
-        // Конвертация координат HL -> наши:
-        // HL: X=вправо, Y=вперед, Z=вверх
-        // Наши: X=влево, Y=вверх, Z=вперед
-        
-        if (yaw == 270.0f || (yaw > 265.0f && yaw < 275.0f)) {
-            // -90 градусов = движение влево (-X в наших координатах)
-            moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
-            moveDistance = size.x - lip;
-        }
-        else if (yaw == 90.0f || (yaw > 85.0f && yaw < 95.0f)) {
-            // 90 градусов = движение вправо (+X в наших координатах)
-            moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
-            moveDistance = size.x - lip;
-        }
-        else if (yaw == 180.0f || (yaw > 175.0f && yaw < 185.0f)) {
-            // 180 градусов = движение назад/вперед по Z
-            moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
-            moveDistance = size.z - lip;
-        }
-        else if (yaw == 0.0f || yaw == 360.0f || (yaw < 5.0f || yaw > 355.0f)) {
-            // 0 градусов = движение вверх по Y (наша система)
-            moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
-            moveDistance = size.y - lip;
+        it = entity.properties.find("angle");
+        if (it != entity.properties.end()) {
+            try {
+                float specialAngle = std::stof(it->second);
+                if (specialAngle == -1.0f) {
+                    moveDir = glm::vec3(0.0f, 1.0f, 0.0f); // up в системе движка
+                }
+                else if (specialAngle == -2.0f) {
+                    moveDir = glm::vec3(0.0f, -1.0f, 0.0f); // down в системе движка
+                }
+                else {
+                    hlPitch = 0.0f;
+                    hlYaw = specialAngle;
+                    moveDir = buildHLMoveDir(hlPitch, hlYaw);
+                }
+            }
+            catch (...) {
+                moveDir = buildHLMoveDir(hlPitch, hlYaw);
+            }
         }
         else {
-            // По умолчанию - вверх (Y+)
-            moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
-            moveDistance = size.y - lip;
+            moveDir = buildHLMoveDir(hlPitch, hlYaw);
         }
+
+        // Как в HL: расстояние = проекция размера двери на moveDir - lip.
+        moveDistance =
+            std::abs(moveDir.x) * size.x +
+            std::abs(moveDir.y) * size.y +
+            std::abs(moveDir.z) * size.z - lip;
 
         // Защита от отрицательного расстояния
         if (moveDistance < 0.0f) moveDistance = 0.0f;
@@ -363,7 +378,7 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
     }
 
     if (isUseOnly() && !isPlayerUse) return false;
-    if (!isTouchOpens() && !isPlayerUse && touchDistance >= 1.0f) return false;
+    if (!isPlayerUse && !isTouchOpens() && touchDistance >= 1.0f) return false;
 
     if (state == DoorState::CLOSED || state == DoorState::CLOSING) {
         open();

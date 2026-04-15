@@ -857,7 +857,9 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
 
                 // Дверь открывается при касании игроком (если есть флаг TOUCH_OPENS)
                 // или если игрок использует дверь (+USE)
-                bool activated = door->tryActivate(distance, false);
+                // Касание коллизии должно открывать дверь как в HL.
+                // Передаем "близкое касание", чтобы не зависеть от расстояния до центра.
+                bool activated = door->tryActivate(0.0f, false);
 
                 if (!door->wasTouched()) {
                     std::cout << "[DOOR] Player touching " << door->getClassName()
