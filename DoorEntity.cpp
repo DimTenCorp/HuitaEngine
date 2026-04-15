@@ -22,17 +22,6 @@ glm::vec3 angleToHLForward(float pitchDeg, float yawDeg) {
     fwd.z = -std::sin(pitch);
     return glm::normalize(fwd);
 }
-
-glm::vec3 axisSnap(const glm::vec3& dir) {
-    glm::vec3 a = glm::abs(dir);
-    if (a.x >= a.y && a.x >= a.z) {
-        return glm::vec3(dir.x >= 0.0f ? 1.0f : -1.0f, 0.0f, 0.0f);
-    }
-    if (a.y >= a.x && a.y >= a.z) {
-        return glm::vec3(0.0f, dir.y >= 0.0f ? 1.0f : -1.0f, 0.0f);
-    }
-    return glm::vec3(0.0f, 0.0f, dir.z >= 0.0f ? 1.0f : -1.0f);
-}
 }
 
 // Half-Life 1 door spawnflags - определения только в заголовочном файле!
@@ -218,17 +207,17 @@ void DoorEntity::setupSlidingMovement(const BSPEntity& entity) {
             else {
                 pitch = 0.0f;
                 yaw = singleAngle;
-                moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+                moveDir = glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw)));
             }
         }
         catch (...) {
-            moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+            moveDir = glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw)));
         }
     }
     else {
         // angles: "Pitch Yaw Roll (Y Z X)" из Half-Life editor pipeline
         // для направления двери используем pitch/yaw.
-        moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+        moveDir = glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw)));
     }
 
     moveDistance =
