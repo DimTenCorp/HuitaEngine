@@ -73,6 +73,7 @@ struct FaceDrawCall {
 
     bool isDoor = false;
     int doorIndex = -1;
+    glm::vec3 doorOrigin = glm::vec3(0.0f);  // Оригинальный origin двери для конвертации вершин в локальные координаты
 };
 
 class BSPLoader {

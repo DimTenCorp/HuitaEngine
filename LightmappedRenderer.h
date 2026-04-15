@@ -36,6 +36,7 @@ struct LMFaceDrawCall {
     // Для дверей
     bool isDoor = false;
     int doorIndex = -1;  // Индекс двери в массиве doors
+    glm::vec3 doorOrigin = glm::vec3(0.0f);  // Оригинальный origin двери для конвертации вершин в локальные координаты
 };
 
 class LightmappedRenderer {

@@ -221,15 +221,14 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
     const auto& bspDrawCalls = bsp.getDrawCalls();
     std::unordered_map<int, std::pair<int, int>> faceTransparency;
-    std::unordered_map<int, std::pair<bool, int>> faceDoorInfo;  // isDoor, doorIndex
-    std::unordered_map<int, glm::vec3> faceDoorOrigin;  // origin двери для конвертации в локальные координаты
+    std::unordered_map<int, std::tuple<bool, int, glm::vec3>> faceDoorInfo;  // isDoor, doorIndex, doorOrigin
     for (const auto& dc : bspDrawCalls) {
         if (dc.isTransparent) {
             faceTransparency[dc.faceIndex] = { dc.rendermode, dc.renderamt };
         }
         // Копируем информацию о дверях
         if (dc.isDoor) {
-            faceDoorInfo[dc.faceIndex] = { dc.isDoor, dc.doorIndex };
+            faceDoorInfo[dc.faceIndex] = { dc.isDoor, dc.doorIndex, dc.doorOrigin };
         }
     }
 
@@ -305,10 +304,31 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         std::vector<LMRenderVertex> faceVerts;
         faceVerts.reserve(bspPositions.size());
 
+        // Для дверей получаем origin для конвертации мировых координат в локальные
+        glm::vec3 doorOrigin(0.0f);
+        bool isDoorFace = false;
+        auto doorIt = faceDoorInfo.find((int)faceIdx);
+        if (doorIt != faceDoorInfo.end()) {
+            isDoorFace = true;
+            doorOrigin = std::get<2>(doorIt->second);
+        }
+
         for (const auto& bspPos : bspPositions) {
             LMRenderVertex v;
 
-            v.position = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
+            // Конвертация HL координат в наши
+            glm::vec3 worldPos(-bspPos.x, bspPos.z, bspPos.y);
+            
+            // Для дверей: конвертируем мировые координаты в локальные относительно origin двери
+            // Вершины в BSP хранятся в мировых координатах, но для рендеринга двери нам нужны
+            // локальные координаты относительно origin, чтобы применить трансформацию
+            if (isDoorFace) {
+                // Локальные координаты = мировые - origin
+                v.position = worldPos - doorOrigin;
+            } else {
+                v.position = worldPos;
+            }
+            
             v.normal = worldNormal;
 
             float s = bspPos.x * tex.s[0] + bspPos.y * tex.s[1] + bspPos.z * tex.s[2] + tex.s[3];
@@ -371,8 +391,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         // Копируем флаги дверей из BSP draw calls через faceDoorInfo
         auto doorIt = faceDoorInfo.find((int)faceIdx);
         if (doorIt != faceDoorInfo.end()) {
-            dc.isDoor = doorIt->second.first;
-            dc.doorIndex = doorIt->second.second;
+            dc.isDoor = std::get<0>(doorIt->second);
+            dc.doorIndex = std::get<1>(doorIt->second);
+            dc.doorOrigin = std::get<2>(doorIt->second);
         }
 
         faceDrawCalls.push_back(dc);

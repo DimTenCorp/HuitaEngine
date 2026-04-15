@@ -604,9 +604,47 @@ void BSPLoader::buildMesh() {
             continue;
         }
 
-        // Пропускаем двери - они будут обработаны отдельно
+        // Обработка дверей - добавляем грани с флагами двери
         if (entity.classname == "func_door" || entity.classname == "func_door_rotating") {
-            std::cout << "[BSP] Skipping door entity for mesh build: " << entity.classname << " model *" << modelIndex << std::endl;
+            std::cout << "[BSP] Processing door entity: " << entity.classname << " model *" << modelIndex 
+                      << " origin=(" << entity.origin.x << "," << entity.origin.y << "," << entity.origin.z << ")" << std::endl;
+            
+            // Добавляем все грани модели двери в drawCalls с флагами двери
+            const BSPModel& doorModel = models[modelIndex];
+            for (int i = 0; i < doorModel.numFaces; i++) {
+                int faceIdx = doorModel.firstFace + i;
+                if (faceIdx < 0 || faceIdx >= (int)faces.size()) continue;
+                
+                // Находим существующий draw call для этой грани или создаём новый
+                bool found = false;
+                for (auto& dc : drawCalls) {
+                    if (dc.faceIndex == faceIdx) {
+                        dc.isDoor = true;
+                        dc.doorIndex = -1;  // Будет установлен в LightmappedRenderer при создании DoorEntity
+                        dc.doorOrigin = entity.origin;
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (!found) {
+                    // Создаём новый draw call для грани двери
+                    FaceDrawCall dc;
+                    dc.faceIndex = faceIdx;
+                    dc.isDoor = true;
+                    dc.doorIndex = -1;
+                    dc.doorOrigin = entity.origin;
+                    dc.texID = 0;
+                    dc.indexOffset = 0;
+                    dc.indexCount = 0;
+                    dc.rendermode = 0;
+                    dc.renderamt = 255;
+                    dc.isTransparent = false;
+                    dc.isWater = false;
+                    dc.isSky = false;
+                    drawCalls.push_back(dc);
+                }
+            }
             continue;
         }
 
