@@ -389,7 +389,6 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         }
 
         // Копируем флаги дверей из BSP draw calls через faceDoorInfo
-        auto doorIt = faceDoorInfo.find((int)faceIdx);
         if (doorIt != faceDoorInfo.end()) {
             dc.isDoor = std::get<0>(doorIt->second);
             dc.doorIndex = std::get<1>(doorIt->second);
