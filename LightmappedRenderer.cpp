@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "LightmappedRenderer.h"
+#include "DoorEntity.h"
 #include <iostream>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
@@ -478,7 +479,8 @@ void LightmappedRenderer::beginFrame(const glm::vec3& clearColor, bool clearColo
 }
 
 void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
-    BSPLoader& bsp, const glm::vec3& ambientColor) {
+    BSPLoader& bsp, const glm::vec3& ambientColor,
+    const std::vector<DoorEntity*>* doors) {
 
     if (worldVAO == 0 || !lmManager) return;
 
@@ -491,7 +493,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     glDisable(GL_BLEND);
 
     lightmappedShader->bind();
-    lightmappedShader->setMat4("model", glm::mat4(1.0f));
     lightmappedShader->setMat4("view", view);
     lightmappedShader->setMat4("projection", projection);
     lightmappedShader->setFloat("lightmapIntensity", lightmapIntensity);
@@ -509,6 +510,16 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     for (const auto& dc : faceDrawCalls) {
         if (dc.isTransparent) continue;
         if (dc.isSky) continue;
+
+        // Устанавливаем модель-трансформацию для двери
+        glm::mat4 model = glm::mat4(1.0f);
+        if (dc.isDoor && doors && dc.doorIndex >= 0 && dc.doorIndex < (int)doors->size()) {
+            DoorEntity* door = (*doors)[dc.doorIndex];
+            if (door) {
+                model = door->getRenderTransform();
+            }
+        }
+        lightmappedShader->setMat4("model", model);
 
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
@@ -562,7 +573,6 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
         glDepthFunc(GL_LEQUAL);
 
         lightmappedShader->bind();
-        lightmappedShader->setMat4("model", glm::mat4(1.0f));
         lightmappedShader->setMat4("view", view);
         lightmappedShader->setMat4("projection", projection);
         lightmappedShader->setFloat("lightmapIntensity", lightmapIntensity);
@@ -573,6 +583,16 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
         currentTex = 0;
         for (const auto& item : sorted) {
             const auto& dc = *item.dc;
+
+            // Устанавливаем модель-трансформацию для двери
+            glm::mat4 model = glm::mat4(1.0f);
+            if (dc.isDoor && doors && dc.doorIndex >= 0 && dc.doorIndex < (int)doors->size()) {
+                DoorEntity* door = (*doors)[dc.doorIndex];
+                if (door) {
+                    model = door->getRenderTransform();
+                }
+            }
+            lightmappedShader->setMat4("model", model);
 
             if (dc.texID != currentTex) {
                 glActiveTexture(GL_TEXTURE0);

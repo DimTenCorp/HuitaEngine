@@ -53,7 +53,8 @@ public:
     void beginFrame(const glm::vec3& clearColor, bool clearColorBuffer = true);
     void renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
         BSPLoader& bsp,
-        const glm::vec3& ambientColor = glm::vec3(0.05f));
+        const glm::vec3& ambientColor = glm::vec3(0.05f),
+        const std::vector<DoorEntity*>* doors = nullptr);
 
     void setLightmapIntensity(float intensity) { lightmapIntensity = intensity; }
     float getLightmapIntensity() const { return lightmapIntensity; }

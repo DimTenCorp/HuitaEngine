@@ -832,7 +832,7 @@ void Engine::render() {
     glClear(GL_DEPTH_BUFFER_BIT);
 
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
-        lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
+        lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f), &doors);
     }
 
     if (game) {
