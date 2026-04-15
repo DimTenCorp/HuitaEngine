@@ -222,6 +222,7 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
     const auto& bspDrawCalls = bsp.getDrawCalls();
     std::unordered_map<int, std::pair<int, int>> faceTransparency;
     std::unordered_map<int, std::pair<bool, int>> faceDoorInfo;  // isDoor, doorIndex
+    std::unordered_map<int, glm::vec3> faceDoorOrigin;  // origin двери для конвертации в локальные координаты
     for (const auto& dc : bspDrawCalls) {
         if (dc.isTransparent) {
             faceTransparency[dc.faceIndex] = { dc.rendermode, dc.renderamt };
