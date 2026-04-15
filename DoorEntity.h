@@ -48,7 +48,7 @@ public:
     glm::vec3 getCurrentOrigin() const { return currentPos; }
     float getCurrentAngle() const { return currentAngle; }
 
-    bool tryActivate(float touchDistance, bool isPlayerUse = false);
+    bool tryActivate(bool isPlayerUse = false);
     void update(float deltaTime);
     bool checkBlocked(const Capsule& playerCapsule, float deltaTime);
     void applyDamageToPlayer(class Player* player, float deltaTime);

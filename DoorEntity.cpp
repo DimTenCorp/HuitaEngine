@@ -449,7 +449,7 @@ void DoorEntity::updateOBB() {
     obb.rotation[2] = glm::vec3(-sinA, 0.0f, cosA);  // Локальная Z ось
 }
 
-bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
+bool DoorEntity::tryActivate(bool isPlayerUse) {
     if (locked) {
         if (!touchLogged) {
             std::cout << "[DOOR] '" << targetName << "' is LOCKED!" << std::endl;

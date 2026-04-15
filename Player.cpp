@@ -876,24 +876,26 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
         Capsule playerCapsule = getPlayerCapsule(position);
 
         for (auto* door : doors) {
-            if (door->intersectsCapsule(playerCapsule)) {
-                glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
-                float distance = glm::length(position - doorCenter);
+            // Вычисляем центр двери и дистанцию до игрока
+            glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
+            float distance = glm::length(position - doorCenter);
+            
+            // Получаем размеры двери для определения радиуса активации
+            glm::vec3 doorSize = door->getBounds().max - door->getBounds().min;
+            float maxDimension = std::max({doorSize.x, doorSize.y, doorSize.z});
+            float activateRange = maxDimension * 0.75f + 32.0f;  // Размер двери + 32 юнита запас
 
-                // Логика активации:
-                // 1. USE_ONLY - требует явного использования (клавиша E), не активируется от касания
-                // 2. TOUCH_OPENS - активируется при касании
-                // 3. Обычная дверь (без флагов) - активируется и от касания, и от использования
-                
+            // Проверяем дистанцию вместо пересечения
+            if (distance <= activateRange) {
                 bool isUseOnly = door->isUseOnly();
                 bool isTouchOpens = door->isTouchOpens();
                 
                 // Определяем тип активации для tryActivate
-                // Для TOUCH_OPENS и обычных дверей передаём true (разрешаем активацию от касания)
-                // Для USE_ONLY передаём false (требует явного использования)
-                bool allowTouchActivate = !isUseOnly;
+                // Для TOUCH_OPENS передаём false (автоматическая активация от касания)
+                // Для USE_ONLY и обычных дверей передаём true (явное использование)
+                bool allowTouchActivate = !isUseOnly && !isTouchOpens;
                 
-                bool activated = door->tryActivate(distance, allowTouchActivate);
+                bool activated = door->tryActivate(allowTouchActivate);
 
                 if (!door->wasTouched()) {
                     std::cout << "[DOOR] Player touching " << door->getClassName()

@@ -77,14 +77,27 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
                     << " Capsule radius: " << playerCapsule.radius << std::endl;
 
                 for (auto* door : doors) {
-                    bool intersects = door->intersectsCapsule(playerCapsule);
-                    if (intersects) {
-                        std::cout << "[DOOR DEBUG] Intersects with door '" << door->getTargetName() 
-                            << "' bounds: (" << door->getCurrentMins().x << "," << door->getCurrentMins().y << "," << door->getCurrentMins().z << ") to ("
-                            << door->getCurrentMaxs().x << "," << door->getCurrentMaxs().y << "," << door->getCurrentMaxs().z << ")" << std::endl;
+                    // Вычисляем центр двери и дистанцию до игрока
+                    glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
+                    float distance = glm::length(playerPos - doorCenter);
+                    
+                    // Получаем размеры двери для определения радиуса активации
+                    glm::vec3 doorSize = door->getBounds().max - door->getBounds().min;
+                    float maxDimension = std::max({doorSize.x, doorSize.y, doorSize.z});
+                    float activateRange = maxDimension * 0.75f + 32.0f;  // Размер двери + 32 юнита запас
+                    
+                    std::cout << "[DOOR DEBUG] Door '" << door->getTargetName() 
+                        << "' bounds: (" << door->getCurrentMins().x << "," << door->getCurrentMins().y << "," << door->getCurrentMins().z << ") to ("
+                        << door->getCurrentMaxs().x << "," << door->getCurrentMaxs().y << "," << door->getCurrentMaxs().z 
+                        << ") center: (" << doorCenter.x << "," << doorCenter.y << "," << doorCenter.z 
+                        << ") distance: " << distance << " range: " << activateRange << std::endl;
+
+                    // Проверяем дистанцию вместо пересечения
+                    if (distance <= activateRange) {
+                        std::cout << "[DOOR DEBUG] Player within range of door '" << door->getTargetName() << "'" << std::endl;
                         
                         // Игрок использует дверь
-                        bool activated = door->tryActivate(0.0f, true);
+                        bool activated = door->tryActivate(true);
                         if (activated) {
                             std::cout << "[DOOR] Player USED " << door->getClassName()
                                 << " '" << door->getTargetName() << "'" << std::endl;
