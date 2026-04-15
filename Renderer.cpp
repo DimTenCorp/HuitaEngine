@@ -319,9 +319,35 @@ Renderer& Renderer::operator=(Renderer&& other) noexcept {
 
 Renderer::~Renderer() { cleanup(); }
 
+void Renderer::setDepthTestEnabled(bool enabled) {
+    if (depthTestEnabled == enabled) return;
+    if (enabled) glEnable(GL_DEPTH_TEST);
+    else glDisable(GL_DEPTH_TEST);
+    depthTestEnabled = enabled;
+}
+
+void Renderer::setBlendEnabled(bool enabled) {
+    if (blendEnabled == enabled) return;
+    if (enabled) glEnable(GL_BLEND);
+    else glDisable(GL_BLEND);
+    blendEnabled = enabled;
+}
+
+void Renderer::setDepthState(GLenum func, bool depthWrite) {
+    if (depthFunc != func) {
+        glDepthFunc(func);
+        depthFunc = func;
+    }
+    if (depthWriteEnabled != depthWrite) {
+        glDepthMask(depthWrite ? GL_TRUE : GL_FALSE);
+        depthWriteEnabled = depthWrite;
+    }
+}
+
 bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
+    projectionDirty = true;
 
     glViewport(0, 0, width, height);
 
@@ -499,6 +525,7 @@ void Renderer::unloadWorld() {
     meshIndices.clear();
     opaqueDrawCalls.clear();
     transparentDrawCalls.clear();
+    sortedTransparentCache.clear();
     worldLoaded = false;
 }
 
@@ -513,8 +540,11 @@ void Renderer::beginFrame(const glm::vec3& clearColor) {
 void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     if (!worldLoaded) return;
 
-    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+    if (projectionDirty) {
+        cachedProjection = glm::perspective(glm::radians(75.0f),
+            (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+        projectionDirty = false;
+    }
 
     // ============================================
     // ПРОХОД 1: Только НЕПРОЗРАЧНАЯ геометрия
@@ -523,13 +553,12 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    setDepthTestEnabled(true);
+    setDepthState(GL_LESS, true);
+    setBlendEnabled(false);
 
     // Рисуем НЕПРОЗРАЧНЫЕ draw calls
-    geometryPass(view, projection, false); // ← параметр false = только opaque
+    geometryPass(view, cachedProjection, false); // ← параметр false = только opaque
 
     // ============================================
     // ПРОХОД 2: Освещение
@@ -539,27 +568,24 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     // ============================================
     // ПРОХОД 3: Прозрачная геометрия (поверх всего)
     // ============================================
-    glEnable(GL_BLEND);
+    setBlendEnabled(true);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);  // ← КЛЮЧЕВОЙ МОМЕНТ!
-    glDepthFunc(GL_LEQUAL);
+    setDepthState(GL_LEQUAL, false);  // ← КЛЮЧЕВОЙ МОМЕНТ!
 
     // Рисуем ПРОЗРАЧНЫЕ draw calls (отсортированные)
-    renderTransparentFacesForward(view, projection, viewPos);
+    renderTransparentFacesForward(view, cachedProjection, viewPos);
 
     // Восстанавливаем состояние
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-    glDepthFunc(GL_LESS);
+    setDepthState(GL_LESS, true);
+    setBlendEnabled(false);
 }
 
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool onlyTransparent) {
     gBuffer.bindForWriting();
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    setDepthTestEnabled(true);
+    setDepthState(GL_LESS, true);
+    setBlendEnabled(false);
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
@@ -596,8 +622,8 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
     (void)viewPos;
 
     GBuffer::unbind();
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
+    setDepthTestEnabled(false);
+    setBlendEnabled(false);
 
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);
@@ -608,20 +634,15 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
     lightingShader->unbind();
 
     // ВАЖНО: Восстанавливаем состояние для прозрачных объектов
-    glEnable(GL_DEPTH_TEST);
+    setDepthTestEnabled(true);
 }
 
 void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
     if (transparentDrawCalls.empty() || !transparentShader) return;
-
-    // Сортируем прозрачные объекты от дальних к ближним
-    struct SortedDrawCall {
-        FaceDrawCall dc;
-        float distance;
-    };
-
-    std::vector<SortedDrawCall> sorted;
-    sorted.reserve(transparentDrawCalls.size());
+    sortedTransparentCache.clear();
+    if (sortedTransparentCache.capacity() < transparentDrawCalls.size()) {
+        sortedTransparentCache.reserve(transparentDrawCalls.size());
+    }
 
     for (const auto& dc : transparentDrawCalls) {
         float dist = 0.0f;
@@ -635,11 +656,12 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
                 }
             }
         }
-        sorted.push_back({ dc, dist });
+        sortedTransparentCache.push_back({ &dc, dist });
     }
 
     // Сортируем от дальних к ближним
-    std::sort(sorted.begin(), sorted.end(), [](const SortedDrawCall& a, const SortedDrawCall& b) {
+    std::sort(sortedTransparentCache.begin(), sortedTransparentCache.end(),
+        [](const SortedTransparentDrawCall& a, const SortedTransparentDrawCall& b) {
         return a.distance > b.distance;
         });
 
@@ -651,8 +673,8 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
     worldMesh.bind();
 
     GLuint currentTex = 0;
-    for (const auto& item : sorted) {
-        const auto& dc = item.dc;
+    for (const auto& item : sortedTransparentCache) {
+        const auto& dc = *item.dc;
 
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
@@ -699,6 +721,7 @@ void Renderer::setViewport(int width, int height) {
 
     screenWidth = width;
     screenHeight = height;
+    projectionDirty = true;
     glViewport(0, 0, width, height);
 
     destroyGBuffer();

@@ -74,8 +74,16 @@ public:
         const glm::mat4& view, const glm::mat4& projection);
 
 private:
+    struct SortedTransparentFace {
+        const LMFaceDrawCall* dc = nullptr;
+        float distance = 0.0f;
+    };
+
     std::unique_ptr<Shader> lightmappedShader;
     GLuint worldVAO = 0, worldVBO = 0, worldEBO = 0;
+    GLuint doorVAO = 0, doorVBO = 0, doorEBO = 0;
+    size_t doorVertexCapacity = 0;
+    size_t doorIndexCapacity = 0;
     size_t indexCount = 0;
     LightmapManager* lmManager = nullptr;
     float lightmapIntensity = 1.0f;
@@ -89,9 +97,18 @@ private:
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
+    std::vector<SortedTransparentFace> sortedTransparentCache;
+    glm::mat4 cachedProjection = glm::mat4(1.0f);
+    bool projectionDirty = true;
+    bool blendEnabled = false;
+    bool depthWriteEnabled = true;
+    GLenum depthFunc = GL_LESS;
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
+    void ensureDoorBuffers(size_t vertexCount, size_t indexCount);
+    void setDepthState(GLenum func, bool depthWrite);
+    void setBlendEnabled(bool enabled);
     void cleanup();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();

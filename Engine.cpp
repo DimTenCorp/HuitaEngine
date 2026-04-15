@@ -18,6 +18,17 @@
 
 Engine* Engine::instance = nullptr;
 
+static bool mat4AlmostEqual(const glm::mat4& a, const glm::mat4& b, float eps = 0.0001f) {
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            if (std::abs(a[c][r] - b[c][r]) > eps) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
@@ -228,6 +239,7 @@ void Engine::onFramebufferSize(int width, int height) {
 
     this->width = width;
     this->height = height;
+    projectionDirty = true;
 
     glViewport(0, 0, width, height);
 
@@ -396,6 +408,9 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
 
     std::cout << "[ENGINE] Loaded " << doors.size() << " doors" << std::endl;
+    lastDoorTransforms.assign(doors.size(), glm::mat4(0.0f));
+    cachedDoorTriangles.clear();
+    doorColliderDirty = true;
 
     // Загружаем скайбокс
     std::string skyName = bspLoader->getSkyName();
@@ -581,6 +596,7 @@ void Engine::applySettings(const SettingsData& settings) {
 
     width = settings.screenWidth;
     height = settings.screenHeight;
+    projectionDirty = true;
 
     std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity << std::endl;
 }
@@ -705,8 +721,11 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
-    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)width / (float)height, 0.1f, 10000.0f);
+    if (projectionDirty) {
+        cachedProjection = glm::perspective(glm::radians(75.0f),
+            (float)width / (float)height, 0.1f, 10000.0f);
+        projectionDirty = false;
+    }
 
     // Очищаем буферы
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
@@ -714,7 +733,7 @@ void Engine::render() {
 
     // 1. Скайбокс
     if (skyboxRenderer && skyboxRenderer->isLoaded()) {
-        skyboxRenderer->render(view, projection, eyePos);
+        skyboxRenderer->render(view, cachedProjection, eyePos);
     }
 
     // 2. Мир (с очисткой depth)
@@ -724,7 +743,7 @@ void Engine::render() {
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
 
         // === РЕНДЕРИНГ ДВЕРЕЙ ===
-        lmRenderer->renderDoors(doors, view, projection);
+        lmRenderer->renderDoors(doors, view, cachedProjection);
     }
 
     if (game) {
@@ -747,45 +766,50 @@ void Engine::shutdown() {
 }
 
 void Engine::updateDoors(float deltaTime) {
-    // Обновляем состояние дверей
-    for (auto& door : doors) {
+    if (lastDoorTransforms.size() != doors.size()) {
+        lastDoorTransforms.assign(doors.size(), glm::mat4(0.0f));
+        doorColliderDirty = true;
+    }
+
+    for (size_t i = 0; i < doors.size(); ++i) {
+        auto& door = doors[i];
         door->update(deltaTime, meshCollider.get());
-    }
 
-    // === ДОБАВИТЬ: обновляем коллайдер дверей ===
-    // Перестраиваем коллайдер дверей каждый кадр
-    if (meshCollider) {
-        // Собираем треугольники всех дверей
-        std::vector<Triangle> doorTriangles;
-
-        for (const auto& door : doors) {
-            if (!door->passable) { // Только непроходимые двери
-                // Получаем трансформ двери
-                glm::mat4 transform = door->getTransform();
-
-                // Трансформируем вершины и создаем треугольники
-                const auto& verts = door->vertices;
-                const auto& idxs = door->indices;
-
-                for (size_t i = 0; i < idxs.size(); i += 3) {
-                    Triangle tri;
-                    for (int j = 0; j < 3; j++) {
-                        glm::vec4 v = transform * glm::vec4(verts[idxs[i + j]].position, 1.0f);
-                        tri.vertices[j] = glm::vec3(v);
-                    }
-                    tri.normal = glm::normalize(glm::cross(
-                        tri.vertices[1] - tri.vertices[0],
-                        tri.vertices[2] - tri.vertices[0]
-                    ));
-                    doorTriangles.push_back(tri);
-                }
-            }
+        const glm::mat4 currentTransform = door->getTransform();
+        if (!mat4AlmostEqual(currentTransform, lastDoorTransforms[i])) {
+            lastDoorTransforms[i] = currentTransform;
+            doorColliderDirty = true;
         }
-
-        // Обновляем коллайдер мира с дверями
-        // NOTE: Нужно добавить метод в MeshCollider для обновления динамических объектов
-        meshCollider->updateDynamicTriangles(doorTriangles);
     }
+
+    if (!meshCollider || !doorColliderDirty) {
+        return;
+    }
+
+    cachedDoorTriangles.clear();
+    for (const auto& door : doors) {
+        if (door->passable || door->indices.size() < 3) continue;
+
+        const glm::mat4 transform = door->getTransform();
+        const auto& verts = door->vertices;
+        const auto& idxs = door->indices;
+
+        for (size_t i = 0; i + 2 < idxs.size(); i += 3) {
+            Triangle tri;
+            for (int j = 0; j < 3; j++) {
+                glm::vec4 v = transform * glm::vec4(verts[idxs[i + j]].position, 1.0f);
+                tri.vertices[j] = glm::vec3(v);
+            }
+            tri.normal = glm::normalize(glm::cross(
+                tri.vertices[1] - tri.vertices[0],
+                tri.vertices[2] - tri.vertices[0]
+            ));
+            cachedDoorTriangles.push_back(tri);
+        }
+    }
+
+    meshCollider->updateDynamicTriangles(cachedDoorTriangles);
+    doorColliderDirty = false;
 }
 
 void Engine::checkDoorInteractions(Player* player) {

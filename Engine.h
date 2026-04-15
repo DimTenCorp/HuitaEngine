@@ -9,6 +9,7 @@
 #include "Menu.h"
 #include "SkyboxRenderer.h"
 #include "DoorEntity.h"
+#include "TriangleCollider.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -116,4 +117,10 @@ private:
     void render();
     void processPendingLoad();
     void doLoadMap(const std::string& mapPath);
+
+    glm::mat4 cachedProjection = glm::mat4(1.0f);
+    bool projectionDirty = true;
+    std::vector<glm::mat4> lastDoorTransforms;
+    std::vector<Triangle> cachedDoorTriangles;
+    bool doorColliderDirty = true;
 };

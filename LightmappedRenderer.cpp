@@ -90,6 +90,8 @@ LightmappedRenderer::~LightmappedRenderer() {
 LightmappedRenderer::LightmappedRenderer(LightmappedRenderer&& other) noexcept
     : lightmappedShader(std::move(other.lightmappedShader)),
     worldVAO(other.worldVAO), worldVBO(other.worldVBO), worldEBO(other.worldEBO),
+    doorVAO(other.doorVAO), doorVBO(other.doorVBO), doorEBO(other.doorEBO),
+    doorVertexCapacity(other.doorVertexCapacity), doorIndexCapacity(other.doorIndexCapacity),
     indexCount(other.indexCount), lmManager(other.lmManager),
     lightmapIntensity(other.lightmapIntensity),
     showLightmapsOnly(other.showLightmapsOnly),
@@ -99,10 +101,21 @@ LightmappedRenderer::LightmappedRenderer(LightmappedRenderer&& other) noexcept
     stats(other.stats),
     faceDrawCalls(std::move(other.faceDrawCalls)),
     meshVertices(std::move(other.meshVertices)),
-    meshIndices(std::move(other.meshIndices)) {
+    meshIndices(std::move(other.meshIndices)),
+    sortedTransparentCache(std::move(other.sortedTransparentCache)),
+    cachedProjection(other.cachedProjection),
+    projectionDirty(other.projectionDirty),
+    blendEnabled(other.blendEnabled),
+    depthWriteEnabled(other.depthWriteEnabled),
+    depthFunc(other.depthFunc) {
     other.worldVAO = 0;
     other.worldVBO = 0;
     other.worldEBO = 0;
+    other.doorVAO = 0;
+    other.doorVBO = 0;
+    other.doorEBO = 0;
+    other.doorVertexCapacity = 0;
+    other.doorIndexCapacity = 0;
     other.indexCount = 0;
     other.lmManager = nullptr;
 }
@@ -114,6 +127,11 @@ LightmappedRenderer& LightmappedRenderer::operator=(LightmappedRenderer&& other)
         worldVAO = other.worldVAO;
         worldVBO = other.worldVBO;
         worldEBO = other.worldEBO;
+        doorVAO = other.doorVAO;
+        doorVBO = other.doorVBO;
+        doorEBO = other.doorEBO;
+        doorVertexCapacity = other.doorVertexCapacity;
+        doorIndexCapacity = other.doorIndexCapacity;
         indexCount = other.indexCount;
         lmManager = other.lmManager;
         lightmapIntensity = other.lightmapIntensity;
@@ -126,10 +144,21 @@ LightmappedRenderer& LightmappedRenderer::operator=(LightmappedRenderer&& other)
         faceDrawCalls = std::move(other.faceDrawCalls);
         meshVertices = std::move(other.meshVertices);
         meshIndices = std::move(other.meshIndices);
+        sortedTransparentCache = std::move(other.sortedTransparentCache);
+        cachedProjection = other.cachedProjection;
+        projectionDirty = other.projectionDirty;
+        blendEnabled = other.blendEnabled;
+        depthWriteEnabled = other.depthWriteEnabled;
+        depthFunc = other.depthFunc;
 
         other.worldVAO = 0;
         other.worldVBO = 0;
         other.worldEBO = 0;
+        other.doorVAO = 0;
+        other.doorVBO = 0;
+        other.doorEBO = 0;
+        other.doorVertexCapacity = 0;
+        other.doorIndexCapacity = 0;
         other.indexCount = 0;
         other.lmManager = nullptr;
     }
@@ -139,6 +168,7 @@ LightmappedRenderer& LightmappedRenderer::operator=(LightmappedRenderer&& other)
 bool LightmappedRenderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
+    projectionDirty = true;
 
     if (!initShaders()) {
         return false;
@@ -160,7 +190,63 @@ void LightmappedRenderer::setViewport(int width, int height) {
 
     screenWidth = width;
     screenHeight = height;
+    projectionDirty = true;
     glViewport(0, 0, width, height);
+}
+
+void LightmappedRenderer::setDepthState(GLenum func, bool depthWrite) {
+    if (depthFunc != func) {
+        glDepthFunc(func);
+        depthFunc = func;
+    }
+    if (depthWriteEnabled != depthWrite) {
+        glDepthMask(depthWrite ? GL_TRUE : GL_FALSE);
+        depthWriteEnabled = depthWrite;
+    }
+}
+
+void LightmappedRenderer::setBlendEnabled(bool enabled) {
+    if (blendEnabled == enabled) return;
+    if (enabled) glEnable(GL_BLEND);
+    else glDisable(GL_BLEND);
+    blendEnabled = enabled;
+}
+
+void LightmappedRenderer::ensureDoorBuffers(size_t vertexCount, size_t indexCount) {
+    if (doorVAO == 0) {
+        glGenVertexArrays(1, &doorVAO);
+        glGenBuffers(1, &doorVBO);
+        glGenBuffers(1, &doorEBO);
+
+        glBindVertexArray(doorVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, doorVBO);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, doorEBO);
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, normal));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, texCoord));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
+            (void*)offsetof(BSPVertex, texCoord));
+        glEnableVertexAttribArray(3);
+        glBindVertexArray(0);
+    }
+
+    if (vertexCount > doorVertexCapacity) {
+        doorVertexCapacity = std::max(vertexCount, doorVertexCapacity * 2 + 1);
+        glBindBuffer(GL_ARRAY_BUFFER, doorVBO);
+        glBufferData(GL_ARRAY_BUFFER, doorVertexCapacity * sizeof(BSPVertex), nullptr, GL_STREAM_DRAW);
+    }
+
+    if (indexCount > doorIndexCapacity) {
+        doorIndexCapacity = std::max(indexCount, doorIndexCapacity * 2 + 1);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, doorEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, doorIndexCapacity * sizeof(unsigned int), nullptr, GL_STREAM_DRAW);
+    }
 }
 
 bool LightmappedRenderer::initShaders() {
@@ -480,15 +566,15 @@ void LightmappedRenderer::unloadWorld() {
     faceDrawCalls.clear();
     meshVertices.clear();
     meshIndices.clear();
+    sortedTransparentCache.clear();
 }
 
 void LightmappedRenderer::beginFrame(const glm::vec3& clearColor, bool clearColorBuffer) {
     stats.reset();
 
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    setDepthState(GL_LESS, true);
+    setBlendEnabled(false);
 
     if (clearColorBuffer) {
         glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
@@ -504,18 +590,20 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     if (worldVAO == 0 || !lmManager) return;
 
-    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
-        (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+    if (projectionDirty) {
+        cachedProjection = glm::perspective(glm::radians(75.0f),
+            (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
+        projectionDirty = false;
+    }
 
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    setDepthState(GL_LESS, true);
+    setBlendEnabled(false);
 
     lightmappedShader->bind();
     lightmappedShader->setMat4("model", glm::mat4(1.0f));
     lightmappedShader->setMat4("view", view);
-    lightmappedShader->setMat4("projection", projection);
+    lightmappedShader->setMat4("projection", cachedProjection);
     lightmappedShader->setFloat("lightmapIntensity", lightmapIntensity);
     lightmappedShader->setBool("showLightmapsOnly", showLightmapsOnly);
     lightmappedShader->setBool("useLighting", useLighting);
@@ -550,13 +638,10 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     // Прозрачные фейсы
     if (hasTransparentFaces) {
-        struct SortedDrawCall {
-            const LMFaceDrawCall* dc;
-            float distance;
-        };
-
-        std::vector<SortedDrawCall> sorted;
-        sorted.reserve(faceDrawCalls.size());
+        sortedTransparentCache.clear();
+        if (sortedTransparentCache.capacity() < faceDrawCalls.size()) {
+            sortedTransparentCache.reserve(faceDrawCalls.size());
+        }
 
         for (const auto& dc : faceDrawCalls) {
             if (!dc.isTransparent) continue;
@@ -571,30 +656,29 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
                     }
                 }
             }
-            sorted.push_back({ &dc, distance });
+            sortedTransparentCache.push_back({ &dc, distance });
         }
 
-        std::sort(sorted.begin(), sorted.end(),
-            [](const SortedDrawCall& a, const SortedDrawCall& b) {
+        std::sort(sortedTransparentCache.begin(), sortedTransparentCache.end(),
+            [](const SortedTransparentFace& a, const SortedTransparentFace& b) {
                 return a.distance > b.distance;
             });
 
-        glEnable(GL_BLEND);
+        setBlendEnabled(true);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
-        glDepthFunc(GL_LEQUAL);
+        setDepthState(GL_LEQUAL, false);
 
         lightmappedShader->bind();
         lightmappedShader->setMat4("model", glm::mat4(1.0f));
         lightmappedShader->setMat4("view", view);
-        lightmappedShader->setMat4("projection", projection);
+        lightmappedShader->setMat4("projection", cachedProjection);
         lightmappedShader->setFloat("lightmapIntensity", lightmapIntensity);
         lightmappedShader->setBool("showLightmapsOnly", showLightmapsOnly);
         lightmappedShader->setBool("useLighting", useLighting);
         lightmappedShader->setVec3("ambientColor", ambientColor);
 
         currentTex = 0;
-        for (const auto& item : sorted) {
+        for (const auto& item : sortedTransparentCache) {
             const auto& dc = *item.dc;
 
             if (dc.texID != currentTex) {
@@ -617,9 +701,8 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
         lightmappedShader->unbind();
 
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
-        glDepthFunc(GL_LESS);
+        setDepthState(GL_LESS, true);
+        setBlendEnabled(false);
     }
 
     glBindVertexArray(0);
@@ -648,44 +731,26 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // Временные буферы для всех дверей (переиспользуем)
-    GLuint tempVAO = 0, tempVBO = 0, tempEBO = 0;
-    glGenVertexArrays(1, &tempVAO);
-    glGenBuffers(1, &tempVBO);
-    glGenBuffers(1, &tempEBO);
-
     for (const auto& door : doors) {
-        if (door->vertices.empty()) continue;
+        if (door->vertices.empty() || door->indices.empty()) continue;
+
+        ensureDoorBuffers(door->vertices.size(), door->indices.size());
 
         // Устанавливаем трансформацию
         lightmappedShader->setMat4("model", door->getTransform());
 
         // Загружаем геометрию
-        glBindVertexArray(tempVAO);
+        glBindVertexArray(doorVAO);
 
-        glBindBuffer(GL_ARRAY_BUFFER, tempVBO);
-        glBufferData(GL_ARRAY_BUFFER,
+        glBindBuffer(GL_ARRAY_BUFFER, doorVBO);
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
             door->vertices.size() * sizeof(BSPVertex),
-            door->vertices.data(), GL_STREAM_DRAW);
+            door->vertices.data());
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempEBO);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, doorEBO);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
             door->indices.size() * sizeof(unsigned int),
-            door->indices.data(), GL_STREAM_DRAW);
-
-        // Настраиваем атрибуты (layout должен совпадать с шейдером)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, normal));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, texCoord));
-        glEnableVertexAttribArray(2);
-        // Lightmap coord - используем texCoord как fallback
-        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, texCoord));
-        glEnableVertexAttribArray(3);
+            door->indices.data());
 
         // Текстура двери
         glActiveTexture(GL_TEXTURE0);
@@ -699,14 +764,16 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
     }
 
     glBindVertexArray(0);
-    glDeleteVertexArrays(1, &tempVAO);
-    glDeleteBuffers(1, &tempVBO);
-    glDeleteBuffers(1, &tempEBO);
 
     lightmappedShader->unbind();
 }
 
 void LightmappedRenderer::cleanup() {
     unloadWorld();
+    if (doorVAO) { glDeleteVertexArrays(1, &doorVAO); doorVAO = 0; }
+    if (doorVBO) { glDeleteBuffers(1, &doorVBO); doorVBO = 0; }
+    if (doorEBO) { glDeleteBuffers(1, &doorEBO); doorEBO = 0; }
+    doorVertexCapacity = 0;
+    doorIndexCapacity = 0;
     lightmappedShader.reset();
 }

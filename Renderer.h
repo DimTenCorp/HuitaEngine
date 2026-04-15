@@ -86,6 +86,11 @@ public:
     void setAlphaTestRef(float ref) { alphaTestRef = ref; }
 
 private:
+    struct SortedTransparentDrawCall {
+        const FaceDrawCall* dc = nullptr;
+        float distance = 0.0f;
+    };
+
     BspMesh worldMesh;
     std::vector<BSPVertex> meshVertices;      // ��������� ��� ����������
     std::vector<unsigned int> meshIndices;    // ��������� ��� ����������
@@ -110,6 +115,13 @@ private:
 
     bool sortTransparentFaces = true;
     float alphaTestRef = 0.5f;
+    glm::mat4 cachedProjection = glm::mat4(1.0f);
+    bool projectionDirty = true;
+    std::vector<SortedTransparentDrawCall> sortedTransparentCache;
+    bool depthTestEnabled = true;
+    bool blendEnabled = false;
+    bool depthWriteEnabled = true;
+    GLenum depthFunc = GL_LESS;
 
     void createQuadMesh();
     void cleanup();
@@ -124,4 +136,7 @@ private:
     void lightingPass(const glm::vec3& viewPos);
     void renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos);
     void initTransparentShader();
+    void setDepthTestEnabled(bool enabled);
+    void setBlendEnabled(bool enabled);
+    void setDepthState(GLenum func, bool depthWrite);
 };
