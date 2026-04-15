@@ -141,6 +141,11 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
 
     locked = hasFlag(DoorFlags::START_LOCKED);
 
+    // === НАСТРОЙКА ДВИЖЕНИЯ ===
+    // Сначала устанавливаем pos1 и currentPos, чтобы calculateBoundsFromModel мог использовать origin
+    pos1 = origin;
+    currentPos = pos1;
+
     // Вычисляем bounds из модели
     it = entity.properties.find("model");
     if (it != entity.properties.end() && !it->second.empty() && it->second[0] == '*') {
@@ -157,11 +162,6 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         mins = glm::vec3(-16.0f);
         maxs = glm::vec3(16.0f);
     }
-
-    // === НАСТРОЙКА ДВИЖЕНИЯ ===
-
-    pos1 = origin;
-    currentPos = pos1;
 
     if (type == DoorType::SLIDING) {
         // Размеры двери
@@ -311,13 +311,15 @@ void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) 
         if (worldMin[i] > worldMax[i]) std::swap(worldMin[i], worldMax[i]);
     }
 
+    const float epsilon = 0.5f;
+    worldMin -= glm::vec3(epsilon);
+    worldMax += glm::vec3(epsilon);
+
+    // mins/maxs хранятся в МИРОВЫХ координатах (вершины уже конвертированы через convertPosition)
     mins = worldMin;
     maxs = worldMax;
 
-    const float epsilon = 0.5f;
-    mins -= glm::vec3(epsilon);
-    maxs += glm::vec3(epsilon);
-
+    // Инициализируем currentMins/maxs как мировые + смещение (изначально 0)
     currentMins = mins;
     currentMaxs = maxs;
 }
@@ -377,10 +379,11 @@ void DoorEntity::updatePosition(float progress) {
         // Интерполируем позицию origin
         currentPos = glm::mix(pos1, pos2, progress);
 
-        // Обновляем bounds - смещаем на разницу позиций
-        glm::vec3 offset = currentPos - origin;
-        currentMins = mins + offset;
-        currentMaxs = maxs + offset;
+        // Обновляем bounds - смещаем локальные bounds на текущую позицию
+        // mins/maxs хранятся в локальном пространстве относительно origin
+        // currentPos - это мировая позиция двери
+        currentMins = mins + currentPos;
+        currentMaxs = maxs + currentPos;
 
     }
     else {
