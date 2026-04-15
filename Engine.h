@@ -9,6 +9,7 @@
 #include "Menu.h"
 #include "SkyboxRenderer.h"
 #include "DoorEntity.h"
+#include "TriangleCollider.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -73,11 +74,11 @@ public:
     const std::vector<std::unique_ptr<DoorEntity>>& getDoors() const { return doors; }
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
     void cleanupDoors();
-    
+
+private:
     // Буфер для трансформированных треугольников дверей (переиспользуется каждый кадр)
     std::vector<Triangle> doorTrianglesBuffer;
 
-private:
     static Engine* instance;
 
     std::vector<std::unique_ptr<DoorEntity>> doors;
