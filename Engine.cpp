@@ -515,27 +515,51 @@ void Engine::doLoadMap(const std::string& mapPath) {
         AABB doorBounds = door->getBounds();
         
         // Получаем модель двери из entity
-        const std::string& doorModel = door->getClassName() == "func_door_rotating" ? 
-            "" : "";  // Нужно получить model из door entity
+        std::string doorModel;
+        auto it = std::find_if(doorEntities.begin(), doorEntities.end(),
+            [&door](const BSPEntity& e) {
+                return e.classname == door->getClassName();
+            });
+        if (it != doorEntities.end()) {
+            auto mit = it->properties.find("model");
+            if (mit != it->properties.end()) {
+                doorModel = mit->second;
+            }
+        }
         
-        // Ищем все draw calls которые принадлежат этой двери по пересечению bounds
+        int doorModelIndex = -1;
+        if (!doorModel.empty() && doorModel[0] == '*') {
+            try {
+                doorModelIndex = std::stoi(doorModel.substr(1));
+            } catch (...) {
+                doorModelIndex = -1;
+            }
+        }
+        
+        std::cout << "[DOOR] Linking door at " << door->getCurrentOrigin().x 
+                  << "," << door->getCurrentOrigin().y << "," << door->getCurrentOrigin().z
+                  << " model=" << doorModel << " index=" << doorModelIndex << std::endl;
+        
+        // Ищем все draw calls которые принадлежат этой двери по model index
         for (auto& dc : bspLoader->getDrawCalls()) {
             if (dc.isDoor) continue;  // Уже помечено
             if (dc.faceIndex < 0) continue;
             
-            AABB dcBounds;
-            if (dc.faceIndex < (int)bspLoader->getFaceBounds().size()) {
-                dcBounds = bspLoader->getFaceBounds()[dc.faceIndex];
-            }
-            else {
-                continue;
+            // Проверяем принадлежит ли face к модели двери
+            const auto& models = bspLoader->getModels();
+            int faceModelIdx = -1;
+            
+            // Находим какой модели принадлежит этот face
+            for (int m = 0; m < (int)models.size(); m++) {
+                const BSPModel& mdl = models[m];
+                if (dc.faceIndex >= mdl.firstFace && dc.faceIndex < mdl.firstFace + mdl.numFaces) {
+                    faceModelIdx = m;
+                    break;
+                }
             }
             
-            // Если draw call пересекается с дверью - помечаем его
-            if (dcBounds.min.x <= doorBounds.max.x && dcBounds.max.x >= doorBounds.min.x &&
-                dcBounds.min.y <= doorBounds.max.y && dcBounds.max.y >= doorBounds.min.y &&
-                dcBounds.min.z <= doorBounds.max.z && dcBounds.max.z >= doorBounds.min.z) {
-                
+            // Если face принадлежит модели двери - помечаем его
+            if (faceModelIdx == doorModelIndex && doorModelIndex >= 0) {
                 // Находим индекс двери в массиве
                 int doorIdx = -1;
                 for (int i = 0; i < (int)doors.size(); i++) {
@@ -548,6 +572,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
                 if (doorIdx >= 0) {
                     dc.isDoor = true;
                     dc.doorIndex = doorIdx;
+                    std::cout << "[DOOR] Marked face " << dc.faceIndex << " as part of door " << doorIdx << std::endl;
                 }
             }
         }

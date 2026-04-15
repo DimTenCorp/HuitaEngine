@@ -315,18 +315,15 @@ void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) 
     worldMin -= glm::vec3(epsilon);
     worldMax += glm::vec3(epsilon);
 
-    // mins/maxs хранятся в ЛОКАЛЬНЫХ координатах относительно origin двери
-    // model.origin в HL - это центр модели в мировых координатах
-    // Конвертируем model.origin в нашу систему координат
-    glm::vec3 modelOrigin(-model.origin[0], model.origin[2], model.origin[1]);
-    
-    // Вычитаем origin чтобы получить локальные координаты
-    mins = worldMin - modelOrigin;
-    maxs = worldMax - modelOrigin;
+    // mins/maxs хранятся в ЛОКАЛЬНЫХ координатах относительно pos1 (origin двери)
+    // Вершины в BSP хранятся в мировых координатах, поэтому вычитаем origin двери
+    // чтобы получить локальные координаты относительно двери
+    mins = worldMin - origin;
+    maxs = worldMax - origin;
 
     std::cout << "[DOOR] Model bounds: worldMin=(" << worldMin.x << "," << worldMin.y << "," << worldMin.z 
               << ") worldMax=(" << worldMax.x << "," << worldMax.y << "," << worldMax.z << ")" << std::endl;
-    std::cout << "[DOOR] Model origin: (" << modelOrigin.x << "," << modelOrigin.y << "," << modelOrigin.z << ")" << std::endl;
+    std::cout << "[DOOR] Door origin: (" << origin.x << "," << origin.y << "," << origin.z << ")" << std::endl;
     std::cout << "[DOOR] Local mins=(" << mins.x << "," << mins.y << "," << mins.z 
               << ") maxs=(" << maxs.x << "," << maxs.y << "," << maxs.z << ")" << std::endl;
 
@@ -364,14 +361,18 @@ bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
 
 glm::mat4 DoorEntity::getRenderTransform() const {
     if (type == DoorType::SLIDING) {
-        // Для скользящих дверей: вершины хранятся в локальных координатах относительно model.origin
-        // pos1 - это мировая позиция двери в закрытом состоянии (= entity.origin)
+        // Для скользящих дверей: вершины хранятся в мировых координатах BSP
+        // Но мы вычли origin чтобы получить локальные координаты относительно двери
+        // Поэтому при рендеринге нужно добавить currentPos чтобы поместить дверь в правильное место
+        // pos1 = origin (мировая позиция закрытой двери)
         // currentPos - текущая мировая позиция двери
-        // Смещение = currentPos (применяем полную трансляцию к локальным вершинам)
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), currentPos);
+        // Смещение = currentPos - pos1 (смещение от начальной позиции)
+        glm::vec3 offset = currentPos - pos1;
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), offset);
         
         std::cout << "[DOOR RENDER] currentPos=(" << currentPos.x << "," << currentPos.y << "," << currentPos.z 
-                  << ") pos1=(" << pos1.x << "," << pos1.y << "," << pos1.z << ")" << std::endl;
+                  << ") pos1=(" << pos1.x << "," << pos1.y << "," << pos1.z 
+                  << ") offset=(" << offset.x << "," << offset.y << "," << offset.z << ")" << std::endl;
         
         return transform;
     }
