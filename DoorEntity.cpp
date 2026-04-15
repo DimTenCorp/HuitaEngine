@@ -5,18 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-// Half-Life 1 door spawnflags
-namespace DoorFlags {
-    constexpr unsigned int STARTS_OPEN = 1;
-    constexpr unsigned int DOOR_DONT_LINK = 2;
-    constexpr unsigned int PASSABLE = 4;
-    constexpr unsigned int TOGGLE = 32;
-    constexpr unsigned int USE_ONLY = 256;
-    constexpr unsigned int NO_MONSTERS = 512;
-    constexpr unsigned int TOUCH_OPENS = 1024;
-    constexpr unsigned int START_LOCKED = 2048;
-    constexpr unsigned int SILENT = 4096;
-}
+// Half-Life 1 door spawnflags - определения только в заголовочном файле!
 
 DoorEntity::DoorEntity()
     : type(DoorType::SLIDING)
