@@ -73,6 +73,9 @@ public:
     const std::vector<std::unique_ptr<DoorEntity>>& getDoors() const { return doors; }
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
     void cleanupDoors();
+    
+    // Буфер для трансформированных треугольников дверей (переиспользуется каждый кадр)
+    std::vector<Triangle> doorTrianglesBuffer;
 
 private:
     static Engine* instance;

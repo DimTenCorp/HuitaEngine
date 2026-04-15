@@ -614,14 +614,13 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
 void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
     if (transparentDrawCalls.empty() || !transparentShader) return;
 
-    // Сортируем прозрачные объекты от дальних к ближним
-    struct SortedDrawCall {
-        FaceDrawCall dc;
-        float distance;
-    };
-
-    std::vector<SortedDrawCall> sorted;
-    sorted.reserve(transparentDrawCalls.size());
+    // === ОПТИМИЗИРОВАНО: переиспользуем буфер вместо создания нового каждый кадр ===
+    transparentSortBuffer.clear();
+    
+    // Резервируем память один раз при необходимости
+    if (transparentSortBuffer.capacity() < transparentDrawCalls.size()) {
+        transparentSortBuffer.reserve(transparentDrawCalls.size());
+    }
 
     for (const auto& dc : transparentDrawCalls) {
         float dist = 0.0f;
@@ -635,11 +634,11 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
                 }
             }
         }
-        sorted.push_back({ dc, dist });
+        transparentSortBuffer.push_back({ dc, dist });
     }
 
     // Сортируем от дальних к ближним
-    std::sort(sorted.begin(), sorted.end(), [](const SortedDrawCall& a, const SortedDrawCall& b) {
+    std::sort(transparentSortBuffer.begin(), transparentSortBuffer.end(), [](const SortedDrawCallCache& a, const SortedDrawCallCache& b) {
         return a.distance > b.distance;
         });
 
@@ -651,7 +650,7 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
     worldMesh.bind();
 
     GLuint currentTex = 0;
-    for (const auto& item : sorted) {
+    for (const auto& item : transparentSortBuffer) {
         const auto& dc = item.dc;
 
         if (dc.texID != currentTex) {

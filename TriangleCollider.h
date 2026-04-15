@@ -20,7 +20,11 @@ public:
     bool intersectRay(const glm::vec3& origin, const glm::vec3& dir,
         float& outDist, glm::vec3& outNormal) const;
 
-    void updateDynamicTriangles(const std::vector<Triangle>& triangles);
+    // Обновление динамических треугольников без аллокаций - передаем готовый вектор
+    void setDynamicTriangles(std::vector<Triangle>&& triangles);
+    
+    // Резервирование памяти для динамических треугольников
+    void reserveDynamicTriangles(size_t count);
 
     size_t getTriangleCount() const {
         return staticTriangles.size() + dynamicTriangles.size();
@@ -29,6 +33,7 @@ public:
 private:
     std::vector<Triangle> staticTriangles;
     std::vector<Triangle> dynamicTriangles;
+    std::vector<Triangle> tempDoorTriangles;  // Буфер для временного хранения
 
     // Вспомогательные методы
     bool intersectCapsuleTriangle(const Capsule& capsule, const Triangle& tri) const;

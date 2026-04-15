@@ -7,6 +7,9 @@
 void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
     const std::vector<unsigned int>& indices) {
     staticTriangles.clear();
+    
+    // Резервируем память для статических треугольников
+    staticTriangles.reserve(indices.size() / 3);
 
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
         Triangle tri;
@@ -23,8 +26,16 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
     }
 }
 
-void MeshCollider::updateDynamicTriangles(const std::vector<Triangle>& triangles) {
-    dynamicTriangles = triangles;
+void MeshCollider::reserveDynamicTriangles(size_t count) {
+    dynamicTriangles.reserve(count);
+    tempDoorTriangles.reserve(count);
+}
+
+void MeshCollider::setDynamicTriangles(std::vector<Triangle>&& triangles) {
+    // Используем move semantics для избежания копирования
+    dynamicTriangles = std::move(triangles);
+    // Очищаем temp буфер после перемещения
+    tempDoorTriangles.clear();
 }
 
 float MeshCollider::distPointLineSegment(const glm::vec3& p, const glm::vec3& a,

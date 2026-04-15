@@ -752,11 +752,25 @@ void Engine::updateDoors(float deltaTime) {
         door->update(deltaTime, meshCollider.get());
     }
 
-    // === ДОБАВИТЬ: обновляем коллайдер дверей ===
-    // Перестраиваем коллайдер дверей каждый кадр
-    if (meshCollider) {
-        // Собираем треугольники всех дверей
-        std::vector<Triangle> doorTriangles;
+    // === ОПТИМИЗИРОВАНО: обновляем коллайдер дверей ===
+    // Переиспользуем буфер вместо создания нового каждый кадр
+    if (meshCollider && !doors.empty()) {
+        // Собираем треугольники всех дверей в переиспользуемый буфер
+        doorTrianglesBuffer.clear();
+        
+        // Подсчитываем общее количество треугольников для резервирования
+        size_t totalTris = 0;
+        for (const auto& door : doors) {
+            if (!door->passable) {
+                totalTris += door->indices.size() / 3;
+            }
+        }
+        
+        // Резервируем память один раз
+        if (doorTrianglesBuffer.capacity() < totalTris) {
+            doorTrianglesBuffer.reserve(totalTris);
+            meshCollider->reserveDynamicTriangles(totalTris);
+        }
 
         for (const auto& door : doors) {
             if (!door->passable) { // Только непроходимые двери
@@ -777,14 +791,13 @@ void Engine::updateDoors(float deltaTime) {
                         tri.vertices[1] - tri.vertices[0],
                         tri.vertices[2] - tri.vertices[0]
                     ));
-                    doorTriangles.push_back(tri);
+                    doorTrianglesBuffer.push_back(tri);
                 }
             }
         }
 
-        // Обновляем коллайдер мира с дверями
-        // NOTE: Нужно добавить метод в MeshCollider для обновления динамических объектов
-        meshCollider->updateDynamicTriangles(doorTriangles);
+        // Обновляем коллайдер мира с дверями используя move semantics
+        meshCollider->setDynamicTriangles(std::move(doorTrianglesBuffer));
     }
 }
 

@@ -89,6 +89,18 @@ private:
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
+    
+    // Переиспользуемые буферы для рендеринга дверей (избегаем glGen/glDelete каждый кадр)
+    GLuint doorVAO = 0, doorVBO = 0, doorEBO = 0;
+    size_t doorVertexCapacity = 0;
+    size_t doorIndexCapacity = 0;
+    
+    // Переиспользуемый буфер для сортировки прозрачных фейсов (избегаем аллокаций каждый кадр)
+    struct SortedDrawCallCache {
+        const LMFaceDrawCall* dc;
+        float distance;
+    };
+    std::vector<SortedDrawCallCache> transparentSortBuffer;
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);

@@ -550,13 +550,13 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     // Прозрачные фейсы
     if (hasTransparentFaces) {
-        struct SortedDrawCall {
-            const LMFaceDrawCall* dc;
-            float distance;
-        };
-
-        std::vector<SortedDrawCall> sorted;
-        sorted.reserve(faceDrawCalls.size());
+        // === ОПТИМИЗИРОВАНО: переиспользуем буфер вместо создания нового каждый кадр ===
+        transparentSortBuffer.clear();
+        
+        // Резервируем память один раз при необходимости
+        if (transparentSortBuffer.capacity() < faceDrawCalls.size()) {
+            transparentSortBuffer.reserve(faceDrawCalls.size());
+        }
 
         for (const auto& dc : faceDrawCalls) {
             if (!dc.isTransparent) continue;
@@ -571,11 +571,11 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
                     }
                 }
             }
-            sorted.push_back({ &dc, distance });
+            transparentSortBuffer.push_back({ &dc, distance });
         }
 
-        std::sort(sorted.begin(), sorted.end(),
-            [](const SortedDrawCall& a, const SortedDrawCall& b) {
+        std::sort(transparentSortBuffer.begin(), transparentSortBuffer.end(),
+            [](const SortedDrawCallCache& a, const SortedDrawCallCache& b) {
                 return a.distance > b.distance;
             });
 
@@ -594,7 +594,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
         lightmappedShader->setVec3("ambientColor", ambientColor);
 
         currentTex = 0;
-        for (const auto& item : sorted) {
+        for (const auto& item : transparentSortBuffer) {
             const auto& dc = *item.dc;
 
             if (dc.texID != currentTex) {
@@ -648,11 +648,15 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // Временные буферы для всех дверей (переиспользуем)
-    GLuint tempVAO = 0, tempVBO = 0, tempEBO = 0;
-    glGenVertexArrays(1, &tempVAO);
-    glGenBuffers(1, &tempVBO);
-    glGenBuffers(1, &tempEBO);
+    // === ОПТИМИЗИРОВАНО: переиспользуем VAO/VBO/EBO вместо создания/удаления каждый кадр ===
+    // Создаем буферы один раз при первом использовании
+    if (doorVAO == 0) {
+        glGenVertexArrays(1, &doorVAO);
+        glGenBuffers(1, &doorVBO);
+        glGenBuffers(1, &doorEBO);
+        doorVertexCapacity = 0;
+        doorIndexCapacity = 0;
+    }
 
     for (const auto& door : doors) {
         if (door->vertices.empty()) continue;
@@ -660,18 +664,35 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
         // Устанавливаем трансформацию
         lightmappedShader->setMat4("model", door->getTransform());
 
-        // Загружаем геометрию
-        glBindVertexArray(tempVAO);
+        // Проверяем, нужно ли увеличить размер буферов
+        size_t vertexSize = door->vertices.size() * sizeof(BSPVertex);
+        size_t indexSize = door->indices.size() * sizeof(unsigned int);
+        
+        if (vertexSize > doorVertexCapacity || indexSize > doorIndexCapacity) {
+            // Увеличиваем capacity с запасом для будущих кадров
+            doorVertexCapacity = vertexSize * 2;
+            doorIndexCapacity = indexSize * 2;
+        }
 
-        glBindBuffer(GL_ARRAY_BUFFER, tempVBO);
+        glBindVertexArray(doorVAO);
+
+        // Загружаем геометрию в переиспользуемый VBO
+        glBindBuffer(GL_ARRAY_BUFFER, doorVBO);
         glBufferData(GL_ARRAY_BUFFER,
+            doorVertexCapacity,
+            nullptr, GL_STREAM_DRAW);  // Выделяем память заранее
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
             door->vertices.size() * sizeof(BSPVertex),
-            door->vertices.data(), GL_STREAM_DRAW);
+            door->vertices.data());
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempEBO);
+        // Загружаем индексы в переиспользуемый EBO
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, doorEBO);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+            doorIndexCapacity,
+            nullptr, GL_STREAM_DRAW);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0,
             door->indices.size() * sizeof(unsigned int),
-            door->indices.data(), GL_STREAM_DRAW);
+            door->indices.data());
 
         // Настраиваем атрибуты (layout должен совпадать с шейдером)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
@@ -692,16 +713,14 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
         glBindTexture(GL_TEXTURE_2D, door->textureID);
 
         // Рисуем
-        glDrawElements(GL_TRIANGLES, door->indices.size(), GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, (GLsizei)door->indices.size(), GL_UNSIGNED_INT, 0);
 
         stats.drawCalls++;
         stats.triangles += door->indices.size() / 3;
     }
 
     glBindVertexArray(0);
-    glDeleteVertexArrays(1, &tempVAO);
-    glDeleteBuffers(1, &tempVBO);
-    glDeleteBuffers(1, &tempEBO);
+    // НЕ удаляем буферы - они переиспользуются в следующих кадрах
 
     lightmappedShader->unbind();
 }
@@ -709,4 +728,20 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
 void LightmappedRenderer::cleanup() {
     unloadWorld();
     lightmappedShader.reset();
+    
+    // Очищаем переиспользуемые буферы для дверей
+    if (doorVAO) {
+        glDeleteVertexArrays(1, &doorVAO);
+        doorVAO = 0;
+    }
+    if (doorVBO) {
+        glDeleteBuffers(1, &doorVBO);
+        doorVBO = 0;
+    }
+    if (doorEBO) {
+        glDeleteBuffers(1, &doorEBO);
+        doorEBO = 0;
+    }
+    doorVertexCapacity = 0;
+    doorIndexCapacity = 0;
 }

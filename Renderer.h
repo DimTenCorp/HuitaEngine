@@ -110,6 +110,13 @@ private:
 
     bool sortTransparentFaces = true;
     float alphaTestRef = 0.5f;
+    
+    // Переиспользуемый буфер для сортировки прозрачных draw call'ов (избегаем аллокаций каждый кадр)
+    struct SortedDrawCallCache {
+        FaceDrawCall dc;
+        float distance;
+    };
+    std::vector<SortedDrawCallCache> transparentSortBuffer;
 
     void createQuadMesh();
     void cleanup();
