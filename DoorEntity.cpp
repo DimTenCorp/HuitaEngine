@@ -351,12 +351,16 @@ bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
 
 glm::mat4 DoorEntity::getRenderTransform() const {
     if (type == DoorType::SLIDING) {
-        // Сдвиг на разницу между текущей и оригинальной позицией
-        glm::vec3 offset = currentPos - origin;
+        // Для скользящих дверей: вершины уже в мировых координатах (с учётом model.origin)
+        // Нам нужно применить только смещение от начальной позиции двери
+        // pos1 - это где дверь должна быть в закрытом состоянии (уже с учётом entity.origin)
+        // currentPos - текущая позиция двери
+        // Смещение = currentPos - pos1
+        glm::vec3 offset = currentPos - pos1;
         return glm::translate(glm::mat4(1.0f), offset);
     }
     else {
-        // Вращение вокруг origin по Y
+        // Для вращающихся дверей: вращение вокруг origin
         float angleRad = glm::radians(currentAngle);
 
         glm::mat4 transform = glm::mat4(1.0f);
