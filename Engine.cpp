@@ -73,13 +73,23 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
                 glm::vec3 playerPos = player->getPosition();
                 Capsule playerCapsule = player->getPlayerCapsule(playerPos);
 
+                std::cout << "[DOOR DEBUG] Player pos: " << playerPos.x << "," << playerPos.y << "," << playerPos.z 
+                    << " Capsule radius: " << playerCapsule.radius << std::endl;
+
                 for (auto* door : doors) {
-                    if (door->intersectsCapsule(playerCapsule)) {
+                    bool intersects = door->intersectsCapsule(playerCapsule);
+                    if (intersects) {
+                        std::cout << "[DOOR DEBUG] Intersects with door '" << door->getTargetName() 
+                            << "' bounds: (" << door->getCurrentMins().x << "," << door->getCurrentMins().y << "," << door->getCurrentMins().z << ") to ("
+                            << door->getCurrentMaxs().x << "," << door->getCurrentMaxs().y << "," << door->getCurrentMaxs().z << ")" << std::endl;
+                        
                         // Игрок использует дверь
                         bool activated = door->tryActivate(0.0f, true);
                         if (activated) {
                             std::cout << "[DOOR] Player USED " << door->getClassName()
                                 << " '" << door->getTargetName() << "'" << std::endl;
+                        } else {
+                            std::cout << "[DOOR] Activation failed for door '" << door->getTargetName() << "'" << std::endl;
                         }
                     }
                 }

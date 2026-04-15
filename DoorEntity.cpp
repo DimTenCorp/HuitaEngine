@@ -272,6 +272,13 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         currentPos = pos1;
         updatePosition(0.0f);
     }
+
+    // Финальная инициализация bounds для коллизий
+    updatePosition(moveProgress);
+    
+    std::cout << "[DOOR] Init complete: currentMins=(" 
+        << currentMins.x << "," << currentMins.y << "," << currentMins.z 
+        << ") currentMaxs=(" << currentMaxs.x << "," << currentMaxs.y << "," << currentMaxs.z << ")" << std::endl;
 }
 
 void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) {
@@ -316,22 +323,24 @@ bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
 
     AABB capsuleAABB = capsule.getBounds();
 
-    // Быстрая проверка AABB
+    // Быстрая проверка AABB - если нет пересечения, сразу возвращаем false
     if (capsuleAABB.max.x < doorAABB.min.x || capsuleAABB.min.x > doorAABB.max.x ||
         capsuleAABB.max.y < doorAABB.min.y || capsuleAABB.min.y > doorAABB.max.y ||
         capsuleAABB.max.z < doorAABB.min.z || capsuleAABB.min.z > doorAABB.max.z) {
         return false;
     }
 
-    // Точная проверка - расширяем AABB на радиус капсулы
+    // Точная проверка - расширяем AABB двери на радиус капсулы
     glm::vec3 capsuleCenter = capsule.getCenter();
 
-    return (capsuleCenter.x >= doorAABB.min.x - capsule.radius &&
+    bool intersects = (capsuleCenter.x >= doorAABB.min.x - capsule.radius &&
         capsuleCenter.x <= doorAABB.max.x + capsule.radius &&
         capsuleCenter.y >= doorAABB.min.y - capsule.radius &&
         capsuleCenter.y <= doorAABB.max.y + capsule.radius &&
         capsuleCenter.z >= doorAABB.min.z - capsule.radius &&
         capsuleCenter.z <= doorAABB.max.z + capsule.radius);
+
+    return intersects;
 }
 
 glm::mat4 DoorEntity::getRenderTransform() const {
