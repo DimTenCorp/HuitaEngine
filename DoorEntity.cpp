@@ -3,6 +3,20 @@
 #include "BSPLoader.h"
 #include <iostream>
 #include <algorithm>
+#include <cmath>
+
+// Half-Life 1 door spawnflags
+namespace DoorFlags {
+    constexpr unsigned int STARTS_OPEN = 1;
+    constexpr unsigned int DOOR_DONT_LINK = 2;
+    constexpr unsigned int PASSABLE = 4;
+    constexpr unsigned int TOGGLE = 32;
+    constexpr unsigned int USE_ONLY = 256;
+    constexpr unsigned int NO_MONSTERS = 512;
+    constexpr unsigned int TOUCH_OPENS = 1024;
+    constexpr unsigned int START_LOCKED = 2048;
+    constexpr unsigned int SILENT = 4096;
+}
 
 DoorEntity::DoorEntity()
     : type(DoorType::SLIDING)
@@ -39,9 +53,10 @@ DoorEntity::~DoorEntity() {
 void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     className = entity.classname;
     origin = entity.origin;
+    // HL angles: X=pitch, Y=yaw, Z=roll
     angles = entity.angles;
 
-    // Определяем тип
+    // Определяем тип двери
     if (className == "func_door_rotating") {
         type = DoorType::ROTATING;
     }
@@ -49,7 +64,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         type = DoorType::SLIDING;
     }
 
-    // Читаем свойства
+    // Читаем свойства из BSP
     auto it = entity.properties.find("targetname");
     if (it != entity.properties.end()) targetName = it->second;
 
@@ -109,80 +124,95 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         maxs = glm::vec3(16.0f);
     }
 
-    // === НАСТРОЙКА ДВИЖЕНИЯ ===
-
+    // === РАСЧЕТ НАПРАВЛЕНИЯ ДВИЖЕНИЯ (как в HL1) ===
+    
     pos1 = origin;
     currentPos = pos1;
 
     if (type == DoorType::SLIDING) {
         // Размеры двери
         glm::vec3 size = maxs - mins;
-
-        // Угол определяет направление движения
+        
+        // В HL1 углы: X=pitch, Y=yaw, Z=roll
+        // Для func_door используется Y (yaw) для определения направления
         float yaw = angles.y;
+        
+        // Нормализуем угол к диапазону [0, 360)
         while (yaw < 0) yaw += 360.0f;
         while (yaw >= 360.0f) yaw -= 360.0f;
 
-        // В HL дверь движется ВДОЛЬ своей длины (в стену)
-        // Направление перпендикулярно "лицевой" стороне
+        // HL1 логика определения направления по углу:
+        // -1 = вниз (отрицательный Z)
+        // 90 = вправо (положительный X)  
+        // 180 = вперед (отрицательный Y в HL, положительный Z у нас)
+        // 270 = влево (отрицательный X)
+        // По умолчанию (0 или нет угла) = вверх (положительный Y у нас)
 
-        if (yaw >= 315.0f || yaw < 45.0f) {
-            // Движение в +Z (вперёд)
-            moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
-            // Размер движения = глубина по Z минус lip
-            moveDistance = size.z - lip;
-        }
-        else if (yaw >= 45.0f && yaw < 135.0f) {
-            // Движение в -X (влево)
+        // Конвертация координат HL -> наши:
+        // HL: X=вправо, Y=вперед, Z=вверх
+        // Наши: X=влево, Y=вверх, Z=вперед
+        
+        if (yaw == 270.0f || (yaw > 265.0f && yaw < 275.0f)) {
+            // -90 градусов = движение влево (-X в наших координатах)
             moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
-            // Размер движения = ширина по X минус lip
             moveDistance = size.x - lip;
         }
-        else if (yaw >= 135.0f && yaw < 225.0f) {
-            // Движение в -Z (назад)
-            moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
-            moveDistance = size.z - lip;
-        }
-        else {
-            // Движение в +X (вправо)
+        else if (yaw == 90.0f || (yaw > 85.0f && yaw < 95.0f)) {
+            // 90 градусов = движение вправо (+X в наших координатах)
             moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
             moveDistance = size.x - lip;
         }
+        else if (yaw == 180.0f || (yaw > 175.0f && yaw < 185.0f)) {
+            // 180 градусов = движение назад/вперед по Z
+            moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
+            moveDistance = size.z - lip;
+        }
+        else if (yaw == 0.0f || yaw == 360.0f || (yaw < 5.0f || yaw > 355.0f)) {
+            // 0 градусов = движение вверх по Y (наша система)
+            moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            moveDistance = size.y - lip;
+        }
+        else {
+            // По умолчанию - вверх (Y+)
+            moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+            moveDistance = size.y - lip;
+        }
 
-        // Защита
+        // Защита от отрицательного расстояния
         if (moveDistance < 0.0f) moveDistance = 0.0f;
 
         pos2 = pos1 + moveDir * moveDistance;
 
-        std::cout << "[DOOR] Sliding '" << targetName << "': pos1=" << pos1.x << "," << pos1.y << "," << pos1.z
-            << " pos2=" << pos2.x << "," << pos2.y << "," << pos2.z
+        std::cout << "[DOOR] Sliding '" << targetName << "': origin=" << origin.x << "," << origin.y << "," << origin.z
+            << " angles=" << angles.x << "," << angles.y << "," << angles.z
             << " dir=" << moveDir.x << "," << moveDir.y << "," << moveDir.z
-            << " dist=" << moveDistance << " speed=" << speed << std::endl;
-
+            << " dist=" << moveDistance << " speed=" << speed << " lip=" << lip << std::endl;
     }
     else {
         // ROTATING DOOR
+        // Для вращающихся дверей angle определяет угол вращения
         it = entity.properties.find("distance");
         if (it != entity.properties.end()) {
             try { moveDistance = std::stof(it->second); }
             catch (...) { moveDistance = 90.0f; }
         }
         else {
-            moveDistance = 90.0f;
+            // Используем Z угол (roll) как угол вращения по умолчанию
+            moveDistance = angles.z;
+            if (moveDistance == 0) moveDistance = 90.0f;
         }
 
         std::cout << "[DOOR] Rotating '" << targetName << "': origin=" << origin.x << "," << origin.y << "," << origin.z
             << " angle=" << moveDistance << " speed=" << speed << std::endl;
     }
 
-    // STARTS_OPEN - меняем местами
+    // STARTS_OPEN - дверь начинается открытой
     if (hasFlag(DoorFlags::STARTS_OPEN)) {
         if (type == DoorType::SLIDING) {
             std::swap(pos1, pos2);
             moveDir = -moveDir;
         }
         state = DoorState::OPEN;
-        origin = pos1;
         currentPos = pos1;
         moveProgress = 1.0f;
 

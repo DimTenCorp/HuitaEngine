@@ -8,16 +8,15 @@ enum class DoorType { SLIDING, ROTATING };
 enum class DoorState { CLOSED, OPENING, OPEN, CLOSING };
 
 namespace DoorFlags {
-    constexpr unsigned int STARTS_OPEN = 1;
-    constexpr unsigned int UNUSED_2 = 2;
-    constexpr unsigned int NON_SOLID_PLAYER = 4;
-    constexpr unsigned int PASSABLE = 8;
-    constexpr unsigned int TOGGLE = 32;
-    constexpr unsigned int USE_ONLY = 256;
-    constexpr unsigned int NO_MONSTERS = 512;
-    constexpr unsigned int TOUCH_OPENS = 1024;
-    constexpr unsigned int START_LOCKED = 2048;
-    constexpr unsigned int SILENT = 4096;
+    constexpr unsigned int STARTS_OPEN = 1;         // Дверь начинается открытой
+    constexpr unsigned int DOOR_DONT_LINK = 2;      // Не связывать с другими дверями
+    constexpr unsigned int PASSABLE = 4;            // Проходимая (не твердая)
+    constexpr unsigned int TOGGLE = 32;             // Переключатель (открыть/закрыть)
+    constexpr unsigned int USE_ONLY = 256;          // Только использование (+USE)
+    constexpr unsigned int NO_MONSTERS = 512;       // Монстры не могут использовать
+    constexpr unsigned int TOUCH_OPENS = 1024;      // Открывается при касании
+    constexpr unsigned int START_LOCKED = 2048;     // Начинает заблокированной
+    constexpr unsigned int SILENT = 4096;           // Бесшумная дверь
 }
 
 class DoorEntity {
@@ -55,6 +54,13 @@ public:
 
     void setTouched(bool t) { touched = t; }
     bool wasTouched() const { return touched; }
+
+    // Получить скорость двери
+    float getSpeed() const { return speed; }
+    // Получить расстояние движения
+    float getMoveDistance() const { return moveDistance; }
+    // Получить направление движения
+    glm::vec3 getMoveDir() const { return moveDir; }
 
 private:
     DoorType type;

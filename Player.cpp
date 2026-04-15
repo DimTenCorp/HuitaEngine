@@ -9,6 +9,7 @@
 #include "TriangleCollider.h"
 #include "WaterEntity.h"
 #include "Engine.h"
+#include "DoorEntity.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -849,20 +850,44 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
         Capsule playerCapsule = getPlayerCapsule(position);
 
         for (auto* door : doors) {
+            // Проверяем пересечение с капсулой игрока
             if (door->intersectsCapsule(playerCapsule)) {
                 glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
                 float distance = glm::length(position - doorCenter);
 
-                bool activated = door->tryActivate(0.0f, false);
+                // Дверь открывается при касании игроком (если есть флаг TOUCH_OPENS)
+                // или если игрок использует дверь (+USE)
+                bool activated = door->tryActivate(distance, false);
 
                 if (!door->wasTouched()) {
                     std::cout << "[DOOR] Player touching " << door->getClassName()
                         << " at distance=" << distance
+                        << " state=" << (int)door->getState()
                         << (door->isTouchOpens() ? " [TOUCH_OPENS]" : "")
                         << (activated ? " -> ACTIVATED" : "")
                         << (door->isLocked() ? " [LOCKED]" : "")
                         << std::endl;
                     door->setTouched(true);
+                }
+                
+                // Если дверь открывается/закрывается, применяем её движение к игроку
+                // (игрок "прилипает" к двери как в HL1)
+                if (door->getState() == DoorState::OPENING || door->getState() == DoorState::CLOSING) {
+                    if (door->getType() == DoorType::SLIDING) {
+                        // Толкаем игрока вместе с дверью
+                        glm::vec3 doorMoveDir = door->getMoveDir();
+                        float doorSpeed = door->getSpeed();
+                        
+                        // Находим направление от двери к игроку
+                        glm::vec3 toPlayer = position - doorCenter;
+                        float dotProduct = glm::dot(glm::normalize(toPlayer), doorMoveDir);
+                        
+                        // Если игрок перед дверью в направлении движения - толкаем его
+                        if (std::abs(dotProduct) > 0.5f) {
+                            float pushForce = doorSpeed * deltaTime * 10.0f;
+                            velocity += doorMoveDir * pushForce * (door->getState() == DoorState::OPENING ? 1.0f : -1.0f);
+                        }
+                    }
                 }
             }
             else {
