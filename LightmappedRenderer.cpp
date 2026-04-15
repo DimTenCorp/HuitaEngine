@@ -361,6 +361,15 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             dc.isTransparent = false;
         }
 
+        // Копируем флаги дверей из BSP draw calls
+        for (const auto& bspDc : bsp.getDrawCalls()) {
+            if (bspDc.faceIndex == (int)faceIdx && bspDc.isDoor) {
+                dc.isDoor = true;
+                dc.doorIndex = bspDc.doorIndex;
+                break;
+            }
+        }
+
         faceDrawCalls.push_back(dc);
         processedFaces++;
     }

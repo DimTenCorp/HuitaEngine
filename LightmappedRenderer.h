@@ -29,6 +29,10 @@ struct LMFaceDrawCall {
     unsigned char renderamt = 255;
     bool isTransparent = false;
     bool isSky = false;
+    
+    // Для дверей
+    bool isDoor = false;
+    int doorIndex = -1;  // Индекс двери в массиве doors
 };
 
 class LightmappedRenderer {
