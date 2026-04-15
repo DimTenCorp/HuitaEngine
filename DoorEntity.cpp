@@ -297,9 +297,9 @@ void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) 
     worldMin -= glm::vec3(epsilon);
     worldMax += glm::vec3(epsilon);
 
-    // mins/maxs хранятся в ЛОКАЛЬНЫХ координатах относительно pos1 (origin двери)
-    // Вершины в BSP хранятся в мировых координатах, поэтому вычитаем origin двери
-    // чтобы получить локальные координаты относительно двери
+    // mins/maxs хранятся в ЛОКАЛЬНЫХ координатах относительно origin двери
+    // Вершины в BSP модели уже в мировых координатах, поэтому вычитаем origin
+    // чтобы получить локальное смещение относительно точки вращения/движения
     mins = worldMin - origin;
     maxs = worldMax - origin;
 
@@ -309,9 +309,9 @@ void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) 
     std::cout << "[DOOR] Local mins=(" << mins.x << "," << mins.y << "," << mins.z 
               << ") maxs=(" << maxs.x << "," << maxs.y << "," << maxs.z << ")" << std::endl;
 
-    // Инициализируем currentMins/maxs как локальные + текущая позиция (pos1)
-    currentMins = mins + pos1;
-    currentMaxs = maxs + pos1;
+    // Инициализируем currentMins/maxs как мировые координаты (для закрытой позиции)
+    currentMins = worldMin;
+    currentMaxs = worldMax;
 }
 
 bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
@@ -343,18 +343,12 @@ bool DoorEntity::intersectsCapsule(const Capsule& capsule) const {
 
 glm::mat4 DoorEntity::getRenderTransform() const {
     if (type == DoorType::SLIDING) {
-        // Для скользящих дверей: вершины хранятся в мировых координатах BSP
-        // Но мы вычли origin чтобы получить локальные координаты относительно двери
-        // Поэтому при рендеринге нужно добавить currentPos чтобы поместить дверь в правильное место
-        // pos1 = origin (мировая позиция закрытой двери)
-        // currentPos - текущая мировая позиция двери
-        // Смещение = currentPos - pos1 (смещение от начальной позиции)
+        // Для скользящих дверей: вершины в BSP хранятся в МИРОВЫХ координатах
+        // mins/maxs - это локальное смещение относительно origin (вычислено как worldBounds - origin)
+        // При рендеринге нужно применить только СМЕЩЕНИЕ от начальной позиции
+        // Текущее смещение = currentPos - pos1 (где pos1 = origin)
         glm::vec3 offset = currentPos - pos1;
         glm::mat4 transform = glm::translate(glm::mat4(1.0f), offset);
-        
-        std::cout << "[DOOR RENDER] currentPos=(" << currentPos.x << "," << currentPos.y << "," << currentPos.z 
-                  << ") pos1=(" << pos1.x << "," << pos1.y << "," << pos1.z 
-                  << ") offset=(" << offset.x << "," << offset.y << "," << offset.z << ")" << std::endl;
         
         return transform;
     }
@@ -373,7 +367,7 @@ glm::mat4 DoorEntity::getRenderTransform() const {
 
 void DoorEntity::updatePosition(float progress) {
     if (type == DoorType::SLIDING) {
-        // Интерполируем позицию origin
+        // Интерполируем мировую позицию origin
         currentPos = glm::mix(pos1, pos2, progress);
 
         // Обновляем bounds - смещаем локальные bounds на текущую позицию
@@ -388,6 +382,12 @@ void DoorEntity::updatePosition(float progress) {
         currentAngle = progress * moveDistance;
         updateRotatedBounds();
     }
+    
+    std::cout << "[DOOR UPDATE] progress=" << progress 
+              << " currentPos=(" << currentPos.x << "," << currentPos.y << "," << currentPos.z << ")"
+              << " currentMins=(" << currentMins.x << "," << currentMins.y << "," << currentMins.z << ")"
+              << " currentMaxs=(" << currentMaxs.x << "," << currentMaxs.y << "," << currentMaxs.z << ")"
+              << std::endl;
 }
 
 void DoorEntity::updateRotatedBounds() {
