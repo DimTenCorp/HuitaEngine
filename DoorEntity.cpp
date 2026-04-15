@@ -118,50 +118,86 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         // Размеры двери
         glm::vec3 size = maxs - mins;
 
-        // Угол определяет направление движения
-        float yaw = angles.y;
+        // HL использует angles для определения направления движения
+        // Pitch (X) - вверх/вниз, Yaw (Y) - горизонтальное направление, Roll (Z) - обычно 0
+        // В HL координатах: X=вперёд, Y=влево, Z=вверх
+        // В наших координатах: X=влево, Y=вверх, Z=вперёд
+        
+        float yaw = angles.y;   // Yaw определяет горизонтальное направление
+        float pitch = angles.x; // Pitch определяет вертикальное направление (вверх/вниз)
+        
+        // Нормализуем углы
         while (yaw < 0) yaw += 360.0f;
         while (yaw >= 360.0f) yaw -= 360.0f;
+        while (pitch < 0) pitch += 360.0f;
+        while (pitch >= 360.0f) pitch -= 360.0f;
 
-        // В HL дверь движется ВДОЛЬ своей длины (в стену)
-        // Направление перпендикулярно "лицевой" стороне
-
-        if (yaw >= 315.0f || yaw < 45.0f) {
-            // Движение в +Z (вперёд)
-            moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
-            // Размер движения = глубина по Z минус lip
-            moveDistance = size.z - lip;
-        }
-        else if (yaw >= 45.0f && yaw < 135.0f) {
-            // Движение в -X (влево)
-            moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
-            // Размер движения = ширина по X минус lip
-            moveDistance = size.x - lip;
-        }
-        else if (yaw >= 135.0f && yaw < 225.0f) {
-            // Движение в -Z (назад)
-            moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
-            moveDistance = size.z - lip;
+        // Если есть значительный pitch (> 45 градусов), дверь открывается вверх/вниз
+        bool verticalDoor = (pitch > 45.0f && pitch < 135.0f) || (pitch > 225.0f && pitch < 315.0f);
+        
+        if (verticalDoor) {
+            // Дверь открывается вверх или вниз
+            // Pitch 90 = вверх, Pitch 270 = вниз
+            if (pitch > 45.0f && pitch < 135.0f) {
+                // Открывается вверх (+Y в нашей системе)
+                moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+                moveDistance = size.y - lip;
+            }
+            else {
+                // Открывается вниз (-Y в нашей системе)
+                moveDir = glm::vec3(0.0f, -1.0f, 0.0f);
+                moveDistance = size.y - lip;
+            }
+            
+            std::cout << "[DOOR] Vertical sliding '" << targetName << "': pitch=" << pitch 
+                      << " dir=(" << moveDir.x << "," << moveDir.y << "," << moveDir.z << ")" << std::endl;
         }
         else {
-            // Движение в +X (вправо)
-            moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
-            moveDistance = size.x - lip;
+            // Горизонтальная дверь - направление определяется yaw
+            // В HL: 0° = вперёд (+X HL), 90° = влево (+Y HL), 180° = назад (-X HL), 270° = вправо (-Y HL)
+            // Конвертируем в нашу систему
+            
+            // Направление движения перпендикулярно лицевой стороне двери
+            // Дверь движется ВДОЛЬ своей длины (в стену)
+            
+            if (yaw >= 315.0f || yaw < 45.0f) {
+                // 0° - движение вдоль +Z (вперёд в нашей системе)
+                moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
+                moveDistance = size.z - lip;
+            }
+            else if (yaw >= 45.0f && yaw < 135.0f) {
+                // 90° - движение вдоль -X (влево в нашей системе)
+                moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);
+                moveDistance = size.x - lip;
+            }
+            else if (yaw >= 135.0f && yaw < 225.0f) {
+                // 180° - движение вдоль -Z (назад в нашей системе)
+                moveDir = glm::vec3(0.0f, 0.0f, -1.0f);
+                moveDistance = size.z - lip;
+            }
+            else {
+                // 270° - движение вдоль +X (вправо в нашей системе)
+                moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
+                moveDistance = size.x - lip;
+            }
+            
+            std::cout << "[DOOR] Horizontal sliding '" << targetName << "': yaw=" << yaw 
+                      << " dir=(" << moveDir.x << "," << moveDir.y << "," << moveDir.z << ")" << std::endl;
         }
 
-        // Защита
+        // Защита от отрицательной дистанции
         if (moveDistance < 0.0f) moveDistance = 0.0f;
 
         pos2 = pos1 + moveDir * moveDistance;
 
-        std::cout << "[DOOR] Sliding '" << targetName << "': pos1=" << pos1.x << "," << pos1.y << "," << pos1.z
-            << " pos2=" << pos2.x << "," << pos2.y << "," << pos2.z
-            << " dir=" << moveDir.x << "," << moveDir.y << "," << moveDir.z
+        std::cout << "[DOOR] Sliding '" << targetName << "': pos1=(" << pos1.x << "," << pos1.y << "," << pos1.z << ")"
+            << " pos2=(" << pos2.x << "," << pos2.y << "," << pos2.z << ")"
             << " dist=" << moveDistance << " speed=" << speed << std::endl;
 
     }
     else {
         // ROTATING DOOR
+        // Угол поворота берётся из property "distance" или по умолчанию 90°
         it = entity.properties.find("distance");
         if (it != entity.properties.end()) {
             try { moveDistance = std::stof(it->second); }
@@ -170,12 +206,15 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         else {
             moveDistance = 90.0f;
         }
-
-        std::cout << "[DOOR] Rotating '" << targetName << "': origin=" << origin.x << "," << origin.y << "," << origin.z
+        
+        // Направление вращения определяется знаком angles
+        // Отрицательные углы = вращение в противоположную сторону
+        
+        std::cout << "[DOOR] Rotating '" << targetName << "': origin=(" << origin.x << "," << origin.y << "," << origin.z << ")"
             << " angle=" << moveDistance << " speed=" << speed << std::endl;
     }
 
-    // STARTS_OPEN - меняем местами
+    // STARTS_OPEN - меняем местами pos1 и pos2
     if (hasFlag(DoorFlags::STARTS_OPEN)) {
         if (type == DoorType::SLIDING) {
             std::swap(pos1, pos2);
