@@ -9,16 +9,21 @@ enum class DoorType { SLIDING, ROTATING };
 enum class DoorState { CLOSED, OPENING, OPEN, CLOSING };
 
 namespace DoorFlags {
-    constexpr unsigned int STARTS_OPEN = 1;
-    constexpr unsigned int UNUSED_2 = 2;
-    constexpr unsigned int NON_SOLID_PLAYER = 4;
-    constexpr unsigned int PASSABLE = 8;
-    constexpr unsigned int TOGGLE = 32;
-    constexpr unsigned int USE_ONLY = 256;
-    constexpr unsigned int NO_MONSTERS = 512;
-    constexpr unsigned int TOUCH_OPENS = 1024;
-    constexpr unsigned int START_LOCKED = 2048;
-    constexpr unsigned int SILENT = 4096;
+    // Half-Life spawnflags для func_door:
+    constexpr unsigned int STARTS_OPEN = 1;           // SF_DOOR_START_OPEN - дверь начинает открытой
+    constexpr unsigned int ROTATE_Y = 0;              // SF_DOOR_ROTATE_Y (по умолчанию вращение вокруг Y)
+    constexpr unsigned int PASSABLE = 8;              // SF_DOOR_PASSABLE - проходимая (SOLID_NOT)
+    constexpr unsigned int ONEWAY = 16;               // SF_DOOR_ONEWAY - односторонняя
+    constexpr unsigned int TOGGLE = 32;               // SF_DOOR_NO_AUTO_RETURN - не закрывать автоматически
+    constexpr unsigned int ROTATE_Z = 64;             // SF_DOOR_ROTATE_Z - вращение вокруг Z
+    constexpr unsigned int ROTATE_X = 128;            // SF_DOOR_ROTATE_X - вращение вокруг X
+    constexpr unsigned int USE_ONLY = 256;            // SF_DOOR_USE_ONLY - только по использованию (E)
+    constexpr unsigned int NO_MONSTERS = 512;         // SF_DOOR_NOMONSTERS - монстры не могут открыть
+    constexpr unsigned int SILENT = 0x80000000;       // SF_DOOR_SILENT - без звука
+    
+    // Наши дополнительные флаги (не из HL):
+    constexpr unsigned int TOUCH_OPENS = 1024;        // Открывается при касании (как HL двери без targetname)
+    constexpr unsigned int START_LOCKED = 2048;       // Заблокирована (требует ключ/кнопку)
 }
 
 // OBB для точных коллизий вращающихся дверей

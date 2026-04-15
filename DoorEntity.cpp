@@ -164,77 +164,59 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     }
 
     if (type == DoorType::SLIDING) {
-        // Размеры двери
-        glm::vec3 size = maxs - mins;
-
-        // В оригинальном Half-Life/Sven Co-op направление движения определяется:
-        // 1. Если angles.y задан (не 0), используем его для определения направления
-        // 2. Иначе определяем автоматически по наибольшей грани двери
-        // Дверь движется перпендикулярно своей плоскости (вдоль нормали к поверхности)
-
+        // === SLIDING DOOR ===
+        // В Half-Life направление движения вычисляется от angles.y через SetMovedir()
+        // angles.y = 0 → movedir = (0, 0, 1) [+Z]
+        // angles.y = 90 → movedir = (-1, 0, 0) [-X]
+        // angles.y = 180 → movedir = (0, 0, -1) [-Z]
+        // angles.y = 270/-90 → movedir = (1, 0, 0) [+X]
+        
         float yaw = angles.y;
-        bool useAngle = (yaw != 0.0f);
-
-        if (useAngle) {
-            // Нормализуем угол [0, 360)
-            while (yaw < 0) yaw += 360.0f;
-            while (yaw >= 360.0f) yaw -= 360.0f;
-
-            // В Half-Life angles.y определяет направление движения:
-            // 0° = +Z (вперёд), 90° = -X (влево), 180° = -Z (назад), 270° = +X (вправо)
-            if (yaw >= 315.0f || yaw < 45.0f) {
-                moveDir = glm::vec3(0.0f, 0.0f, 1.0f);   // +Z
-                moveDistance = size.z - lip;
-            }
-            else if (yaw >= 45.0f && yaw < 135.0f) {
-                moveDir = glm::vec3(-1.0f, 0.0f, 0.0f);  // -X
-                moveDistance = size.x - lip;
-            }
-            else if (yaw >= 135.0f && yaw < 225.0f) {
-                moveDir = glm::vec3(0.0f, 0.0f, -1.0f);  // -Z
-                moveDistance = size.z - lip;
-            }
-            else {
-                moveDir = glm::vec3(1.0f, 0.0f, 0.0f);   // +X
-                moveDistance = size.x - lip;
-            }
+        glm::vec3 movedir;
+        
+        // Нормализуем угол к [0, 360)
+        while (yaw < 0) yaw += 360.0f;
+        while (yaw >= 360.0f) yaw -= 360.0f;
+        
+        // Преобразуем угол в направление (как в SetMovedir из HL SDK)
+        if (yaw >= 315.0f || yaw < 45.0f) {
+            movedir = glm::vec3(0.0f, 0.0f, 1.0f);   // +Z
+        } else if (yaw >= 45.0f && yaw < 135.0f) {
+            movedir = glm::vec3(-1.0f, 0.0f, 0.0f);  // -X
+        } else if (yaw >= 135.0f && yaw < 225.0f) {
+            movedir = glm::vec3(0.0f, 0.0f, -1.0f);  // -Z
+        } else {
+            movedir = glm::vec3(1.0f, 0.0f, 0.0f);   // +X
         }
-        else {
-            // Автоматическое определение по оригинальному SDK:
-            // Дверь движется вдоль оси с НАИМЕНЬШИМ размером (перпендикулярно наибольшей поверхности)
-            // Это соответствует тому, что дверь - это плоская панель, и она движется в направлении своей толщины
-
-            // Находим наименьшую ось (это направление движения)
-            if (size.x <= size.y && size.x <= size.z) {
-                // Наименьшая ось X - движемся вдоль X
-                moveDir = glm::vec3(1.0f, 0.0f, 0.0f);
-                moveDistance = size.x - lip;
-            }
-            else if (size.y <= size.x && size.y <= size.z) {
-                // Наименьшая ось Y - движемся вдоль Y
-                moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
-                moveDistance = size.y - lip;
-            }
-            else {
-                // Наименьшая ось Z - движемся вдоль Z
-                moveDir = glm::vec3(0.0f, 0.0f, 1.0f);
-                moveDistance = size.z - lip;
-            }
-        }
-
+        
+        moveDir = movedir;
+        
+        // Размеры двери (в мировых координатах, т.к. mins/maxs уже локальные относительно origin)
+        glm::vec3 size = maxs - mins;
+        
+        // Вычисляем расстояние движения по формуле Half-Life:
+        // distance = |movedir.x| * (size.x - lip) + |movedir.y| * (size.y - lip) + |movedir.z| * (size.z - lip)
+        // Поскольку movedir - единичный вектор вдоль одной оси, это просто размер по этой оси минус lip
+        moveDistance = fabs(movedir.x) * (size.x - lip) + 
+                       fabs(movedir.y) * (size.y - lip) + 
+                       fabs(movedir.z) * (size.z - lip);
+        
         // Защита от отрицательного расстояния
         if (moveDistance < 0.0f) moveDistance = 0.0f;
-
-        pos2 = pos1 + moveDir * moveDistance;
-
-        std::cout << "[DOOR] Sliding '" << targetName << "': pos1=" << pos1.x << "," << pos1.y << "," << pos1.z
-            << " pos2=" << pos2.x << "," << pos2.y << "," << pos2.z
-            << " dir=" << moveDir.x << "," << moveDir.y << "," << moveDir.z
+        
+        // pos1 - закрытая позиция (origin двери)
+        // pos2 - открытая позиция (origin + movedir * distance)
+        pos1 = origin;
+        pos2 = origin + movedir * moveDistance;
+        
+        std::cout << "[DOOR] Sliding '" << targetName << "': origin=" << origin.x << "," << origin.y << "," << origin.z
+            << " movedir=" << moveDir.x << "," << moveDir.y << "," << moveDir.z
+            << " size=" << size.x << "," << size.y << "," << size.z
             << " dist=" << moveDistance << " speed=" << speed << std::endl;
 
     }
     else {
-        // ROTATING DOOR
+        // === ROTATING DOOR ===
         it = entity.properties.find("distance");
         if (it != entity.properties.end()) {
             try { moveDistance = std::stof(it->second); }
@@ -473,6 +455,7 @@ void DoorEntity::updateOBB() {
 
 bool DoorEntity::tryActivate(bool isPlayerUse) {
     if (locked) {
+        // Дверь заблокирована - играем звук замка (если есть)
         if (!touchLogged) {
             std::cout << "[DOOR] '" << targetName << "' is LOCKED!" << std::endl;
             touchLogged = true;
@@ -483,15 +466,19 @@ bool DoorEntity::tryActivate(bool isPlayerUse) {
     // Проверяем флаги активации
     bool useOnly = isUseOnly();
     bool touchOpens = isTouchOpens();
-    bool toggle = hasFlag(DoorFlags::TOGGLE);
+    bool toggle = hasFlag(DoorFlags::TOGGLE);  // SF_DOOR_NO_AUTO_RETURN
 
-    // Логика активации:
-    // 1. USE_ONLY - открывается ТОЛЬКО при явном использовании (клавиша E)
-    // 2. TOUCH_OPENS - открывается при касании игроком
-    // 3. Обычная дверь - открывается и от касания, и от использования
+    // Логика активации по аналогии с Half-Life:
+    // 1. Если есть targetname - дверь открывается ТОЛЬКО триггером/кнопкой (USE_ONLY)
+    // 2. USE_ONLY (SF_DOOR_USE_ONLY) - открывается только по использованию игроком (клавиша E)
+    // 3. TOUCH_OPENS (наш флаг) - открывается при касании игроком
+    // 4. Обычная дверь (без targetname, без USE_ONLY) - открывается и от касания, и от использования
+    
+    // В HL: если есть targetname, SetTouch(NULL) и дверь не реагирует на касания
+    // Если нет targetname, SetTouch(&CBaseDoor::DoorTouch) и открывается при касании
     
     if (useOnly) {
-        // Дверь требует явного использования (клавиша E)
+        // Дверь требует явного использования (клавиша E или триггер)
         if (!isPlayerUse) {
             return false;  // Игнорируем касания
         }
@@ -501,18 +488,18 @@ bool DoorEntity::tryActivate(bool isPlayerUse) {
         // isPlayerUse не важен для TOUCH_OPENS
     }
     else {
-        // Обычная дверь - работает и от касания, и от использования
+        // Обычная дверь без targetname - работает как HL: открывается при касании
         // Разрешаем активацию в любом случае
     }
 
-    // Обработка состояний
+    // Обработка состояний (аналогично DoorActivate() в HL)
     if (state == DoorState::CLOSED || state == DoorState::CLOSING) {
         // Открываем дверь
         open();
         return true;
     }
     else if (state == DoorState::OPEN) {
-        // Если есть флаг TOGGLE - закрываем ТОЛЬКО при явном использовании игроком
+        // Если есть флаг TOGGLE (NO_AUTO_RETURN) - закрываем ТОЛЬКО при явном использовании
         if (toggle && isPlayerUse) {
             close();
             return true;
@@ -541,16 +528,17 @@ bool DoorEntity::checkBlocked(const Capsule& playerCapsule, float deltaTime) {
 
     if (intersectsCapsule(playerCapsule)) {
         // Дверь заблокирована игроком - наносит урон
-        // В оригинальном Half-Life дверь наносит урон каждый кадр пока блокируется
+        // В Half-Life: если игрок блокирует дверь, она наносит урон каждый кадр
+        // и меняет направление движения (если wait >= 0)
         return true;
     }
 
     return false;
 }
 
-// Нанесение урона игроку при блокировке двери
+// Нанесение урона игроку при блокировке двери (аналог Blocked() в HL)
 void DoorEntity::applyDamageToPlayer(Player* player, float deltaTime) {
-    if (dmg <= 0.0f || health <= 0 || !player) return;
+    if (dmg <= 0.0f || !player) return;
 
     // Проверяем только когда дверь движется
     if (state != DoorState::OPENING && state != DoorState::CLOSING) {
@@ -561,16 +549,20 @@ void DoorEntity::applyDamageToPlayer(Player* player, float deltaTime) {
     Capsule playerCapsule = player->getPlayerCapsule(player->getPosition());
 
     if (intersectsCapsule(playerCapsule)) {
+        // Игрок блокирует дверь - наносим урон
+        // В HL урон наносится каждый кадр: pOther->TakeDamage(pev, pev, pev->dmg, DMG_CRUSH)
+        
         // Накопление урона пропорционально времени блокировки
         damageAccumulator += dmg * deltaTime;
 
-        // В Half-Life урон наносится discretely - здесь применяем порогово
-        if (damageAccumulator >= 10.0f) {  // Каждые 10 единиц накопленного урона
-            // Наносим урон игроку через Engine
-            Player* p = player;
-            p->TakeDamage(damageAccumulator);
-            std::cout << "[DOOR] Dealing " << damageAccumulator << " damage to player!" << std::endl;
+        // Применяем урон порогово (каждые 10 единиц накопленного урона)
+        if (damageAccumulator >= 10.0f) {
+            player->TakeDamage(damageAccumulator);
+            std::cout << "[DOOR] Dealing " << damageAccumulator << " damage to player (blocked)!" << std::endl;
             damageAccumulator = 0.0f;
+            
+            // Если wait >= 0, меняем направление двери (как в HL Blocked())
+            // Это реализовано в update() через проверку blocked
         }
     }
     else {
@@ -722,12 +714,12 @@ void DoorEntity::update(float deltaTime) {
             }
         }
         else if (wait == 0) {
-            // Закрываем сразу (wait = 0)
+            // Закрываем сразу (wait = 0) - как в HL
             close();
         }
-        // wait < 0 - никогда не закрываться
+        // wait < 0 или TOGGLE flag - никогда не закрываться автоматически
     }
-
+    
     // Сбрасываем touchLogged для каждой двери индивидуально
     if (touchLogged) {
         touchLogged = false;
