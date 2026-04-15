@@ -409,6 +409,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
     std::cout << "[ENGINE] Loaded " << doors.size() << " doors" << std::endl;
     lastDoorTransforms.assign(doors.size(), glm::mat4(0.0f));
+    perDoorTriangles.assign(doors.size(), {});
     cachedDoorTriangles.clear();
     doorColliderDirty = true;
 
@@ -768,8 +769,11 @@ void Engine::shutdown() {
 void Engine::updateDoors(float deltaTime) {
     if (lastDoorTransforms.size() != doors.size()) {
         lastDoorTransforms.assign(doors.size(), glm::mat4(0.0f));
+        perDoorTriangles.assign(doors.size(), {});
         doorColliderDirty = true;
     }
+
+    bool anyDoorTrianglesChanged = false;
 
     for (size_t i = 0; i < doors.size(); ++i) {
         auto& door = doors[i];
@@ -779,6 +783,30 @@ void Engine::updateDoors(float deltaTime) {
         if (!mat4AlmostEqual(currentTransform, lastDoorTransforms[i])) {
             lastDoorTransforms[i] = currentTransform;
             doorColliderDirty = true;
+
+            auto& doorTriangles = perDoorTriangles[i];
+            doorTriangles.clear();
+
+            if (!door->passable && door->indices.size() >= 3) {
+                const auto& verts = door->vertices;
+                const auto& idxs = door->indices;
+                doorTriangles.reserve(idxs.size() / 3);
+
+                for (size_t triIdx = 0; triIdx + 2 < idxs.size(); triIdx += 3) {
+                    Triangle tri;
+                    for (int j = 0; j < 3; j++) {
+                        glm::vec4 v = currentTransform * glm::vec4(verts[idxs[triIdx + j]].position, 1.0f);
+                        tri.vertices[j] = glm::vec3(v);
+                    }
+                    tri.normal = glm::normalize(glm::cross(
+                        tri.vertices[1] - tri.vertices[0],
+                        tri.vertices[2] - tri.vertices[0]
+                    ));
+                    doorTriangles.push_back(tri);
+                }
+            }
+
+            anyDoorTrianglesChanged = true;
         }
     }
 
@@ -786,26 +814,24 @@ void Engine::updateDoors(float deltaTime) {
         return;
     }
 
+    if (doors.empty()) {
+        cachedDoorTriangles.clear();
+        meshCollider->updateDynamicTriangles(cachedDoorTriangles);
+        doorColliderDirty = false;
+        return;
+    }
+
+    if (!anyDoorTrianglesChanged) {
+        return;
+    }
+
+    size_t totalTriangles = 0;
+    for (const auto& tris : perDoorTriangles) totalTriangles += tris.size();
+
     cachedDoorTriangles.clear();
-    for (const auto& door : doors) {
-        if (door->passable || door->indices.size() < 3) continue;
-
-        const glm::mat4 transform = door->getTransform();
-        const auto& verts = door->vertices;
-        const auto& idxs = door->indices;
-
-        for (size_t i = 0; i + 2 < idxs.size(); i += 3) {
-            Triangle tri;
-            for (int j = 0; j < 3; j++) {
-                glm::vec4 v = transform * glm::vec4(verts[idxs[i + j]].position, 1.0f);
-                tri.vertices[j] = glm::vec3(v);
-            }
-            tri.normal = glm::normalize(glm::cross(
-                tri.vertices[1] - tri.vertices[0],
-                tri.vertices[2] - tri.vertices[0]
-            ));
-            cachedDoorTriangles.push_back(tri);
-        }
+    cachedDoorTriangles.reserve(totalTriangles);
+    for (const auto& tris : perDoorTriangles) {
+        cachedDoorTriangles.insert(cachedDoorTriangles.end(), tris.begin(), tris.end());
     }
 
     meshCollider->updateDynamicTriangles(cachedDoorTriangles);
@@ -851,4 +877,8 @@ void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
 
 void Engine::cleanupDoors() {
     doors.clear();
+    lastDoorTransforms.clear();
+    perDoorTriangles.clear();
+    cachedDoorTriangles.clear();
+    doorColliderDirty = true;
 }
