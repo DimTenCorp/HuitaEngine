@@ -261,9 +261,15 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         updatePosition(1.0f);
 
         // Устанавливаем время закрытия если wait > 0
+        // Дверь начнёт закрываться через wait секунд после загрузки карты
         if (wait > 0) {
-            timeSinceOpen = wait;  // Начинаем с wait, чтобы закрыть через wait секунд после начала игры
+            timeSinceOpen = 0.0f;  // Начинаем отсчёт с 0, закроется когда timeSinceOpen >= wait
         }
+        else if (wait == 0) {
+            // Закрываем сразу в следующем кадре update()
+            timeSinceOpen = 0.0f;
+        }
+        // wait < 0 - никогда не закрывается автоматически
     }
     else {
         state = DoorState::CLOSED;
@@ -457,14 +463,24 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
     bool touchOpens = isTouchOpens();
     bool toggle = hasFlag(DoorFlags::TOGGLE);
 
-    // Если дверь требует использования (USE_ONLY), игнорируем касания
-    if (useOnly && !isPlayerUse) {
-        return false;
+    // Логика активации:
+    // 1. USE_ONLY - открывается ТОЛЬКО при явном использовании (клавиша E)
+    // 2. TOUCH_OPENS - открывается при касании игроком
+    // 3. Обычная дверь - открывается и от касания, и от использования
+    
+    if (useOnly) {
+        // Дверь требует явного использования (клавиша E)
+        if (!isPlayerUse) {
+            return false;  // Игнорируем касания
+        }
     }
-
-    // Если дверь не открывается по касанию и это не использование игроком
-    if (!touchOpens && !isPlayerUse) {
-        return false;
+    else if (touchOpens) {
+        // Дверь открывается по касанию - разрешаем всегда при пересечении
+        // isPlayerUse не важен для TOUCH_OPENS
+    }
+    else {
+        // Обычная дверь - работает и от касания, и от использования
+        // Разрешаем активацию в любом случае
     }
 
     // Обработка состояний
@@ -479,10 +495,10 @@ bool DoorEntity::tryActivate(float touchDistance, bool isPlayerUse) {
             close();
             return true;
         }
-        // Иначе ждём автозакрытия
+        // Иначе ждём автозакрытия (обрабатывается в update())
     }
     else if (state == DoorState::OPENING) {
-        // Если дверь уже открывается и есть TOGGLE - останавливаем
+        // Если дверь уже открывается и есть TOGGLE - останавливаем при явном использовании
         if (toggle && isPlayerUse) {
             stop();
             return true;

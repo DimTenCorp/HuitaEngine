@@ -880,14 +880,26 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
                 glm::vec3 doorCenter = (door->getBounds().min + door->getBounds().max) * 0.5f;
                 float distance = glm::length(position - doorCenter);
 
-                // Для TOUCH_OPENS дверей передаём true, для USE_ONLY - false (требуют явного использования)
-                bool isTouchActivate = door->isTouchOpens() && !door->isUseOnly();
-                bool activated = door->tryActivate(distance, isTouchActivate);
+                // Логика активации:
+                // 1. USE_ONLY - требует явного использования (клавиша E), не активируется от касания
+                // 2. TOUCH_OPENS - активируется при касании
+                // 3. Обычная дверь (без флагов) - активируется и от касания, и от использования
+                
+                bool isUseOnly = door->isUseOnly();
+                bool isTouchOpens = door->isTouchOpens();
+                
+                // Определяем тип активации для tryActivate
+                // Для TOUCH_OPENS и обычных дверей передаём true (разрешаем активацию от касания)
+                // Для USE_ONLY передаём false (требует явного использования)
+                bool allowTouchActivate = !isUseOnly;
+                
+                bool activated = door->tryActivate(distance, allowTouchActivate);
 
                 if (!door->wasTouched()) {
                     std::cout << "[DOOR] Player touching " << door->getClassName()
                         << " at distance=" << distance
-                        << (door->isTouchOpens() ? " [TOUCH_OPENS]" : "")
+                        << (isTouchOpens ? " [TOUCH_OPENS]" : "")
+                        << (isUseOnly ? " [USE_ONLY]" : "")
                         << (activated ? " -> ACTIVATED" : "")
                         << (door->isLocked() ? " [LOCKED]" : "")
                         << std::endl;
