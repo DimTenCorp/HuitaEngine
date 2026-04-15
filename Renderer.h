@@ -84,6 +84,9 @@ public:
 
     void setTransparentSorting(bool enable) { sortTransparentFaces = enable; }
     void setAlphaTestRef(float ref) { alphaTestRef = ref; }
+    
+    // Метод для передачи дверей в рендерер
+    void setDoorTransforms(const std::vector<class DoorEntity*>& doorList);
 
 private:
     BspMesh worldMesh;
@@ -92,6 +95,9 @@ private:
     std::vector<FaceDrawCall> opaqueDrawCalls;
     std::vector<FaceDrawCall> transparentDrawCalls;
     bool worldLoaded = false;
+    
+    // Трансформации дверей для рендеринга
+    std::vector<glm::mat4> doorTransforms;
 
     BspMesh hitboxMesh;
     bool showHitbox = false;

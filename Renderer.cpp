@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "Renderer.h"
+#include "DoorEntity.h"
 #include <iostream>
 #include <algorithm>
 #include <cstring>
@@ -716,4 +717,16 @@ void Renderer::cleanup() {
 
     if (quadVAO) { glDeleteVertexArrays(1, &quadVAO); quadVAO = 0; }
     if (quadVBO) { glDeleteBuffers(1, &quadVBO); quadVBO = 0; }
+}
+void Renderer::setDoorTransforms(const std::vector<DoorEntity*>& doorList) {
+    doorTransforms.clear();
+    doorTransforms.reserve(doorList.size());
+    
+    for (const auto* door : doorList) {
+        if (door) {
+            doorTransforms.push_back(door->getRenderTransform());
+        } else {
+            doorTransforms.push_back(glm::mat4(1.0f));
+        }
+    }
 }

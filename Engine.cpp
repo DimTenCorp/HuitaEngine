@@ -483,15 +483,8 @@ void Engine::doLoadMap(const std::string& mapPath) {
         std::cout << "[COLLIDER] " << meshCollider->getTriangleCount() << " triangles (water excluded)\n";
     }
 
-    if (renderer) {
-        if (!renderer->init(width, height)) {
-            std::cerr << "[ENGINE] Failed to init renderer\n";
-        }
-        renderer->loadWorld(*bspLoader);
-    }
-
-    // === ЗАГРУЗКА ДВЕРЕЙ ДО lightmapped renderer ===
-    // Сначала загружаем двери и помечаем draw calls
+    // === ЗАГРУЗКА ДВЕРЕЙ ПЕРЕД загрузкой мира в renderer ===
+    // Сначала загружаем двери чтобы знать какие draw calls принадлежат дверям
     for (auto* door : doors) {
         delete door;
     }
@@ -507,6 +500,15 @@ void Engine::doLoadMap(const std::string& mapPath) {
         DoorEntity* door = new DoorEntity();
         door->initFromEntity(entity, *bspLoader);
         doors.push_back(door);
+    }
+
+    if (renderer) {
+        if (!renderer->init(width, height)) {
+            std::cerr << "[ENGINE] Failed to init renderer\n";
+        }
+        renderer->loadWorld(*bspLoader);
+        // Передаём трансформации дверей в рендерер
+        renderer->setDoorTransforms(doors);
     }
     std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
 
