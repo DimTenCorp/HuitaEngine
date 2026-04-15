@@ -101,4 +101,5 @@ private:
     void close();
     void stop();
     void updatePosition(float progress);
+    void setupSlidingMovement(const struct BSPEntity& entity);
 };

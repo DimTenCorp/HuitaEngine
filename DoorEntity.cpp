@@ -6,27 +6,32 @@
 #include <cmath>
 
 namespace {
-glm::vec3 convertHLToEngineDir(const glm::vec3& hlDir) {
+glm::vec3 convertHLToEngine(const glm::vec3& hlVec) {
     // HL: X=right, Y=forward, Z=up
     // Engine: X=left, Y=up, Z=forward
-    return glm::normalize(glm::vec3(-hlDir.x, hlDir.z, hlDir.y));
+    return glm::vec3(-hlVec.x, hlVec.z, hlVec.y);
 }
 
-glm::vec3 buildHLMoveDir(float pitchDeg, float yawDeg) {
+glm::vec3 angleToHLForward(float pitchDeg, float yawDeg) {
     const float pitch = glm::radians(pitchDeg);
     const float yaw = glm::radians(yawDeg);
 
-    // AngleVectors forward (HL/Quake style).
-    // Positive pitch looks down, so Z has negative sign.
-    glm::vec3 dirHL;
-    dirHL.x = std::cos(pitch) * std::cos(yaw);
-    dirHL.y = std::cos(pitch) * std::sin(yaw);
-    dirHL.z = -std::sin(pitch);
+    glm::vec3 fwd;
+    fwd.x = std::cos(pitch) * std::cos(yaw);
+    fwd.y = std::cos(pitch) * std::sin(yaw);
+    fwd.z = -std::sin(pitch);
+    return glm::normalize(fwd);
+}
 
-    if (glm::dot(dirHL, dirHL) < 0.000001f) {
-        return glm::vec3(0.0f, 1.0f, 0.0f);
+glm::vec3 axisSnap(const glm::vec3& dir) {
+    glm::vec3 a = glm::abs(dir);
+    if (a.x >= a.y && a.x >= a.z) {
+        return glm::vec3(dir.x >= 0.0f ? 1.0f : -1.0f, 0.0f, 0.0f);
     }
-    return convertHLToEngineDir(glm::normalize(dirHL));
+    if (a.y >= a.x && a.y >= a.z) {
+        return glm::vec3(0.0f, dir.y >= 0.0f ? 1.0f : -1.0f, 0.0f);
+    }
+    return glm::vec3(0.0f, 0.0f, dir.z >= 0.0f ? 1.0f : -1.0f);
 }
 }
 
@@ -144,48 +149,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     currentPos = pos1;
 
     if (type == DoorType::SLIDING) {
-        glm::vec3 size = maxs - mins;
-
-        // В BSP приоритетно используем ключ "angles" (Pitch Yaw Roll).
-        // Для совместимости с HL/Quake также поддерживаем key "angle":
-        // -1 = вверх, -2 = вниз.
-        float hlPitch = angles.x;
-        float hlYaw = angles.y;
-
-        it = entity.properties.find("angle");
-        if (it != entity.properties.end()) {
-            try {
-                float specialAngle = std::stof(it->second);
-                if (specialAngle == -1.0f) {
-                    moveDir = glm::vec3(0.0f, 1.0f, 0.0f); // up в системе движка
-                }
-                else if (specialAngle == -2.0f) {
-                    moveDir = glm::vec3(0.0f, -1.0f, 0.0f); // down в системе движка
-                }
-                else {
-                    hlPitch = 0.0f;
-                    hlYaw = specialAngle;
-                    moveDir = buildHLMoveDir(hlPitch, hlYaw);
-                }
-            }
-            catch (...) {
-                moveDir = buildHLMoveDir(hlPitch, hlYaw);
-            }
-        }
-        else {
-            moveDir = buildHLMoveDir(hlPitch, hlYaw);
-        }
-
-        // Как в HL: расстояние = проекция размера двери на moveDir - lip.
-        moveDistance =
-            std::abs(moveDir.x) * size.x +
-            std::abs(moveDir.y) * size.y +
-            std::abs(moveDir.z) * size.z - lip;
-
-        // Защита от отрицательного расстояния
-        if (moveDistance < 0.0f) moveDistance = 0.0f;
-
-        pos2 = pos1 + moveDir * moveDistance;
+        setupSlidingMovement(entity);
 
         std::cout << "[DOOR] Sliding '" << targetName << "': origin=" << origin.x << "," << origin.y << "," << origin.z
             << " angles=" << angles.x << "," << angles.y << "," << angles.z
@@ -232,6 +196,51 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         currentAngle = 0.0f;
         updatePosition(0.0f);
     }
+}
+
+void DoorEntity::setupSlidingMovement(const BSPEntity& entity) {
+    glm::vec3 size = maxs - mins;
+    moveDir = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    float pitch = angles.x;
+    float yaw = angles.y;
+
+    auto angleIt = entity.properties.find("angle");
+    if (angleIt != entity.properties.end()) {
+        try {
+            float singleAngle = std::stof(angleIt->second);
+            if (singleAngle == -1.0f) {
+                moveDir = glm::vec3(0.0f, 1.0f, 0.0f);   // up
+            }
+            else if (singleAngle == -2.0f) {
+                moveDir = glm::vec3(0.0f, -1.0f, 0.0f);  // down
+            }
+            else {
+                pitch = 0.0f;
+                yaw = singleAngle;
+                moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+            }
+        }
+        catch (...) {
+            moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+        }
+    }
+    else {
+        // angles: "Pitch Yaw Roll (Y Z X)" из Half-Life editor pipeline
+        // для направления двери используем pitch/yaw.
+        moveDir = axisSnap(glm::normalize(convertHLToEngine(angleToHLForward(pitch, yaw))));
+    }
+
+    moveDistance =
+        std::abs(moveDir.x) * size.x +
+        std::abs(moveDir.y) * size.y +
+        std::abs(moveDir.z) * size.z - lip;
+
+    if (moveDistance < 0.0f) {
+        moveDistance = 0.0f;
+    }
+
+    pos2 = pos1 + moveDir * moveDistance;
 }
 
 void DoorEntity::calculateBoundsFromModel(int modelIndex, const BSPLoader& bsp) {
