@@ -26,7 +26,7 @@ struct DoorEntity {
     int modelIndex = -1;
     std::string targetname;
     std::string classname;
-    std::unordered_map<std::string, std::string> entityProperties; // Сохраняем все свойства
+    std::unordered_map<std::string, std::string> entityProperties;
 
     glm::vec3 origin;
     glm::vec3 startOrigin;
@@ -64,6 +64,12 @@ struct DoorEntity {
     std::vector<unsigned int> indices;
     GLuint textureID = 0;
 
+    // === НОВОЕ: OpenGL буферы для рендеринга ===
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ebo = 0;
+    bool buffersDirty = true;  // Нужно ли обновить буферы
+
     int moveSound = 0;
     int stopSound = 0;
     int lockedSound = 0;
@@ -79,6 +85,11 @@ struct DoorEntity {
     AABB getCurrentBounds() const;
 
     glm::mat4 getTransform() const;
+
+    // === НОВОЕ: Управление буферами ===
+    void buildBuffers();  // Создать VAO/VBO/EBO
+    void updateBuffers(); // Обновить данные в буферах если dirty
+    void cleanupBuffers(); // Удалить буферы
 
 private:
     void calculateEndPosition(const BSPLoader& bsp);

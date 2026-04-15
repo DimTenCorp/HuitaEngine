@@ -630,6 +630,16 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
     const glm::mat4& view, const glm::mat4& projection) {
     if (doors.empty() || !lightmappedShader) return;
 
+    // Проверяем, есть ли хоть одна дверь с геометрией
+    bool hasAnyGeometry = false;
+    for (const auto& door : doors) {
+        if (door->vao != 0 && !door->indices.empty()) {
+            hasAnyGeometry = true;
+            break;
+        }
+    }
+    if (!hasAnyGeometry) return;
+
     lightmappedShader->bind();
     lightmappedShader->setMat4("view", view);
     lightmappedShader->setMat4("projection", projection);
@@ -639,7 +649,7 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
     lightmappedShader->setFloat("uAlpha", 1.0f);
     lightmappedShader->setVec3("ambientColor", glm::vec3(0.05f));
 
-    // Активируем атлас лайтмапов (двери используют fallback)
+    // Активируем атлас лайтмапов (fallback для дверей)
     glActiveTexture(GL_TEXTURE1);
     if (lmManager) {
         lmManager->getAtlas().bind(GL_TEXTURE1);
@@ -648,50 +658,23 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // Временные буферы для всех дверей (переиспользуем)
-    GLuint tempVAO = 0, tempVBO = 0, tempEBO = 0;
-    glGenVertexArrays(1, &tempVAO);
-    glGenBuffers(1, &tempVBO);
-    glGenBuffers(1, &tempEBO);
+    GLuint currentTex = 0;
 
     for (const auto& door : doors) {
-        if (door->vertices.empty()) continue;
+        if (door->vao == 0 || door->indices.empty()) continue;
 
         // Устанавливаем трансформацию
         lightmappedShader->setMat4("model", door->getTransform());
 
-        // Загружаем геометрию
-        glBindVertexArray(tempVAO);
-
-        glBindBuffer(GL_ARRAY_BUFFER, tempVBO);
-        glBufferData(GL_ARRAY_BUFFER,
-            door->vertices.size() * sizeof(BSPVertex),
-            door->vertices.data(), GL_STREAM_DRAW);
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempEBO);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-            door->indices.size() * sizeof(unsigned int),
-            door->indices.data(), GL_STREAM_DRAW);
-
-        // Настраиваем атрибуты (layout должен совпадать с шейдером)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, normal));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, texCoord));
-        glEnableVertexAttribArray(2);
-        // Lightmap coord - используем texCoord как fallback
-        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-            (void*)offsetof(BSPVertex, texCoord));
-        glEnableVertexAttribArray(3);
-
         // Текстура двери
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, door->textureID);
+        if (door->textureID != currentTex) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, door->textureID);
+            currentTex = door->textureID;
+        }
 
-        // Рисуем
+        // Рисуем готовый VAO
+        glBindVertexArray(door->vao);
         glDrawElements(GL_TRIANGLES, door->indices.size(), GL_UNSIGNED_INT, 0);
 
         stats.drawCalls++;
@@ -699,10 +682,6 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
     }
 
     glBindVertexArray(0);
-    glDeleteVertexArrays(1, &tempVAO);
-    glDeleteBuffers(1, &tempVBO);
-    glDeleteBuffers(1, &tempEBO);
-
     lightmappedShader->unbind();
 }
 
