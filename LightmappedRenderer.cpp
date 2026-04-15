@@ -221,9 +221,14 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
 
     const auto& bspDrawCalls = bsp.getDrawCalls();
     std::unordered_map<int, std::pair<int, int>> faceTransparency;
+    std::unordered_map<int, std::pair<bool, int>> faceDoorInfo;  // isDoor, doorIndex
     for (const auto& dc : bspDrawCalls) {
         if (dc.isTransparent) {
             faceTransparency[dc.faceIndex] = { dc.rendermode, dc.renderamt };
+        }
+        // Копируем информацию о дверях
+        if (dc.isDoor) {
+            faceDoorInfo[dc.faceIndex] = { dc.isDoor, dc.doorIndex };
         }
     }
 
@@ -362,13 +367,11 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
             dc.isTransparent = false;
         }
 
-        // Копируем флаги дверей из BSP draw calls
-        for (const auto& bspDc : bsp.getDrawCalls()) {
-            if (bspDc.faceIndex == (int)faceIdx && bspDc.isDoor) {
-                dc.isDoor = true;
-                dc.doorIndex = bspDc.doorIndex;
-                break;
-            }
+        // Копируем флаги дверей из BSP draw calls через faceDoorInfo
+        auto doorIt = faceDoorInfo.find((int)faceIdx);
+        if (doorIt != faceDoorInfo.end()) {
+            dc.isDoor = doorIt->second.first;
+            dc.doorIndex = doorIt->second.second;
         }
 
         faceDrawCalls.push_back(dc);

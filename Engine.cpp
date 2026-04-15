@@ -467,6 +467,65 @@ void Engine::doLoadMap(const std::string& mapPath) {
         renderer->loadWorld(*bspLoader);
     }
 
+    // === ЗАГРУЗКА ДВЕРЕЙ ДО lightmapped renderer ===
+    // Сначала загружаем двери и помечаем draw calls
+    for (auto* door : doors) {
+        delete door;
+    }
+    doors.clear();
+
+    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
+    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
+
+    // Объединяем
+    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
+
+    for (const auto& entity : doorEntities) {
+        DoorEntity* door = new DoorEntity();
+        door->initFromEntity(entity, *bspLoader);
+        doors.push_back(door);
+    }
+    std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
+
+    // Связываем draw calls с дверьми по model index
+    for (auto& dc : bspLoader->getDrawCalls()) {
+        if (dc.isDoor) continue;  // Уже помечено
+
+        // Находим face и проверяем, принадлежит ли он двери
+        if (dc.faceIndex < 0) continue;
+
+        // Получаем модель из entities и сравниваем bounds
+        for (int i = 0; i < (int)doors.size(); i++) {
+            DoorEntity* door = doors[i];
+            AABB doorBounds = door->getBounds();
+
+            // Проверяем пересечение bounds draw call с bounds двери
+            AABB dcBounds;
+            if (dc.faceIndex < (int)bspLoader->getFaceBounds().size()) {
+                dcBounds = bspLoader->getFaceBounds()[dc.faceIndex];
+            }
+            else {
+                continue;
+            }
+
+            // Если draw call пересекается с дверью - помечаем его
+            if (dcBounds.min.x <= doorBounds.max.x && dcBounds.max.x >= doorBounds.min.x &&
+                dcBounds.min.y <= doorBounds.max.y && dcBounds.max.y >= doorBounds.min.y &&
+                dcBounds.min.z <= doorBounds.max.z && dcBounds.max.z >= doorBounds.min.z) {
+                dc.isDoor = true;
+                dc.doorIndex = i;
+            }
+        }
+    }
+
+    // Подсчитываем помеченные draw calls
+    int markedDoorDraws = 0;
+    for (const auto& dc : bspLoader->getDrawCalls()) {
+        if (dc.isDoor) markedDoorDraws++;
+    }
+    std::cout << "[DOOR] Marked " << markedDoorDraws << " draw calls as doors" << std::endl;
+
+    // Теперь загружаем lightmapped renderer с уже помеченными дверьми
     if (lmRenderer && lightmapManager->hasLightmaps()) {
         if (lmRenderer->init(width, height)) {
             lmRenderer->setSkipSkyFaces(true);
@@ -532,62 +591,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
         waterZones.push_back(water);
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
-
-    for (auto* door : doors) {
-        delete door;
-    }
-    doors.clear();
-
-    auto doorEntities = bspLoader->getEntitiesByClass("func_door");
-    auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
-
-    // Объединяем
-    doorEntities.insert(doorEntities.end(), rotDoorEntities.begin(), rotDoorEntities.end());
-
-    for (const auto& entity : doorEntities) {
-        DoorEntity* door = new DoorEntity();
-        door->initFromEntity(entity, *bspLoader);
-        doors.push_back(door);
-    }
-    std::cout << "[DOOR] Loaded " << doors.size() << " doors" << std::endl;
-
-    // Связываем draw calls с дверьми по model index
-    for (auto& dc : bspLoader->getDrawCalls()) {
-        if (dc.isDoor) continue;  // Уже помечено
-
-        // Находим face и проверяем, принадлежит ли он двери
-        if (dc.faceIndex < 0) continue;
-
-        // Получаем модель из entities и сравниваем bounds
-        for (int i = 0; i < (int)doors.size(); i++) {
-            DoorEntity* door = doors[i];
-            AABB doorBounds = door->getBounds();
-
-            // Проверяем пересечение bounds draw call с bounds двери
-            AABB dcBounds;
-            if (dc.faceIndex < (int)bspLoader->getFaceBounds().size()) {
-                dcBounds = bspLoader->getFaceBounds()[dc.faceIndex];
-            }
-            else {
-                continue;
-            }
-
-            // Если draw call пересекается с дверью - помечаем его
-            if (dcBounds.min.x <= doorBounds.max.x && dcBounds.max.x >= doorBounds.min.x &&
-                dcBounds.min.y <= doorBounds.max.y && dcBounds.max.y >= doorBounds.min.y &&
-                dcBounds.min.z <= doorBounds.max.z && dcBounds.max.z >= doorBounds.min.z) {
-                dc.isDoor = true;
-                dc.doorIndex = i;
-            }
-        }
-    }
-
-    // Подсчитываем помеченные draw calls
-    int markedDoorDraws = 0;
-    for (const auto& dc : bspLoader->getDrawCalls()) {
-        if (dc.isDoor) markedDoorDraws++;
-    }
-    std::cout << "[DOOR] Marked " << markedDoorDraws << " draw calls as doors" << std::endl;
 
     std::cout << "=== MAP LOADED ===\n\n";
 
