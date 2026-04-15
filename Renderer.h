@@ -118,6 +118,16 @@ private:
     };
     std::vector<SortedDrawCallCache> transparentSortBuffer;
 
+    // Кэшированная матрица проекции (оптимизация #4)
+    glm::mat4 cachedProjectionMatrix;
+    float cachedFOV = -1.0f;
+    float cachedAspectRatio = -1.0f;
+    float cachedNear = -1.0f;
+    float cachedFar = -1.0f;
+    bool projectionMatrixValid = false;
+
+    const glm::mat4& getProjectionMatrix(float fov, float aspectRatio, float nearPlane, float farPlane);
+
     void createQuadMesh();
     void cleanup();
     bool createGBuffer(int w, int h);

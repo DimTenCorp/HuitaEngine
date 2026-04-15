@@ -504,7 +504,8 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     if (worldVAO == 0 || !lmManager) return;
 
-    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
+    // Используем кэшированную матрицу проекции (оптимизация #4)
+    glm::mat4 projection = getProjectionMatrix(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
     glEnable(GL_DEPTH_TEST);
@@ -744,4 +745,23 @@ void LightmappedRenderer::cleanup() {
     }
     doorVertexCapacity = 0;
     doorIndexCapacity = 0;
+}
+
+const glm::mat4& LightmappedRenderer::getProjectionMatrix(float fov, float aspectRatio, float nearPlane, float farPlane) {
+    // Проверяем, нужно ли пересчитывать матрицу
+    if (!projectionMatrixValid || 
+        cachedFOV != fov || 
+        cachedAspectRatio != aspectRatio || 
+        cachedNear != nearPlane || 
+        cachedFar != farPlane) {
+        
+        cachedProjectionMatrix = glm::perspective(fov, aspectRatio, nearPlane, farPlane);
+        cachedFOV = fov;
+        cachedAspectRatio = aspectRatio;
+        cachedNear = nearPlane;
+        cachedFar = farPlane;
+        projectionMatrixValid = true;
+    }
+    
+    return cachedProjectionMatrix;
 }

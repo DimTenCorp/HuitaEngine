@@ -10,6 +10,7 @@
 #include "SkyboxRenderer.h"
 #include "DoorEntity.h"
 #include "TriangleCollider.h"
+#include "GLStateCache.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -79,6 +80,14 @@ private:
     // Буфер для трансформированных треугольников дверей (переиспользуется каждый кадр)
     std::vector<Triangle> doorTrianglesBuffer;
 
+    // Кэшированная матрица проекции (избегает повторных вычислений glm::perspective)
+    glm::mat4 cachedProjectionMatrix;
+    float cachedFOV = -1.0f;
+    float cachedAspectRatio = -1.0f;
+    float cachedNear = -1.0f;
+    float cachedFar = -1.0f;
+    bool projectionMatrixValid = false;
+
     static Engine* instance;
 
     std::vector<std::unique_ptr<DoorEntity>> doors;
@@ -120,4 +129,7 @@ private:
     void render();
     void processPendingLoad();
     void doLoadMap(const std::string& mapPath);
+    
+    // Получение кэшированной матрицы проекции
+    const glm::mat4& getProjectionMatrix(float fov, float aspectRatio, float nearPlane, float farPlane);
 };

@@ -705,7 +705,8 @@ void Engine::render() {
     game->getPlayer()->getViewMatrix(glm::value_ptr(view));
     glm::vec3 eyePos = game->getPlayer()->getEyePosition();
 
-    glm::mat4 projection = glm::perspective(glm::radians(75.0f),
+    // Используем кэшированную матрицу проекции (оптимизация #4)
+    glm::mat4 projection = getProjectionMatrix(glm::radians(75.0f),
         (float)width / (float)height, 0.1f, 10000.0f);
 
     // Очищаем буферы
@@ -840,4 +841,23 @@ void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
 
 void Engine::cleanupDoors() {
     doors.clear();
+}
+
+const glm::mat4& Engine::getProjectionMatrix(float fov, float aspectRatio, float nearPlane, float farPlane) {
+    // Проверяем, нужно ли пересчитывать матрицу
+    if (!projectionMatrixValid || 
+        cachedFOV != fov || 
+        cachedAspectRatio != aspectRatio || 
+        cachedNear != nearPlane || 
+        cachedFar != farPlane) {
+        
+        cachedProjectionMatrix = glm::perspective(fov, aspectRatio, nearPlane, farPlane);
+        cachedFOV = fov;
+        cachedAspectRatio = aspectRatio;
+        cachedNear = nearPlane;
+        cachedFar = farPlane;
+        projectionMatrixValid = true;
+    }
+    
+    return cachedProjectionMatrix;
 }
