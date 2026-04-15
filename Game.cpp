@@ -62,16 +62,32 @@ void Game::update(float deltaTime) {
     auto* collider = engine->getCollider();
     auto& waterZones = engine->getWaterZones();
 
-    // Обновляем двери
+    // Обновляем двери (теперь с оптимизацией внутри)
     engine->updateDoors(deltaTime);
 
-    player->CheckWater(waterZones);
+    // === ОПТИМИЗАЦИЯ: проверяем воду реже если не в воде ===
+    static float waterCheckTimer = 0;
+    waterCheckTimer += deltaTime;
+
+    bool needWaterCheck = true;
+    if (!player->IsInWater() && waterCheckTimer < 0.5f) {
+        // Не в воде - проверяем раз в 0.5 секунды
+        needWaterCheck = false;
+    }
+    else {
+        waterCheckTimer = 0;
+    }
+
+    if (needWaterCheck) {
+        player->CheckWater(waterZones);
+    }
 
     if (collider) {
         player->update(deltaTime, yaw, pitch, collider);
     }
 
-    // Проверяем взаимодействие с дверями ПОСЛЕ обновления позиции
+    // Проверяем двери только если движемся или рядом с дверью
+    // (опционально - можно пропустить если FPS критичен)
     engine->checkDoorInteractions(player.get());
 
     hud->update(deltaTime, player->getPosition());

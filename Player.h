@@ -93,6 +93,8 @@ private:
     float m_flSwimTime;       // Время плавания
     bool m_bWasInWater;       // Было ли состояние "в воде" в предыдущем кадре
 
+    float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
+
 public:
     Player();
 

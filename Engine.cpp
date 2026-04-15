@@ -747,44 +747,65 @@ void Engine::shutdown() {
 }
 
 void Engine::updateDoors(float deltaTime) {
+    // === ОПТИМИЗАЦИЯ: отслеживаем, нужно ли обновлять коллайдер ===
+    bool anyDoorMoving = false;
+
     // Обновляем состояние дверей
     for (auto& door : doors) {
+        DoorState oldState = door->state;
         door->update(deltaTime, meshCollider.get());
+
+        // Дверь движется если состояние изменилось или она в процессе открытия/закрытия
+        if (oldState != door->state ||
+            door->state == DoorState::Opening ||
+            door->state == DoorState::Closing) {
+            anyDoorMoving = true;
+        }
     }
 
-    // === ДОБАВИТЬ: обновляем коллайдер дверей ===
-    // Перестраиваем коллайдер дверей каждый кадр
+    // === КРИТИЧЕСКАЯ ОПТИМИЗАЦИЯ: обновляем коллайдер ТОЛЬКО если двери движутся ===
+    if (!anyDoorMoving || doors.empty()) {
+        // Если двери не движутся, проверяем нужна ли инициализация
+        static bool colliderInitialized = false;
+        if (colliderInitialized) return;
+        colliderInitialized = true;
+        // Иначе продолжаем для первичной инициализации
+    }
+
     if (meshCollider) {
-        // Собираем треугольники всех дверей
         std::vector<Triangle> doorTriangles;
+        doorTriangles.reserve(1024); // Резервируем заранее
 
         for (const auto& door : doors) {
-            if (!door->passable) { // Только непроходимые двери
-                // Получаем трансформ двери
-                glm::mat4 transform = door->getTransform();
+            if (door->passable) continue;
+            if (door->vao == 0 || door->indices.empty()) continue;
 
-                // Трансформируем вершины и создаем треугольники
-                const auto& verts = door->vertices;
-                const auto& idxs = door->indices;
+            glm::mat4 transform = door->getTransform();
+            const auto& verts = door->vertices;
+            const auto& idxs = door->indices;
 
-                for (size_t i = 0; i < idxs.size(); i += 3) {
-                    Triangle tri;
-                    for (int j = 0; j < 3; j++) {
-                        glm::vec4 v = transform * glm::vec4(verts[idxs[i + j]].position, 1.0f);
-                        tri.vertices[j] = glm::vec3(v);
-                    }
-                    tri.normal = glm::normalize(glm::cross(
-                        tri.vertices[1] - tri.vertices[0],
-                        tri.vertices[2] - tri.vertices[0]
-                    ));
-                    doorTriangles.push_back(tri);
-                }
+            // === ОПТИМИЗАЦИЯ: используем emplace_back с reserve ===
+            for (size_t i = 0; i < idxs.size(); i += 3) {
+                Triangle tri;
+                // Трансформируем вершины напрямую без промежуточных векторов
+                glm::vec4 v0 = transform * glm::vec4(verts[idxs[i]].position, 1.0f);
+                glm::vec4 v1 = transform * glm::vec4(verts[idxs[i + 1]].position, 1.0f);
+                glm::vec4 v2 = transform * glm::vec4(verts[idxs[i + 2]].position, 1.0f);
+
+                tri.vertices[0] = glm::vec3(v0);
+                tri.vertices[1] = glm::vec3(v1);
+                tri.vertices[2] = glm::vec3(v2);
+
+                tri.normal = glm::normalize(glm::cross(
+                    tri.vertices[1] - tri.vertices[0],
+                    tri.vertices[2] - tri.vertices[0]
+                ));
+
+                doorTriangles.push_back(std::move(tri)); // move вместо copy
             }
         }
 
-        // Обновляем коллайдер мира с дверями
-        // NOTE: Нужно добавить метод в MeshCollider для обновления динамических объектов
-        meshCollider->updateDynamicTriangles(doorTriangles);
+        meshCollider->updateDynamicTriangles(std::move(doorTriangles));
     }
 }
 

@@ -547,16 +547,12 @@ void Player::WalkMove_Sliding(float deltaTime) {
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
 
-    // Проверяем несколько точек вниз для надёжности
-    // На пологих склонах важно найти контакт с поверхностью
-    for (float offset = 0.5f; offset <= 4.0f; offset += 0.5f) {
-        glm::vec3 testPos = position;
-        testPos.y -= offset;
-        if (checkCollisionMesh(testPos)) {
-            return true;
-        }
-    }
-    return false;
+    // === ОПТИМИЗАЦИЯ: одна проверка вниз на 2 юнита вместо 8 проверок ===
+    // В HL игрок считается на земле если есть что-то под ногами
+    glm::vec3 testPos = position;
+    testPos.y -= 2.0f; // Стандартная проверка "на земле"
+
+    return checkCollisionMesh(testPos);
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -617,7 +613,8 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 }
 
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
-    if (axis == 1) { // Y-ось - без изменений, работает хорошо
+    // === РАННИЙ ВЫХОД: Y-ось обрабатывается отдельно ===
+    if (axis == 1) {
         glm::vec3 newPos = position;
         newPos.y += velocity.y * deltaTime;
 
@@ -627,11 +624,12 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         }
 
         if (velocity.y > 0) {
+            // Врезались в потолок - останавливаемся
             velocity.y = 0;
-            float testY = newPos.y;
-            for (int i = 0; i < 20; i++) {
+            // Ищем ближайшую свободную позицию вниз
+            for (int i = 1; i <= 5; i++) {
                 glm::vec3 testPos = position;
-                testPos.y = testY - (i * 0.5f);
+                testPos.y = newPos.y - i * 0.5f;
                 if (!checkCollisionMesh(testPos)) {
                     position.y = testPos.y;
                     break;
@@ -639,10 +637,11 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
             }
         }
         else if (velocity.y < 0) {
+            // Падаем на пол - бинарный поиск для точности
             float minY = newPos.y;
             float maxY = position.y;
 
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 5; i++) { // Уменьшено с 10 до 5
                 float midY = (minY + maxY) * 0.5f;
                 glm::vec3 testPos = position;
                 testPos.y = midY;
@@ -659,22 +658,14 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
             onGround = true;
             velocity.y = 0;
         }
-        else {
-            glm::vec3 escapePos = position;
-            for (int i = 1; i <= 20; i++) {
-                escapePos.y = position.y + i * 0.5f;
-                if (!checkCollisionMesh(escapePos)) {
-                    position.y = escapePos.y;
-                    break;
-                }
-            }
-        }
         return;
     }
 
-    // === ГОРИЗОНТАЛЬНЫЕ ОСИ (X и Z) - ИСПРАВЛЕНО ===
+    // === ГОРИЗОНТАЛЬНЫЕ ОСИ (X и Z) - ОПТИМИЗИРОВАННАЯ ВЕРСИЯ ===
     float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
-    if (std::abs(moveAmount) < 0.0001f) return;
+
+    // Ранний выход: если движения нет - не проверяем
+    if (std::abs(moveAmount) < 0.001f) return;
 
     glm::vec3 moveDir(0.0f);
     if (axis == 0) moveDir.x = moveAmount;
@@ -682,75 +673,92 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
     glm::vec3 targetPos = position + moveDir;
 
-    // Сначала пробуем двигаться без подъёма
+    // Пробуем двигаться без подъёма
     if (!checkCollisionMesh(targetPos)) {
         position = targetPos;
         return;
     }
 
-    // Столкновение - пробуем подняться НА МИНИМАЛЬНУЮ высоту препятствия
-    // вместо сразу stepHeight
-    if (onGround) {
-        // Ищем минимальную высоту подъёма бинарным поиском
-        float minStep = 0.0f;
-        float maxStep = stepHeight; // Максимум - обычная высота ступеньки
+    // === ОПТИМИЗАЦИЯ: подъём только если на земле и движемся достаточно быстро ===
+    if (!onGround || std::abs(moveAmount) < 0.01f) {
+        if (axis == 0) velocity.x = 0;
+        else velocity.z = 0;
+        return;
+    }
 
-        glm::vec3 bestPos = position;
-        bool found = false;
+    // === УПРОЩЁННЫЙ ПОДЪЁМ: пробуем сразу на stepHeight ===
+    glm::vec3 stepUp = position;
+    stepUp.y += stepHeight;
+    stepUp += moveDir;
 
-        // Сначала проверим, можно ли вообще подняться
-        glm::vec3 highPos = position;
-        highPos.y += maxStep;
-        highPos += moveDir;
+    // Проверяем можно ли подняться
+    if (checkCollisionMesh(stepUp)) {
+        // Не можем подняться даже на полную высоту - останавливаемся
+        if (axis == 0) velocity.x = 0;
+        else velocity.z = 0;
+        return;
+    }
 
-        if (!checkCollisionMesh(highPos)) {
-            // Можно подняться - ищем минимальную высоту
-            for (int i = 0; i < 8; i++) {
-                float midStep = (minStep + maxStep) * 0.5f;
-                glm::vec3 testPos = position;
-                testPos.y += midStep;
-                testPos += moveDir;
+    // === НАШЛИ СВОБОДНУЮ ПОЗИЦИЮ ВВЕРХУ ===
+    // Теперь ищем пол под нами, спускаясь вниз
 
-                if (checkCollisionMesh(testPos)) {
-                    // Всё ещё внутри - нужно выше
-                    minStep = midStep;
-                }
-                else {
-                    // Можно пройти - запоминаем и пробуем ниже
-                    maxStep = midStep;
-                    bestPos = testPos;
-                    found = true;
-                }
-            }
+    // Проверяем сразу на полной высоте (ровный пол)
+    glm::vec3 groundTest = stepUp;
+    groundTest.y -= stepHeight + 2.0f; // +2 для запаса
 
-            if (found) {
-                // Проверяем, есть ли пол под нами на новой позиции
-                // чтобы не повиснуть в воздухе на крутом склоне
-                bool hasGround = false;
-                for (float down = 0.5f; down <= stepHeight + 2.0f; down += 0.5f) {
-                    glm::vec3 groundTest = bestPos;
-                    groundTest.y -= down;
-                    if (checkCollisionMesh(groundTest)) {
-                        hasGround = true;
-                        // Прилипаем к полу если разница небольшая
-                        float groundY = groundTest.y + 0.01f;
-                        if (std::abs(bestPos.y - groundY) < 4.0f) {
-                            bestPos.y = groundY;
-                        }
-                        break;
-                    }
-                }
+    if (checkCollisionMesh(groundTest)) {
+        // Нашли пол - прилипаем к нему
+        position = stepUp;
+        // Точная корректировка по Y (бинарный поиск в малом диапазоне)
+        float exactY = findGroundHeight(position, stepHeight + 2.0f);
+        if (exactY > 0) {
+            position.y = exactY + 0.01f;
+        }
+        velocity.y = 0;
+        return;
+    }
 
-                position = bestPos;
-                velocity.y = 0; // Гасим вертикальную скорость
-                return;
-            }
+    // === СКЛОН: спускаемся постепенно ===
+    // Пробуем промежуточные высоты (меньше итераций, больший шаг)
+    for (float down = stepHeight * 0.5f; down <= stepHeight + 2.0f; down += 2.0f) {
+        glm::vec3 slopeTest = stepUp;
+        slopeTest.y -= down;
+
+        if (checkCollisionMesh(slopeTest)) {
+            // Нашли пол на склоне
+            position = stepUp;
+            position.y -= down;
+            position.y += 0.01f; // Минимальный зазор
+            velocity.y = 0;
+            return;
         }
     }
 
-    // Не удалось подняться - останавливаем скорость по этой оси
+    // Не нашли опоры - остаёмся на месте (предотвращаем парение)
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
+}
+
+// === НОВЫЙ ВСПОМОГАТЕЛЬНЫЙ МЕТОД ===
+float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
+    // Быстрый бинарный поиск пола вниз от позиции
+    float minY = pos.y - maxSearchDist;
+    float maxY = pos.y;
+
+    for (int i = 0; i < 4; i++) { // Всего 4 итерации - достаточно для точности
+        float midY = (minY + maxY) * 0.5f;
+        glm::vec3 testPos = pos;
+        testPos.y = midY;
+
+        if (checkCollisionMesh(testPos)) {
+            minY = midY;
+        }
+        else {
+            maxY = midY;
+        }
+    }
+
+    return maxY;
 }
 
 void Player::CategorizePosition() {
@@ -759,12 +767,29 @@ void Player::CategorizePosition() {
 
 void Player::moveWithCollision(float deltaTime) {
     PreThink(deltaTime);
-
-    // Сначала обрабатываем присяд
     Duck(deltaTime);
 
-    // Определяем на земле ли мы ПЕРЕД движением
-    CategorizePosition();
+    // === ОПТИМИЗАЦИЯ: проверяем, двигался ли игрок ===
+    glm::vec3 oldPos = position;
+    bool wasOnGround = onGround;
+
+    CategorizePosition(); // Это уже есть
+
+    // Если на земле и нет ввода - пропускаем сложные проверки
+    GLFWwindow* window = glfwGetCurrentContext();
+    bool hasInput = (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+        !onGround); // В воздухе всегда проверяем
+
+    if (!hasInput && onGround && velocity == glm::vec3(0.0f)) {
+        // Стоим на месте - минимум работы
+        PostThink(deltaTime);
+        return;
+    }
 
     // Счётчик кадров для bunny hop
     if (onGround) {
