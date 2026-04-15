@@ -1,4 +1,3 @@
-```cpp
 # Compiled and build artifacts
 *.o
 *.obj
@@ -19,28 +18,29 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .gradle/
-julia-*/
-zig*/
 
-# Editors
-.vscode/
-.idea/
+# Logs and temp files
+*.log
+*.tmp
 *.swp
-*.swo
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment
 .env
 .env.local
 *.env.*
 
-# Logs and coverage
-*.log
-*.tmp
+# Editors
+.vscode/
+.idea/
+
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
+
+# System files
+.DS_Store
+Thumbs.db
 
 # Compressed files
 *.zip
@@ -65,4 +65,3 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```

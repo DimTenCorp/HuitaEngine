@@ -577,6 +577,13 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool o
     const auto& drawCalls = onlyTransparent ? transparentDrawCalls : opaqueDrawCalls;
 
     for (const auto& dc : drawCalls) {
+        // Устанавливаем матрицу модели
+        glm::mat4 model = glm::mat4(1.0f);
+        if (dc.isDoor && dc.doorIndex >= 0 && dc.doorIndex < (int)doorTransforms.size()) {
+            model = doorTransforms[dc.doorIndex];
+        }
+        geometryShader->setMat4("model", model);
+
         if (dc.texID != currentTex) {
             glBindTexture(GL_TEXTURE_2D, dc.texID);
             currentTex = dc.texID;
@@ -654,6 +661,13 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
     GLuint currentTex = 0;
     for (const auto& item : sorted) {
         const auto& dc = item.dc;
+
+        // Устанавливаем матрицу модели для дверей
+        glm::mat4 model = glm::mat4(1.0f);
+        if (dc.isDoor && dc.doorIndex >= 0 && dc.doorIndex < (int)doorTransforms.size()) {
+            model = doorTransforms[dc.doorIndex];
+        }
+        transparentShader->setMat4("model", model);
 
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
