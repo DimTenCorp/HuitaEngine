@@ -93,6 +93,11 @@ private:
     // === ФИКСИРОВАННЫЙ ТАЙМШАП ===
     float m_physicsAccumulator = 0.0f;
     static constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;
+    
+    // Интерполяция для плавного рендеринга
+    glm::vec3 m_previousPosition;
+    glm::vec3 m_renderPosition;
+    float m_interpolationAlpha = 0.0f;
 
     float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
 
@@ -169,4 +174,8 @@ public:
     bool IsInWater() const { return (m_afPhysicsFlags & PFLAG_INWATER) != 0; }
     void CheckWater(const std::vector<CFuncWater*>& waterZones);
     void ApplyWaterPhysics(float deltaTime);
+    
+    // Интерполяция для плавного рендеринга
+    glm::vec3 getRenderPosition() const { return m_renderPosition; }
+    void updateInterpolation(float alpha);
 };

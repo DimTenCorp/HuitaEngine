@@ -60,6 +60,11 @@ Player::Player() {
     m_bWasInWater = false;
 
     m_physicsAccumulator = 0.0f;
+    
+    // Инициализация интерполяции
+    m_previousPosition = position;
+    m_renderPosition = position;
+    m_interpolationAlpha = 0.0f;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -688,7 +693,7 @@ void Player::moveWithCollision(float deltaTime) {
         glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
         !onGround);
 
-    if (!hasInput && onGround && velocity == glm::vec3(0.0f)) {
+    if (!hasInput && onGround && glm::length(velocity) < 0.1f) {
         PostThink(deltaTime);
         return;
     }
@@ -743,7 +748,16 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
-// === ОСНОВНОЙ UPDATE С ФИКСИРОВАННЫМ ТАЙМШАПОМ ===
+// === ИНТЕРПОЛЯЦИЯ ДЛЯ ПЛАВНОГО РЕНДЕРИНГА ===
+void Player::updateInterpolation(float alpha) {
+    m_interpolationAlpha = glm::clamp(alpha, 0.0f, 1.0f);
+    // Интерполируем ОТ previousPosition К position
+    // alpha = 0 -> показываем previousPosition
+    // alpha = 1 -> показываем position
+    m_renderPosition = glm::mix(m_previousPosition, position, m_interpolationAlpha);
+}
+
+// === ОСНОВНОЙ UPDATE С ФИКСИРОВАННЫМ ТАЙМШАПОМ И ИНТЕРПОЛЯЦИЕЙ ===
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
     yaw = cameraYaw;
     pitch = cameraPitch;
@@ -752,10 +766,18 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     handleInput(deltaTime);
 
     if (noclipMode) {
+        // Для noclip сохраняем предыдущую позицию перед движением
+        m_previousPosition = position;
         moveNoclip(deltaTime);
+        // Сразу устанавливаем render position в текущую для noclip
+        m_renderPosition = position;
+        m_interpolationAlpha = 1.0f;
         return;
     }
 
+    // Сохраняем предыдущую позицию перед обновлением физики
+    m_previousPosition = position;
+    
     // === ФИКСИРОВАННЫЙ ТАЙМШАП как в старом коде ===
     m_physicsAccumulator += deltaTime;
 
@@ -769,10 +791,16 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
 
         m_physicsAccumulator -= FIXED_TIMESTEP;
     }
+    
+    // Вычисляем альфу для интерполяции
+    // Прогресс между последним шагом физики и следующим
+    float interpolationAlpha = m_physicsAccumulator / FIXED_TIMESTEP;
+    updateInterpolation(interpolationAlpha);
 }
 
 glm::vec3 Player::getEyePosition() const {
-    return position + GetCurrentViewOffset();
+    // Используем интерполированную позицию для рендеринга
+    return m_renderPosition + GetCurrentViewOffset();
 }
 
 void Player::getViewMatrix(float* matrix) const {
