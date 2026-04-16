@@ -751,6 +751,9 @@ void Player::moveNoclip(float deltaTime) {
 // === ИНТЕРПОЛЯЦИЯ ДЛЯ ПЛАВНОГО РЕНДЕРИНГА ===
 void Player::updateInterpolation(float alpha) {
     m_interpolationAlpha = alpha;
+    // Интерполируем ОТ previousPosition К position
+    // alpha = 0 -> показываем previousPosition
+    // alpha = 1 -> показываем position
     m_renderPosition = glm::mix(m_previousPosition, position, alpha);
 }
 
@@ -764,7 +767,7 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
 
     if (noclipMode) {
         moveNoclip(deltaTime);
-        // Для noclip тоже нужна интерполяция
+        // Для noclip тоже нужна интерполяция - сохраняем историю позиций
         m_previousPosition = m_renderPosition;
         m_renderPosition = position;
         return;
@@ -788,7 +791,8 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     }
     
     // Вычисляем альфу для интерполяции
-    float interpolationAlpha = 1.0f - (m_physicsAccumulator / FIXED_TIMESTEP);
+    // Прогресс между последним шагом физики и следующим
+    float interpolationAlpha = m_physicsAccumulator / FIXED_TIMESTEP;
     updateInterpolation(interpolationAlpha);
 }
 
