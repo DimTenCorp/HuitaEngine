@@ -3,10 +3,15 @@
 #include "BSPLoader.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
+
+MeshCollider::MeshCollider() : cellSize(50.0f), gridBuilt(false) {}
 
 void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
     const std::vector<unsigned int>& indices) {
     staticTriangles.clear();
+    spatialGrid.clear();
+    gridBuilt = false;
 
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
         Triangle tri;
@@ -21,6 +26,78 @@ void MeshCollider::buildFromBSP(const std::vector<BSPVertex>& vertices,
 
         staticTriangles.push_back(tri);
     }
+    
+    // Строим spatial grid после загрузки всех треугольников
+    buildSpatialGrid();
+}
+
+AABB MeshCollider::getTriangleBounds(const Triangle& tri) const {
+    AABB bounds;
+    bounds.min = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
+    bounds.max = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
+    return bounds;
+}
+
+GridKey MeshCollider::getGridKey(const glm::vec3& pos) const {
+    GridKey key;
+    key.x = (int)floor(pos.x / cellSize);
+    key.y = (int)floor(pos.y / cellSize);
+    key.z = (int)floor(pos.z / cellSize);
+    return key;
+}
+
+void MeshCollider::buildSpatialGrid() {
+    spatialGrid.clear();
+    
+    // Добавляем статические треугольники в grid
+    for (size_t i = 0; i < staticTriangles.size(); i++) {
+        const auto& tri = staticTriangles[i];
+        AABB bounds = getTriangleBounds(tri);
+        
+        // Находим ячейки, которые покрывает этот треугольник
+        GridKey minKey = getGridKey(bounds.min);
+        GridKey maxKey = getGridKey(bounds.max);
+        
+        // Добавляем треугольник во все ячейки, которые он пересекает
+        for (int x = minKey.x; x <= maxKey.x; x++) {
+            for (int y = minKey.y; y <= maxKey.y; y++) {
+                for (int z = minKey.z; z <= maxKey.z; z++) {
+                    GridKey key = {x, y, z};
+                    spatialGrid[key].push_back(i);
+                }
+            }
+        }
+    }
+    
+    gridBuilt = true;
+}
+
+void MeshCollider::getTrianglesInCapsule(const Capsule& capsule, 
+    std::vector<size_t>& outIndices) const {
+    if (!gridBuilt) return;
+    
+    AABB bounds = capsule.getBounds();
+    GridKey minKey = getGridKey(bounds.min - glm::vec3(capsule.radius));
+    GridKey maxKey = getGridKey(bounds.max + glm::vec3(capsule.radius));
+    
+    std::unordered_set<size_t> uniqueIndices;
+    
+    // Собираем все треугольники из ячеек, которые пересекает капсула
+    for (int x = minKey.x; x <= maxKey.x; x++) {
+        for (int y = minKey.y; y <= maxKey.y; y++) {
+            for (int z = minKey.z; z <= maxKey.z; z++) {
+                GridKey key = {x, y, z};
+                auto it = spatialGrid.find(key);
+                if (it != spatialGrid.end()) {
+                    for (size_t idx : it->second) {
+                        uniqueIndices.insert(idx);
+                    }
+                }
+            }
+        }
+    }
+    
+    outIndices.assign(uniqueIndices.begin(), uniqueIndices.end());
 }
 
 void MeshCollider::updateDynamicTriangles(const std::vector<Triangle>& triangles) {
@@ -139,14 +216,20 @@ bool MeshCollider::intersectCapsuleTriangle(const Capsule& capsule,
 }
 
 bool MeshCollider::intersectCapsule(const Capsule& capsule) const {
-    // Проверяем статичные треугольники
-    for (const auto& tri : staticTriangles) {
-        if (intersectCapsuleTriangle(capsule, tri)) {
-            return true;
+    // Получаем только треугольники, которые находятся рядом с капсулой
+    std::vector<size_t> nearbyTriangles;
+    getTrianglesInCapsule(capsule, nearbyTriangles);
+    
+    // Проверяем только близкие статичные треугольники
+    for (size_t idx : nearbyTriangles) {
+        if (idx < staticTriangles.size()) {
+            if (intersectCapsuleTriangle(capsule, staticTriangles[idx])) {
+                return true;
+            }
         }
     }
 
-    // Проверяем динамические треугольники (двери)
+    // Проверяем динамические треугольники (двери) - их мало, проверяем все
     for (const auto& tri : dynamicTriangles) {
         if (intersectCapsuleTriangle(capsule, tri)) {
             return true;
