@@ -110,6 +110,12 @@ private:
 
     bool sortTransparentFaces = true;
     float alphaTestRef = 0.5f;
+    
+    // Кэширование для сортировки прозрачных объектов
+    std::vector<FaceDrawCall> sortedTransparentDrawCalls;
+    std::vector<float> transparentDistances;
+    glm::vec3 lastCameraPos = glm::vec3(0.0f);
+    float cameraMoveThreshold = 2.0f; // Пересортировывать только если камера сдвинулась больше чем на 2 единицы
 
     void createQuadMesh();
     void cleanup();
