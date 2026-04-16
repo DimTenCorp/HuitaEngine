@@ -93,10 +93,31 @@ private:
     // Кэширование для сортировки прозрачных объектов по текстуре
     std::vector<LMFaceDrawCall> sortedOpaqueFaceDrawCalls;
     bool opaqueFacesSorted = false;
+    
+    // Кэширование для сортировки прозрачных объектов (от дальних к ближним)
+    std::vector<LMFaceDrawCall> sortedTransparentFaceDrawCalls;
+    std::vector<float> transparentFaceDistances;
+    glm::vec3 lastCameraPos = glm::vec3(0.0f);
+    float cameraMoveThreshold = 5.0f; // Увеличенный порог: пересортировывать только если камера сдвинулась больше чем на 5 единиц
+    
+    // Spatial hashing для оптимизации сортировки прозрачных объектов
+    struct SpatialHashCell {
+        std::vector<size_t> drawCallIndices;  // Индексы в faceDrawCalls
+        glm::vec3 centroid;                    // Центроид ячейки для быстрой проверки расстояния
+    };
+    std::unordered_map<uint64_t, SpatialHashCell> spatialHashGrid;
+    std::vector<uint64_t> activeSpatialCells;  // Ячейки, содержащие прозрачные объекты
+    bool spatialHashValid = false;             // Флаг валидности spatial hash
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
     void cleanup();
+    
+    // Методы для spatial hashing прозрачных объектов
+    uint64_t hashPosition(const glm::vec3& pos, float cellSize = 10.0f) const;
+    void buildSpatialHashForTransparent();
+    void invalidateSpatialHash();
+    
     void sortOpaqueFaceDrawCallsByTexture();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();

@@ -115,12 +115,26 @@ private:
     std::vector<FaceDrawCall> sortedTransparentDrawCalls;
     std::vector<float> transparentDistances;
     glm::vec3 lastCameraPos = glm::vec3(0.0f);
-    float cameraMoveThreshold = 2.0f; // Пересортировывать только если камера сдвинулась больше чем на 2 единицы
+    float cameraMoveThreshold = 5.0f; // Увеличенный порог: пересортировывать только если камера сдвинулась больше чем на 5 единиц
+    
+    // Spatial hashing для оптимизации сортировки прозрачных объектов
+    struct SpatialHashCell {
+        std::vector<size_t> drawCallIndices;  // Индексы в transparentDrawCalls
+        glm::vec3 centroid;                    // Центроид ячейки для быстрой проверки расстояния
+    };
+    std::unordered_map<uint64_t, SpatialHashCell> spatialHashGrid;
+    std::vector<uint64_t> activeSpatialCells;  // Ячейки, содержащие прозрачные объекты
+    bool spatialHashValid = false;             // Флаг валидности spatial hash
     
     // Флаг indicating that draw calls need to be sorted by texture
     bool opaqueDrawCallsSorted = false;
     
     void sortOpaqueDrawCallsByTexture();
+    
+    // Методы для spatial hashing прозрачных объектов
+    uint64_t hashPosition(const glm::vec3& pos, float cellSize = 10.0f) const;
+    void buildSpatialHashForTransparent();
+    void invalidateSpatialHash();
 
     void createQuadMesh();
     void cleanup();
