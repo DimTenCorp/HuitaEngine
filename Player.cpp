@@ -8,6 +8,7 @@
 #include <cmath>
 #include "TriangleCollider.h"
 #include "WaterEntity.h"
+#include "Engine.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -17,20 +18,18 @@ Player::Player() {
     position = glm::vec3(0.0f, 200.0f, 0.0f);
     velocity = glm::vec3(0.0f);
 
-    // Инициализация капсулы
     m_fHullRadius = VEC_HULL_RADIUS;
     m_fHullHeight = VEC_HULL_HEIGHT;
     m_fDuckHullHeight = VEC_DUCK_HULL_HEIGHT;
 
-    // Начальные hull (как AABB для расчета, но используем как капсулу)
     m_vecHullMin = glm::vec3(-m_fHullRadius, -m_fHullHeight * 0.5f, -m_fHullRadius);
     m_vecHullMax = glm::vec3(m_fHullRadius, m_fHullHeight * 0.5f, m_fHullRadius);
 
     onGround = false;
     speed = 200.0f;
     jumpForce = 270.0f;
-    gravity = 800.0f;
-    friction = 7.0f;
+    gravity = 600.0f;  // УМЕНЬШЕНО с 800
+    friction = 4.0f;   // УМЕНЬШЕНО с 7.0 для меньшего скольжения
 
     yaw = -90.0f;
     pitch = 0.0f;
@@ -54,38 +53,34 @@ Player::Player() {
     m_bDidAutoJump = false;
     m_nBunnyHopFrames = 0;
 
-    stepHeight = 12.0f;
+    stepHeight = 18.0f;
 
-    // Инициализация воды
     m_flWaterLevel = 0.0f;
     m_flSwimTime = 0.0f;
     m_bWasInWater = false;
+
+    m_physicsAccumulator = 0.0f;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
-    float halfHeight = m_fHullHeight * 0.5f - m_fHullRadius; // Высота цилиндра без полусфер
+    float halfHeight = m_fHullHeight * 0.5f - m_fHullRadius;
     if (halfHeight < 0) halfHeight = 0;
 
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     glm::vec3 offset = up * halfHeight;
 
     return Capsule(
-        pos - offset,  // Нижняя сфера
-        pos + offset,  // Верхняя сфера  
-        m_fHullRadius  // Радиус
+        pos - offset,
+        pos + offset,
+        m_fHullRadius
     );
 }
 
-// === НЕЛИНЕЙНАЯ ИНТЕРПОЛЯЦИЯ КАК В HL1 ===
-// S-curve для более быстрого начала и замедления в конце
 float Player::UTIL_SplineFraction(float value, float scale) const {
     value = value * scale;
     float valueSquared = value * value;
-    // 3x^2 - 2x^3 - кубический сплайн
     return 3.0f * valueSquared - 2.0f * valueSquared * value;
 }
-
-// === СИСТЕМА ПРИСЯДА ===
 
 void Player::StartDuck() {
     if (!(m_afPhysicsFlags & PFLAG_DUCKING)) {
@@ -95,29 +90,23 @@ void Player::StartDuck() {
 }
 
 void Player::StopDuck() {
-    // Пытаемся встать ТОЛЬКО если есть место
     if (m_afPhysicsFlags & PFLAG_DUCKING) {
-        // Проверяем, можем ли мы встать прямо сейчас
-        float newHeight = VEC_HULL_HEIGHT; // 72
+        float newHeight = VEC_HULL_HEIGHT;
         float heightDiff = newHeight - m_fHullHeight;
         float shift = heightDiff * 0.5f;
 
         glm::vec3 testPos = position;
         testPos.y += shift;
 
-        // Сохраняем текущую высоту для проверки
         float savedHeight = m_fHullHeight;
         m_fHullHeight = newHeight;
         bool canStand = !checkCollisionMesh(testPos);
         m_fHullHeight = savedHeight;
 
         if (canStand) {
-            // Можем встать - снимаем флаг и обновляем время
             m_afPhysicsFlags &= ~PFLAG_DUCKING;
             m_flDuckTime = (float)glfwGetTime();
         }
-        // Если НЕ можем встать - НЕ снимаем флаг и НЕ обновляем время!
-        // Остаёмся сидеть молча, без попыток встать
     }
 }
 
@@ -129,14 +118,10 @@ bool Player::IsFullyDucked() const {
     float currentTime = (float)glfwGetTime();
     float elapsed = currentTime - m_flDuckTime;
 
-    // Полностью сидим если:
-    // 1. Мы в процессе присяда и прошло TIME_TO_DUCK
-    // 2. ИЛИ мы не в процессе присяда, но hull еще сидячий (вставаем)
     if (IsDucking()) {
         return elapsed >= TIME_TO_DUCK;
     }
     else {
-        // При вставании - считаем "сидячим" пока не прошло TIME_TO_DUCK
         return elapsed < TIME_TO_DUCK;
     }
 }
@@ -146,13 +131,10 @@ float Player::GetDuckFraction() const {
     float elapsed = currentTime - m_flDuckTime;
 
     if (IsDucking()) {
-        // Присядаем: 0 -> 1
         if (elapsed >= TIME_TO_DUCK) return 1.0f;
-        // Нелинейная интерполяция для более "резкого" ощущения
         return UTIL_SplineFraction(elapsed, 1.0f / TIME_TO_DUCK);
     }
     else {
-        // Встаем: 1 -> 0
         if (elapsed >= TIME_TO_DUCK) return 0.0f;
         return 1.0f - UTIL_SplineFraction(elapsed, 1.0f / TIME_TO_DUCK);
     }
@@ -162,8 +144,6 @@ glm::vec3 Player::GetCurrentViewOffset() const {
     float frac = GetDuckFraction();
     return glm::mix(VEC_VIEW, VEC_DUCK_VIEW, frac);
 }
-
-// === ОБРАБОТКА ВВОДА ===
 
 void Player::handleInput(float deltaTime) {
     if (noclipMode) return;
@@ -184,7 +164,6 @@ void Player::handleInput(float deltaTime) {
     m_afButtonReleased = buttonsChanged & (~currentButtons);
     m_afButtonLast = currentButtons;
 
-    // Autohop
     if (m_bAutoJump && (currentButtons & 16)) {
         if (onGround && !m_bDidAutoJump) {
             Jump();
@@ -199,36 +178,27 @@ void Player::handleInput(float deltaTime) {
         m_bDidAutoJump = false;
     }
 
-    // === ПРИСЯД (без изменений) ===
     if (currentButtons & 32) {
-        // Зажали Ctrl - начинаем присяд
         if ((m_afButtonPressed & 32) && !IsDucking()) {
             StartDuck();
         }
     }
     else {
-        // Отпустили Ctrl - пытаемся встать (StopDuck сам проверит можно ли)
         if (IsDucking()) {
             StopDuck();
-            // Если StopDuck не смог встать (нельзя), он просто оставит флаг DUCKING
-            // и игрок останется сидеть без цикла попыток
         }
     }
 }
-
-// === ОСНОВНАЯ ЛОГИКА ПРИСЯДА ===
 
 void Player::Duck(float deltaTime) {
     float currentTime = (float)glfwGetTime();
     float elapsed = currentTime - m_flDuckTime;
 
     if (IsDucking()) {
-        // === ПРИСЕДАЕМ или УЖЕ СИДИМ ===
         if (elapsed >= TIME_TO_DUCK && m_fHullHeight > m_fDuckHullHeight) {
             float oldHeight = m_fHullHeight;
-            m_fHullHeight = m_fDuckHullHeight; // 36
+            m_fHullHeight = m_fDuckHullHeight;
 
-            // На земле опускаем origin, чтобы ноги остались на месте
             if (onGround) {
                 float shift = (oldHeight - m_fHullHeight) * 0.5f;
                 position.y -= shift;
@@ -236,14 +206,11 @@ void Player::Duck(float deltaTime) {
         }
     }
     else {
-        // === ВСТАЁМ (только если флаг снят, а он снимается только когда можно встать) ===
         if (elapsed >= TIME_TO_DUCK && m_fHullHeight < VEC_HULL_HEIGHT) {
-            float newHeight = VEC_HULL_HEIGHT; // 72
+            float newHeight = VEC_HULL_HEIGHT;
             float heightDiff = newHeight - m_fHullHeight;
             float shift = heightDiff * 0.5f;
 
-            // Здесь мы уже знаем что можно встать (StopDuck проверил)
-            // Но на всякий случай проверим ещё раз
             if (onGround) {
                 glm::vec3 testPos = position;
                 testPos.y += shift;
@@ -254,14 +221,12 @@ void Player::Duck(float deltaTime) {
                 m_fHullHeight = savedHeight;
 
                 if (!canStand) {
-                    // Опять нельзя встать (что-то изменилось) - возвращаем флаг
                     m_afPhysicsFlags |= PFLAG_DUCKING;
                     return;
                 }
 
                 position.y += shift;
             }
-            // === ИСПРАВЛЕНИЕ: Под водой тоже нужно проверять и смещаться ===
             else if (IsInWater()) {
                 glm::vec3 testPos = position;
                 testPos.y += shift;
@@ -272,12 +237,10 @@ void Player::Duck(float deltaTime) {
                 m_fHullHeight = savedHeight;
 
                 if (!canStand) {
-                    // Нельзя встать - возвращаем флаг
                     m_afPhysicsFlags |= PFLAG_DUCKING;
                     return;
                 }
 
-                // Можем встать - смещаем позицию вверх
                 position.y += shift;
             }
 
@@ -285,9 +248,9 @@ void Player::Duck(float deltaTime) {
         }
     }
 
-    // Обновляем AABB для совместимости
     float halfHeight = m_fHullHeight * 0.5f;
-    m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, m_fHullRadius);
+    // ИСПРАВЛЕНО: -m_fHullRadius для Z
+    m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, -m_fHullRadius);
     m_vecHullMax = glm::vec3(m_fHullRadius, halfHeight, m_fHullRadius);
 }
 
@@ -295,21 +258,16 @@ void Player::Jump() {
     if (m_afPhysicsFlags & PFLAG_ONLADDER) return;
     if (!onGround) return;
 
-    // Longjump: полностью сидим + Shift НЕ зажат (теперь "бег" по умолчанию)
-    // Или если хочешь оставить логику "longjump только когда бежишь":
     if (IsFullyDucked() && m_fLongJump && !(m_afButtonLast & 64)) {
         float yawRad = glm::radians(yaw);
         velocity.x = cos(yawRad) * PLAYER_LONGJUMP_SPEED;
         velocity.z = sin(yawRad) * PLAYER_LONGJUMP_SPEED;
-        velocity.y = sqrt(2.0f * gravity * 56.0f);
-
-        // После longjump встаем
+        velocity.y = sqrt(2.0f * gravity * 30.0f);  // ← ВЫСОТА LONGJUMP
         StopDuck();
     }
     else {
-        velocity.y = sqrt(2.0f * gravity * 45.0f);
+        velocity.y = sqrt(2.0f * gravity * 40.0f);  // ← ВЫСОТА ОБЫЧНОГО ПРЫЖКА
     }
-
     onGround = false;
 }
 
@@ -329,36 +287,26 @@ void Player::WalkMove(float deltaTime) {
     float wishspeed = glm::length(wishvel);
     glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    // Friction
+    // Friction - как в старом коде с уменьшенным коэффициентом
     if (onGround) {
-        float currentspeed = glm::length(glm::vec2(velocity.x, velocity.z));
-        if (currentspeed > 0.001f) {
-            float drop = currentspeed * friction * deltaTime;
-            float newspeed = currentspeed - drop;
-            if (newspeed < 0) newspeed = 0;
-            if (newspeed > 0) {
-                newspeed /= currentspeed;
-                velocity.x *= newspeed;
-                velocity.z *= newspeed;
-            }
+        float speed = glm::length(glm::vec2(velocity.x, velocity.z));
+        if (speed > 0.001f) {
+            float drop = speed * friction * deltaTime;
+            float newspeed = std::max(0.0f, speed - drop);
+            velocity.x *= newspeed / speed;
+            velocity.z *= newspeed / speed;
         }
     }
 
-    // Acceleration
     float accel = onGround ? 10.0f : 0.3f;
     float maxSpeed = speed;
 
-    // === ИНВЕРТИРОВАННАЯ ЛОГИКА СКОРОСТИ ===
-    // Сидя - всё ещё 1/3 скорости (это не меняем)
     if (IsFullyDucked()) {
         maxSpeed = speed * 0.333f;
     }
-    // Теперь: просто W = бег (1.5x), Shift+W = ходьба (1.0x)
-    else if (!(m_afButtonLast & 64)) {  // Shift НЕ зажат - бежим
+    else if (!(m_afButtonLast & 64)) {
         maxSpeed = speed * 1.5f;
     }
-    // Если Shift зажат - обычная скорость (speed * 1.0, ничего не меняем)
-    // else { maxSpeed = speed; } - это по умолчанию
 
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = maxSpeed - currentspeed;
@@ -369,6 +317,7 @@ void Player::WalkMove(float deltaTime) {
         velocity.z += accelspeed * wishdir.z;
     }
 
+    // Полная остановка при отсутствии ввода
     float horizSpeed = glm::length(glm::vec2(velocity.x, velocity.z));
     if (horizSpeed < 0.5f && onGround) {
         GLFWwindow* window = glfwGetCurrentContext();
@@ -400,8 +349,7 @@ void Player::FlyMove(float deltaTime) {
     float wishspeed = glm::length(wishvel);
     glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    // Air acceleration
-    float airAccel = 10.0f;
+    float airAccel = 0.3f;  // УМЕНЬШЕНО с 10.0 для меньшего контроля в воздухе
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = wishspeed - currentspeed;
 
@@ -448,33 +396,33 @@ void Player::PostThink(float deltaTime) {
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
-    if (!meshCollider) return false;
-    Capsule capsule = getPlayerCapsule(pos);
-    return meshCollider->intersectCapsule(capsule);
+    // Сначала проверяем статичный мир
+    if (meshCollider && meshCollider->intersectCapsule(getPlayerCapsule(pos))) {
+        return true;
+    }
+
+    // Затем проверяем двери через Engine (оптимизированно)
+    if (Engine* engine = Engine::getInstance()) {
+        if (engine->checkDoorCollisionSimple(getPlayerCapsule(pos))) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
-// Проверка столкновений с AABB (для совместимости)
 bool Player::checkCollision(const glm::vec3& pos, const AABB& box) {
     Capsule capsule = getPlayerCapsule(pos);
-
-    // Находим ближайшую точку на AABB к капсуле
     glm::vec3 closest = glm::clamp(capsule.getCenter(), box.min, box.max);
-
-    // Проверяем расстояние от центра капсулы до ближайшей точки
     float dist = glm::length(capsule.getCenter() - closest);
-
-    // Также нужно проверить расстояние от линии капсулы до коробки
-    // Упрощенная проверка: если центр капсулы внутри AABB или близко
     return dist <= capsule.radius;
 }
 
-// Отскок от поверхности
 glm::vec3 Player::ClipVelocity(const glm::vec3& in, const glm::vec3& normal, float overbounce) {
     float backoff = glm::dot(in, normal) * overbounce;
     return in - normal * backoff;
 }
 
-// Попытка перемещения с проверкой столкновений
 bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& outPos) {
     glm::vec3 delta = end - start;
     float length = glm::length(delta);
@@ -485,8 +433,6 @@ bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& ou
     }
 
     glm::vec3 dir = delta / length;
-
-    // Step test - проверяем несколько точек вдоль пути
     int steps = (int)(length / 4.0f) + 1;
 
     for (int i = 0; i <= steps; i++) {
@@ -494,7 +440,6 @@ bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& ou
         glm::vec3 testPos = start + dir * (length * t);
 
         if (checkCollisionMesh(testPos)) {
-            // Столкновение - возвращаем предыдущую позицию
             if (i > 0) {
                 t = (float)(i - 1) / (float)steps;
                 outPos = start + dir * (length * t);
@@ -510,19 +455,13 @@ bool Player::TryMove(const glm::vec3& start, const glm::vec3& end, glm::vec3& ou
     return true;
 }
 
-// Движение со скольжением вдоль стен (HL-style)
 void Player::WalkMove_Sliding(float deltaTime) {
     WalkMove(deltaTime);
 
-    // После обычного движения, если есть столкновение - скользим вдоль стен
     glm::vec3 originalVel = velocity;
     glm::vec3 newPos = position + velocity * deltaTime;
 
     if (checkCollisionMesh(newPos)) {
-        // Столкновение - пытаемся скользить
-        // В HL это делается через ClipVelocity
-
-        // Проверяем оси по отдельности
         glm::vec3 testX = position + glm::vec3(velocity.x * deltaTime, 0, 0);
         if (!checkCollisionMesh(testX)) {
             position = testX;
@@ -546,12 +485,8 @@ void Player::WalkMove_Sliding(float deltaTime) {
 
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
-
-    // === ОПТИМИЗАЦИЯ: одна проверка вниз на 2 юнита вместо 8 проверок ===
-    // В HL игрок считается на земле если есть что-то под ногами
     glm::vec3 testPos = position;
-    testPos.y -= 2.0f; // Стандартная проверка "на земле"
-
+    testPos.y -= 2.0f;
     return checkCollisionMesh(testPos);
 }
 
@@ -564,7 +499,6 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
     if (axis == 0) moveDir.x = moveAmount;
     else moveDir.z = moveAmount;
 
-    // Try normal move
     glm::vec3 newPos = startPos + moveDir;
     if (!checkCollisionMesh(newPos)) {
         position = newPos;
@@ -573,7 +507,6 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 
     if (!onGround) return false;
 
-    // Try step up
     glm::vec3 stepUp = startPos;
     stepUp.y += stepHeight;
 
@@ -613,7 +546,6 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 }
 
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
-    // === РАННИЙ ВЫХОД: Y-ось обрабатывается отдельно ===
     if (axis == 1) {
         glm::vec3 newPos = position;
         newPos.y += velocity.y * deltaTime;
@@ -624,9 +556,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         }
 
         if (velocity.y > 0) {
-            // Врезались в потолок - останавливаемся
             velocity.y = 0;
-            // Ищем ближайшую свободную позицию вниз
             for (int i = 1; i <= 5; i++) {
                 glm::vec3 testPos = position;
                 testPos.y = newPos.y - i * 0.5f;
@@ -637,11 +567,10 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
             }
         }
         else if (velocity.y < 0) {
-            // Падаем на пол - бинарный поиск для точности
             float minY = newPos.y;
             float maxY = position.y;
 
-            for (int i = 0; i < 5; i++) { // Уменьшено с 10 до 5
+            for (int i = 0; i < 5; i++) {
                 float midY = (minY + maxY) * 0.5f;
                 glm::vec3 testPos = position;
                 testPos.y = midY;
@@ -661,10 +590,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // === ГОРИЗОНТАЛЬНЫЕ ОСИ (X и Z) - ОПТИМИЗИРОВАННАЯ ВЕРСИЯ ===
     float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
-
-    // Ранний выход: если движения нет - не проверяем
     if (std::abs(moveAmount) < 0.001f) return;
 
     glm::vec3 moveDir(0.0f);
@@ -673,79 +599,58 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
     glm::vec3 targetPos = position + moveDir;
 
-    // Пробуем двигаться без подъёма
     if (!checkCollisionMesh(targetPos)) {
         position = targetPos;
         return;
     }
 
-    // === ОПТИМИЗАЦИЯ: подъём только если на земле и движемся достаточно быстро ===
     if (!onGround || std::abs(moveAmount) < 0.01f) {
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
-    // === УПРОЩЁННЫЙ ПОДЪЁМ: пробуем сразу на stepHeight ===
     glm::vec3 stepUp = position;
     stepUp.y += stepHeight;
     stepUp += moveDir;
 
-    // Проверяем можно ли подняться
     if (checkCollisionMesh(stepUp)) {
-        // Не можем подняться даже на полную высоту - останавливаемся
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
-    // === НАШЛИ СВОБОДНУЮ ПОЗИЦИЮ ВВЕРХУ ===
-    // Теперь ищем пол под нами, спускаясь вниз
-
-    // Проверяем сразу на полной высоте (ровный пол)
     glm::vec3 groundTest = stepUp;
-    groundTest.y -= stepHeight + 2.0f; // +2 для запаса
+    groundTest.y -= stepHeight + 2.0f;
 
     if (checkCollisionMesh(groundTest)) {
-        // Нашли пол - прилипаем к нему
         position = stepUp;
-        // Точная корректировка по Y (бинарный поиск в малом диапазоне)
         float exactY = findGroundHeight(position, stepHeight + 2.0f);
-        if (exactY > 0) {
-            position.y = exactY + 0.01f;
-        }
+        if (exactY > 0) position.y = exactY + 0.01f;
         velocity.y = 0;
         return;
     }
 
-    // === СКЛОН: спускаемся постепенно ===
-    // Пробуем промежуточные высоты (меньше итераций, больший шаг)
     for (float down = stepHeight * 0.5f; down <= stepHeight + 2.0f; down += 2.0f) {
         glm::vec3 slopeTest = stepUp;
         slopeTest.y -= down;
-
         if (checkCollisionMesh(slopeTest)) {
-            // Нашли пол на склоне
             position = stepUp;
-            position.y -= down;
-            position.y += 0.01f; // Минимальный зазор
+            position.y -= down - 0.01f;
             velocity.y = 0;
             return;
         }
     }
 
-    // Не нашли опоры - остаёмся на месте (предотвращаем парение)
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }
 
-// === НОВЫЙ ВСПОМОГАТЕЛЬНЫЙ МЕТОД ===
 float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
-    // Быстрый бинарный поиск пола вниз от позиции
     float minY = pos.y - maxSearchDist;
     float maxY = pos.y;
 
-    for (int i = 0; i < 4; i++) { // Всего 4 итерации - достаточно для точности
+    for (int i = 0; i < 4; i++) {
         float midY = (minY + maxY) * 0.5f;
         glm::vec3 testPos = pos;
         testPos.y = midY;
@@ -769,13 +674,11 @@ void Player::moveWithCollision(float deltaTime) {
     PreThink(deltaTime);
     Duck(deltaTime);
 
-    // === ОПТИМИЗАЦИЯ: проверяем, двигался ли игрок ===
     glm::vec3 oldPos = position;
     bool wasOnGround = onGround;
 
-    CategorizePosition(); // Это уже есть
+    CategorizePosition();
 
-    // Если на земле и нет ввода - пропускаем сложные проверки
     GLFWwindow* window = glfwGetCurrentContext();
     bool hasInput = (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
         glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
@@ -783,15 +686,13 @@ void Player::moveWithCollision(float deltaTime) {
         glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
         glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS ||
         glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-        !onGround); // В воздухе всегда проверяем
+        !onGround);
 
     if (!hasInput && onGround && velocity == glm::vec3(0.0f)) {
-        // Стоим на месте - минимум работы
         PostThink(deltaTime);
         return;
     }
 
-    // Счётчик кадров для bunny hop
     if (onGround) {
         if (m_nBunnyHopFrames < 3) {
             m_nBunnyHopFrames++;
@@ -801,7 +702,6 @@ void Player::moveWithCollision(float deltaTime) {
         m_nBunnyHopFrames = 0;
     }
 
-    // Вычисляем желаемую скорость
     if (onGround) {
         WalkMove(deltaTime);
     }
@@ -809,13 +709,10 @@ void Player::moveWithCollision(float deltaTime) {
         FlyMove(deltaTime);
     }
 
-    // Применяем движение с разрешением коллизий
-    // Порядок важен: сначала горизонтальное, потом вертикальное
-    resolveCollisionAxis(deltaTime, 0); // X
-    resolveCollisionAxis(deltaTime, 2); // Z
-    resolveCollisionAxis(deltaTime, 1); // Y
+    resolveCollisionAxis(deltaTime, 0);
+    resolveCollisionAxis(deltaTime, 2);
+    resolveCollisionAxis(deltaTime, 1);
 
-    // Пост-обработка
     PostThink(deltaTime);
 }
 
@@ -846,6 +743,7 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
+// === ОСНОВНОЙ UPDATE С ФИКСИРОВАННЫМ ТАЙМШАПОМ ===
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
     yaw = cameraYaw;
     pitch = cameraPitch;
@@ -855,14 +753,21 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
 
     if (noclipMode) {
         moveNoclip(deltaTime);
+        return;
     }
-    else {
-        moveWithCollision(deltaTime);
 
-        // Применяем водную физику если в воде
+    // === ФИКСИРОВАННЫЙ ТАЙМШАП как в старом коде ===
+    m_physicsAccumulator += deltaTime;
+
+    while (m_physicsAccumulator >= FIXED_TIMESTEP) {
+        moveWithCollision(FIXED_TIMESTEP);
+
+        // Водная физика внутри фиксированного шага
         if (IsInWater()) {
-            ApplyWaterPhysics(deltaTime);
+            ApplyWaterPhysics(FIXED_TIMESTEP);
         }
+
+        m_physicsAccumulator -= FIXED_TIMESTEP;
     }
 }
 
@@ -880,7 +785,6 @@ void Player::getViewMatrix(float* matrix) const {
     glm::mat4 view = glm::lookAt(eye, eye + front, glm::vec3(0.0f, 1.0f, 0.0f));
     memcpy(matrix, glm::value_ptr(view), sizeof(glm::mat4));
 }
-// === ВОДНАЯ ФИЗИКА ===
 
 void Player::SetInWater(bool inWater) {
     if (inWater) {
@@ -892,13 +796,10 @@ void Player::SetInWater(bool inWater) {
 }
 
 void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
-    // Получаем капсулу игрока
     Capsule capsule = getPlayerCapsule(position);
-
     bool inWater = false;
     float waterSurface = 0.0f;
 
-    // Проверяем все зоны воды
     for (const auto* water : waterZones) {
         if (water->intersectsCapsule(capsule)) {
             inWater = true;
@@ -907,8 +808,6 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
         }
     }
 
-    // Определяем уровень воды (0-3 как в HL)
-    // 0 - не в воде, 1 - ноги, 2 - пояс, 3 - голова/полностью
     bool currentlyInWater = inWater;
 
     if (inWater) {
@@ -916,26 +815,14 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
         float headY = position.y + m_vecHullMax.y;
 
         if (feetY >= waterSurface) {
-            // Ноги выше воды - не в воде
-            SetInWater(false);
-            m_flWaterLevel = 0;
             currentlyInWater = false;
         }
         else if (headY >= waterSurface) {
-            // Голова над водой - частичное погружение
             SetInWater(true);
-            if ((position.y) >= waterSurface) {
-                m_flWaterLevel = 3.0f;  // Полностью под водой
-            }
-            else if ((position.y + m_vecHullMax.y * 0.5f) >= waterSurface) {
-                m_flWaterLevel = 2.0f;  // По пояс
-            }
-            else {
-                m_flWaterLevel = 1.0f;  // Только ноги
-            }
+            m_flWaterLevel = (position.y >= waterSurface) ? 3.0f :
+                ((position.y + m_vecHullMax.y * 0.5f) >= waterSurface) ? 2.0f : 1.0f;
         }
         else {
-            // Полностью под водой
             SetInWater(true);
             m_flWaterLevel = 3.0f;
         }
@@ -945,7 +832,6 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
         m_flWaterLevel = 0;
     }
 
-    // Логирование только при входе/выходе из воды
     if (currentlyInWater && !m_bWasInWater) {
         std::cout << "[WATER] Entered water! Level=" << m_flWaterLevel
             << " surface=" << waterSurface << std::endl;
@@ -960,21 +846,12 @@ void Player::CheckWater(const std::vector<CFuncWater*>& waterZones) {
 void Player::ApplyWaterPhysics(float deltaTime) {
     if (!IsInWater()) return;
 
-    // ВАЖНО: В воде игрок НЕ на земле - он плавает
     onGround = false;
 
-    // Гравитация в воде меньше (игрок медленнее тонет/всплывает)
-    float waterGravity = gravity * 0.3f;
-
-    // Сопротивление воды (сильнее чем воздух)
-    // Используем экспоненциальное затухание для независимости от FPS
     float waterDrag = 0.92f;
-    float dragFactor = powf(waterDrag, deltaTime * 60.0f); // Нормализуем к 60 FPS
-
-    // Применяем сопротивление ко всей скорости
+    float dragFactor = powf(waterDrag, deltaTime * 60.0f);
     velocity *= dragFactor;
 
-    // В воде игрок может двигаться во всех направлениях (как в полете но медленнее)
     GLFWwindow* window = glfwGetCurrentContext();
     float yawRad = glm::radians(yaw);
     glm::vec3 forward(cos(yawRad), 0.0f, sin(yawRad));
@@ -982,26 +859,19 @@ void Player::ApplyWaterPhysics(float deltaTime) {
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
     glm::vec3 wishvel(0.0f);
-    float swimSpeed = speed * 0.6f;  // Медленнее чем ходьба
+    float swimSpeed = speed * 0.6f;
 
-    // Горизонтальное движение
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wishvel += forward;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wishvel -= forward;
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wishvel -= right;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wishvel += right;
-
-    // Пробел - всплытие, Ctrl - погружение
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-        wishvel += up;
-    }
-    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
-        wishvel -= up;
-    }
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) wishvel += up;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) wishvel -= up;
 
     float wishspeed = glm::length(wishvel);
     if (wishspeed > 0) {
         glm::vec3 wishdir = wishvel / wishspeed;
-        float accel = 15.0f;  // Ускорение в воде
+        float accel = 15.0f;
         float addspeed = swimSpeed * wishspeed - glm::dot(velocity, wishdir);
 
         if (addspeed > 0) {
@@ -1011,21 +881,17 @@ void Player::ApplyWaterPhysics(float deltaTime) {
         }
     }
 
-    // Ограничиваем максимальную скорость в воде
     float maxSwimSpeed = swimSpeed * 1.5f;
     if (glm::length(velocity) > maxSwimSpeed) {
         velocity = glm::normalize(velocity) * maxSwimSpeed;
     }
 
-    // Если игрок не движется активно - медленно всплывает (плавучесть)
     if (wishspeed < 0.1f && !onGround) {
-        // Добавляем небольшую силу всплытия
-        velocity.y += waterGravity * 0.5f * deltaTime;
+        velocity.y += gravity * 0.5f * deltaTime;
     }
     else {
-        // Применяем уменьшенную гравитацию только если не всплываем активно
         if (velocity.y < 0) {
-            velocity.y -= waterGravity * deltaTime;
+            velocity.y -= gravity * 0.3f * deltaTime;
         }
     }
 

@@ -64,11 +64,10 @@ struct DoorEntity {
     std::vector<unsigned int> indices;
     GLuint textureID = 0;
 
-    // === НОВОЕ: OpenGL буферы для рендеринга ===
     GLuint vao = 0;
     GLuint vbo = 0;
     GLuint ebo = 0;
-    bool buffersDirty = true;  // Нужно ли обновить буферы
+    bool buffersDirty = true;
 
     int moveSound = 0;
     int stopSound = 0;
@@ -86,10 +85,12 @@ struct DoorEntity {
 
     glm::mat4 getTransform() const;
 
-    // === НОВОЕ: Управление буферами ===
-    void buildBuffers();  // Создать VAO/VBO/EBO
-    void updateBuffers(); // Обновить данные в буферах если dirty
-    void cleanupBuffers(); // Удалить буферы
+    void buildBuffers();
+    void updateBuffers();
+    void cleanupBuffers();
+
+    // === НОВЫЙ МЕТОД ===
+    bool isMoving() const { return state == DoorState::Opening || state == DoorState::Closing; }
 
 private:
     void calculateEndPosition(const BSPLoader& bsp);

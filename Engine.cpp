@@ -95,8 +95,8 @@ bool Engine::initGLFW() {
         height = settings.screenHeight;
     }
     else {
-        monitor = nullptr;  // ← ВАЖНО: nullptr для оконного режима
-        GLFWmonitor* primary = glfwGetPrimaryMonitor();  // ← Для центрирования используем временную переменную
+        monitor = nullptr;
+        GLFWmonitor* primary = glfwGetPrimaryMonitor();
         const GLFWvidmode* mode = glfwGetVideoMode(primary);
         windowX = (mode->width - settings.screenWidth) / 2;
         windowY = (mode->height - settings.screenHeight) / 2;
@@ -220,7 +220,6 @@ bool Engine::init() {
 }
 
 void Engine::onFramebufferSize(int width, int height) {
-    // FIX: Prevent crash when minimized or invalid size
     if (width <= 0 || height <= 0) {
         std::cout << "[ENGINE] Ignoring invalid framebuffer size: " << width << "x" << height << std::endl;
         return;
@@ -380,7 +379,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
     auto doorEntities = bspLoader->getEntitiesByClass("func_door");
     auto rotDoorEntities = bspLoader->getEntitiesByClass("func_door_rotating");
 
-    // Объединяем
     std::vector<BSPEntity> allDoors = doorEntities;
     allDoors.insert(allDoors.end(), rotDoorEntities.begin(), rotDoorEntities.end());
 
@@ -397,7 +395,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
     std::cout << "[ENGINE] Loaded " << doors.size() << " doors" << std::endl;
 
-    // Загружаем скайбокс
     std::string skyName = bspLoader->getSkyName();
     if (!skyName.empty()) {
         skyboxRenderer = std::make_unique<SkyboxRenderer>();
@@ -544,6 +541,10 @@ void Engine::doLoadMap(const std::string& mapPath) {
     }
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    // Сбрасываем флаг коллайдера дверей при загрузке новой карты
+    doorColliderDirty = true;
+    doorColliderUpdateTimer = 0.0f;
 }
 
 void Engine::updateTime() {
@@ -708,22 +709,17 @@ void Engine::render() {
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)width / (float)height, 0.1f, 10000.0f);
 
-    // Очищаем буферы
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // 1. Скайбокс
     if (skyboxRenderer && skyboxRenderer->isLoaded()) {
         skyboxRenderer->render(view, projection, eyePos);
     }
 
-    // 2. Мир (с очисткой depth)
     glClear(GL_DEPTH_BUFFER_BIT);
 
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
         lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
-
-        // === РЕНДЕРИНГ ДВЕРЕЙ ===
         lmRenderer->renderDoors(doors, view, projection);
     }
 
@@ -746,106 +742,165 @@ void Engine::shutdown() {
     }
 }
 
-void Engine::updateDoors(float deltaTime) {
-    // === ОПТИМИЗАЦИЯ: отслеживаем, нужно ли обновлять коллайдер ===
-    bool anyDoorMoving = false;
+// ============================================================================
+// === ОПТИМИЗИРОВАННЫЕ МЕТОДЫ ДЛЯ ДВЕРЕЙ ===
+// ============================================================================
 
-    // Обновляем состояние дверей
+void Engine::updateDoors(float deltaTime) {
+    // 1. Обновляем анимацию всех дверей
+    bool anyMoving = false;
+    bool anyStateChanged = false;
+
     for (auto& door : doors) {
         DoorState oldState = door->state;
-        door->update(deltaTime, meshCollider.get());
+        door->update(deltaTime, nullptr);  // Не передаём коллайдер - проверяем сами
 
-        // Дверь движется если состояние изменилось или она в процессе открытия/закрытия
-        if (oldState != door->state ||
-            door->state == DoorState::Opening ||
-            door->state == DoorState::Closing) {
-            anyDoorMoving = true;
+        if (door->isMoving()) {
+            anyMoving = true;
+        }
+        if (oldState != door->state) {
+            anyStateChanged = true;
         }
     }
 
-    // === КРИТИЧЕСКАЯ ОПТИМИЗАЦИЯ: обновляем коллайдер ТОЛЬКО если двери движутся ===
-    if (!anyDoorMoving || doors.empty()) {
-        // Если двери не движутся, проверяем нужна ли инициализация
-        static bool colliderInitialized = false;
-        if (colliderInitialized) return;
-        colliderInitialized = true;
-        // Иначе продолжаем для первичной инициализации
-    }
+    // 2. Обновляем коллайдер ТОЛЬКО если:
+    // - Есть движущиеся двери И
+    // - Прошло достаточно времени с последнего обновления
+    if (anyMoving) {
+        doorColliderUpdateTimer += deltaTime;
 
-    if (meshCollider) {
-        std::vector<Triangle> doorTriangles;
-        doorTriangles.reserve(1024); // Резервируем заранее
-
-        for (const auto& door : doors) {
-            if (door->passable) continue;
-            if (door->vao == 0 || door->indices.empty()) continue;
-
-            glm::mat4 transform = door->getTransform();
-            const auto& verts = door->vertices;
-            const auto& idxs = door->indices;
-
-            // === ОПТИМИЗАЦИЯ: используем emplace_back с reserve ===
-            for (size_t i = 0; i < idxs.size(); i += 3) {
-                Triangle tri;
-                // Трансформируем вершины напрямую без промежуточных векторов
-                glm::vec4 v0 = transform * glm::vec4(verts[idxs[i]].position, 1.0f);
-                glm::vec4 v1 = transform * glm::vec4(verts[idxs[i + 1]].position, 1.0f);
-                glm::vec4 v2 = transform * glm::vec4(verts[idxs[i + 2]].position, 1.0f);
-
-                tri.vertices[0] = glm::vec3(v0);
-                tri.vertices[1] = glm::vec3(v1);
-                tri.vertices[2] = glm::vec3(v2);
-
-                tri.normal = glm::normalize(glm::cross(
-                    tri.vertices[1] - tri.vertices[0],
-                    tri.vertices[2] - tri.vertices[0]
-                ));
-
-                doorTriangles.push_back(std::move(tri)); // move вместо copy
-            }
+        if (doorColliderUpdateTimer >= DOOR_COLLIDER_UPDATE_INTERVAL) {
+            doorColliderUpdateTimer = 0.0f;
+            updateDoorCollider();
         }
-
-        meshCollider->updateDynamicTriangles(std::move(doorTriangles));
+    }
+    else if (anyStateChanged) {
+        // Дверь остановилась - обновляем один раз
+        updateDoorCollider();
     }
 }
 
-void Engine::checkDoorInteractions(Player* player) {
-    if (!player) return;
+void Engine::updateDoorCollider() {
+    if (!meshCollider || doors.empty()) return;
 
-    glm::vec3 playerPos = player->getPosition();
-    Capsule playerCapsule = player->getPlayerCapsule(playerPos);
+    // Собираем треугольники ТОЛЬКО от дверей, которые влияют на коллизии
+    std::vector<Triangle> doorTriangles;
 
-    for (auto& door : doors) {
-        // Проверяем касание
-        if (door->intersectsPlayer(playerPos, playerCapsule)) {
-            // === ИСПРАВЛЕНО: открываем только если закрыта или закрывается ===
-            if (door->state == DoorState::Closed || door->state == DoorState::Closing) {
-                if (!door->useOnly) {
-                    door->open();
-                }
-            }
-            else if (door->state == DoorState::Open || door->state == DoorState::Opening) {
-                // Если дверь уже открыта/открывается - сбрасываем таймер автозакрытия
-                // (игрок стоит в дверном проеме, "держит" дверь открытой)
-                door->stateTimer = 0.0f;
-            }
+    // Резервируем примерно 100 треугольников на дверь (с запасом)
+    size_t estimatedTris = 0;
+    for (const auto& door : doors) {
+        if (!door->passable && door->vao != 0) {
+            estimatedTris += door->indices.size() / 3;
         }
     }
+    doorTriangles.reserve(estimatedTris);
+
+    for (const auto& door : doors) {
+        // Пропускаем проходимые двери
+        if (door->passable) continue;
+
+        // Пропускаем двери без геометрии
+        if (door->vao == 0 || door->indices.empty()) continue;
+
+        glm::mat4 transform = door->getTransform();
+        const auto& verts = door->vertices;
+        const auto& idxs = door->indices;
+
+        for (size_t i = 0; i < idxs.size(); i += 3) {
+            Triangle tri;
+
+            // Трансформируем вершины
+            glm::vec4 v0 = transform * glm::vec4(verts[idxs[i]].position, 1.0f);
+            glm::vec4 v1 = transform * glm::vec4(verts[idxs[i + 1]].position, 1.0f);
+            glm::vec4 v2 = transform * glm::vec4(verts[idxs[i + 2]].position, 1.0f);
+
+            tri.vertices[0] = glm::vec3(v0);
+            tri.vertices[1] = glm::vec3(v1);
+            tri.vertices[2] = glm::vec3(v2);
+
+            // Вычисляем нормаль
+            tri.normal = glm::normalize(glm::cross(
+                tri.vertices[1] - tri.vertices[0],
+                tri.vertices[2] - tri.vertices[0]
+            ));
+
+            doorTriangles.push_back(tri);
+        }
+    }
+
+    meshCollider->updateDynamicTriangles(std::move(doorTriangles));
+
+    static int updateCount = 0;
+    if (++updateCount < 5 || updateCount % 60 == 0) {
+        std::cout << "[DOOR] Collider updated: " << doorTriangles.size()
+            << " triangles from " << doors.size() << " doors" << std::endl;
+    }
+}
+
+bool Engine::checkDoorCollision(const Capsule& capsule, glm::vec3& outPush) const {
+    outPush = glm::vec3(0.0f);
+    bool hit = false;
+
+    for (const auto& door : doors) {
+        if (door->passable) continue;
+
+        // Быстрая проверка AABB
+        AABB doorBounds = door->getCurrentBounds();
+
+        // Расширяем bounds на радиус капсулы
+        AABB expandedBounds = doorBounds;
+        expandedBounds.min -= glm::vec3(capsule.radius);
+        expandedBounds.max += glm::vec3(capsule.radius);
+
+        glm::vec3 capsuleCenter = capsule.getCenter();
+
+        // Если центр капсулы далеко от bounds - пропускаем
+        if (!expandedBounds.contains(capsuleCenter)) {
+            // Дополнительная проверка: расстояние до AABB
+            glm::vec3 closest = glm::clamp(capsuleCenter, expandedBounds.min, expandedBounds.max);
+            float distSq = glm::length(capsuleCenter - closest);
+            distSq = distSq * distSq;
+            if (distSq > capsule.radius * capsule.radius) {
+                continue;
+            }
+        }
+
+        // Точная проверка: капсула против AABB двери
+        // Находим ближайшую точку на AABB к центру капсулы
+        glm::vec3 closestOnAABB = glm::clamp(capsuleCenter, doorBounds.min, doorBounds.max);
+        glm::vec3 toCapsule = capsuleCenter - closestOnAABB;
+        float dist = glm::length(toCapsule);
+
+        if (dist < capsule.radius) {
+            // Есть коллизия - вычисляем push вектор
+            glm::vec3 pushDir = (dist > 0.001f) ? (toCapsule / dist) : glm::vec3(0.0f, 1.0f, 0.0f);
+            float pushAmount = capsule.radius - dist;
+
+            outPush += pushDir * pushAmount;
+            hit = true;
+        }
+    }
+
+    return hit;
+}
+
+bool Engine::checkDoorCollisionSimple(const Capsule& capsule) const {
+    glm::vec3 push;
+    return checkDoorCollision(capsule, push);
 }
 
 void Engine::renderDoors(const glm::mat4& view, const glm::mat4& projection) {
     if (doors.empty()) return;
 
-    // Используем LightmappedRenderer если доступен, иначе обычный
     if (lmRenderer && useLightmapped) {
         lmRenderer->renderDoors(doors, view, projection);
     }
     else if (renderer) {
-        // Fallback - рендерим через обычный renderer
-        // Нужно добавить поддержку в Renderer
+        // Fallback - можно добавить в Renderer если нужно
     }
 }
 
 void Engine::cleanupDoors() {
     doors.clear();
+    doorColliderDirty = true;
 }

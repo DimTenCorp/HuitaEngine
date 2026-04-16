@@ -68,8 +68,10 @@ public:
 
     void applySettings(const SettingsData& settings);
 
+    // === ОПТИМИЗИРОВАННЫЕ МЕТОДЫ ДЛЯ ДВЕРЕЙ ===
     void updateDoors(float deltaTime);
-    void checkDoorInteractions(Player* player);
+    bool checkDoorCollision(const Capsule& capsule, glm::vec3& outPush) const;
+    bool checkDoorCollisionSimple(const Capsule& capsule) const;
     const std::vector<std::unique_ptr<DoorEntity>>& getDoors() const { return doors; }
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
     void cleanupDoors();
@@ -107,6 +109,11 @@ private:
 
     SettingsData currentSettings;
 
+    // === ОПТИМИЗАЦИЯ: Таймер обновления коллайдера дверей ===
+    float doorColliderUpdateTimer = 0.0f;
+    static constexpr float DOOR_COLLIDER_UPDATE_INTERVAL = 1.0f / 20.0f; // 20 FPS достаточно
+    bool doorColliderDirty = true;
+
     bool initGLFW();
     bool initGLAD();
     bool initImGui();
@@ -116,4 +123,7 @@ private:
     void render();
     void processPendingLoad();
     void doLoadMap(const std::string& mapPath);
+
+    // === Внутренние методы для дверей ===
+    void updateDoorCollider(); // Обновляет MeshCollider только при необходимости
 };
