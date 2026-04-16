@@ -489,6 +489,9 @@ bool Renderer::loadWorld(BSPLoader& bsp) {
     std::cout << "Renderer: " << opaqueDrawCalls.size() << " opaque, "
         << transparentDrawCalls.size() << " transparent draw calls" << std::endl;
 
+    // Сортируем непрозрачные draw calls по текстуре для минимизации переключений
+    sortOpaqueDrawCallsByTexture();
+
     worldLoaded = true;
     return true;
 }
@@ -502,6 +505,7 @@ void Renderer::unloadWorld() {
     sortedTransparentDrawCalls.clear();
     transparentDistances.clear();
     lastCameraPos = glm::vec3(0.0f);
+    opaqueDrawCallsSorted = false;
     worldLoaded = false;
 }
 
@@ -573,11 +577,13 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool o
     glActiveTexture(GL_TEXTURE0);
     worldMesh.bind();
 
-    GLuint currentTex = 0;
-
     // Выбираем какие draw calls рисовать
     const auto& drawCalls = onlyTransparent ? transparentDrawCalls : opaqueDrawCalls;
 
+    // Для непрозрачных объектов текстуры уже отсортированы, просто рендерим
+    // Для прозрачных - сортировка происходит в renderTransparentFacesForward
+    GLuint currentTex = 0;
+    
     for (const auto& dc : drawCalls) {
         if (dc.texID != currentTex) {
             glBindTexture(GL_TEXTURE_2D, dc.texID);
@@ -593,6 +599,17 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool o
 
     BspMesh::unbind();
     geometryShader->unbind();
+}
+
+void Renderer::sortOpaqueDrawCallsByTexture() {
+    // Сортируем непрозрачные draw calls по текстуре для минимизации переключений текстур
+    // Это выполняется один раз при загрузке уровня, а не каждый кадр
+    std::sort(opaqueDrawCalls.begin(), opaqueDrawCalls.end(), 
+        [](const FaceDrawCall& a, const FaceDrawCall& b) {
+            return a.texID < b.texID;
+        });
+    
+    opaqueDrawCallsSorted = true;
 }
 
 void Renderer::lightingPass(const glm::vec3& viewPos) {
@@ -672,12 +689,13 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
 
     worldMesh.bind();
 
+    // Оптимизация: используем отсортированный список, чтобы минимизировать переключения текстур
+    // в пределах групп с одинаковой глубиной сортировки
     GLuint currentTex = 0;
-    const auto& drawCallsToRender = needsResort && sortTransparentFaces ? 
+    const auto& drawCallsToRender = sortTransparentFaces ? 
                                     sortedTransparentDrawCalls : transparentDrawCalls;
     
     for (const auto& dc : drawCallsToRender) {
-
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, dc.texID);

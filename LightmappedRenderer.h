@@ -89,10 +89,15 @@ private:
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
+    
+    // Кэширование для сортировки прозрачных объектов по текстуре
+    std::vector<LMFaceDrawCall> sortedOpaqueFaceDrawCalls;
+    bool opaqueFacesSorted = false;
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
     void cleanup();
+    void sortOpaqueFaceDrawCallsByTexture();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();
 };

@@ -441,6 +441,9 @@ bool LightmappedRenderer::buildLightmappedMesh(BSPLoader& bsp, LightmapManager& 
         << ", sky skipped: " << skySkipped
         << ", door skipped: " << doorSkipped << ")" << std::endl;
 
+    // Сортируем непрозрачные draw calls по текстуре для минимизации переключений
+    sortOpaqueFaceDrawCallsByTexture();
+
     return true;
 }
 
@@ -478,6 +481,8 @@ void LightmappedRenderer::unloadWorld() {
     indexCount = 0;
     lmManager = nullptr;
     faceDrawCalls.clear();
+    sortedOpaqueFaceDrawCalls.clear();
+    opaqueFacesSorted = false;
     meshVertices.clear();
     meshIndices.clear();
 }
@@ -527,8 +532,11 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
     glBindVertexArray(worldVAO);
 
+    // Используем отсортированные по текстуре draw calls для непрозрачных объектов
     GLuint currentTex = 0;
-    for (const auto& dc : faceDrawCalls) {
+    const auto& drawCallsToRender = opaqueFacesSorted ? sortedOpaqueFaceDrawCalls : faceDrawCalls;
+    
+    for (const auto& dc : drawCallsToRender) {
         if (dc.isTransparent) continue;
         if (dc.isSky) continue;
 
@@ -688,4 +696,24 @@ void LightmappedRenderer::renderDoors(const std::vector<std::unique_ptr<DoorEnti
 void LightmappedRenderer::cleanup() {
     unloadWorld();
     lightmappedShader.reset();
+}
+
+void LightmappedRenderer::sortOpaqueFaceDrawCallsByTexture() {
+    // Сортируем непрозрачные draw calls по текстуре для минимизации переключений текстур
+    // Это выполняется один раз при загрузке уровня, а не каждый кадр
+    sortedOpaqueFaceDrawCalls.clear();
+    sortedOpaqueFaceDrawCalls.reserve(faceDrawCalls.size());
+    
+    for (const auto& dc : faceDrawCalls) {
+        if (!dc.isTransparent && !dc.isSky) {
+            sortedOpaqueFaceDrawCalls.push_back(dc);
+        }
+    }
+    
+    std::sort(sortedOpaqueFaceDrawCalls.begin(), sortedOpaqueFaceDrawCalls.end(),
+        [](const LMFaceDrawCall& a, const LMFaceDrawCall& b) {
+            return a.texID < b.texID;
+        });
+    
+    opaqueFacesSorted = true;
 }

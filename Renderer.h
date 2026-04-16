@@ -116,6 +116,11 @@ private:
     std::vector<float> transparentDistances;
     glm::vec3 lastCameraPos = glm::vec3(0.0f);
     float cameraMoveThreshold = 2.0f; // Пересортировывать только если камера сдвинулась больше чем на 2 единицы
+    
+    // Флаг indicating that draw calls need to be sorted by texture
+    bool opaqueDrawCallsSorted = false;
+    
+    void sortOpaqueDrawCallsByTexture();
 
     void createQuadMesh();
     void cleanup();
