@@ -96,7 +96,6 @@ private:
     
     // Кэширование для сортировки прозрачных объектов (от дальних к ближним)
     std::vector<LMFaceDrawCall> sortedTransparentFaceDrawCalls;
-    std::vector<float> transparentFaceDistances;
     glm::vec3 lastCameraPos = glm::vec3(0.0f);
     float cameraMoveThreshold = 5.0f; // Увеличенный порог: пересортировывать только если камера сдвинулась больше чем на 5 единиц
     

@@ -486,7 +486,6 @@ void LightmappedRenderer::unloadWorld() {
     faceDrawCalls.clear();
     sortedOpaqueFaceDrawCalls.clear();
     sortedTransparentFaceDrawCalls.clear();
-    transparentFaceDistances.clear();
     opaqueFacesSorted = false;
     lastCameraPos = glm::vec3(0.0f);
     spatialHashValid = false;
@@ -603,68 +602,41 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
                     });
                 
                 // Собираем draw calls из отсортированных ячеек
-                struct SortedDrawCall {
-                    LMFaceDrawCall dc;
-                    float distance;
-                };
-                
-                std::vector<SortedDrawCall> sorted;
+                std::vector<LMFaceDrawCall> sorted;
+                sorted.reserve(faceDrawCalls.size());
                 
                 for (const auto& sortedCell : sortedCells) {
                     const auto& cell = spatialHashGrid[sortedCell.hash];
                     
-                    // Сортируем draw calls внутри ячейки
-                    std::vector<std::pair<size_t, float>> cellDrawCalls;
-                    cellDrawCalls.reserve(cell.drawCallIndices.size());
-                    
-                    for (size_t idx : cell.drawCallIndices) {
-                        const auto& dc = faceDrawCalls[idx];
-                        float dist = sortedCell.distance;  // Аппроксимация расстоянием до ячейки
-                        
-                        // Для более точной сортировки вычисляем расстояние до объекта
-                        if (dc.indexCount > 0 && !meshIndices.empty() && !meshVertices.empty()) {
-                            unsigned int firstIdx = dc.indexOffset;
-                            if (firstIdx < meshIndices.size()) {
-                                unsigned int vertIdx = meshIndices[firstIdx];
-                                if (vertIdx < meshVertices.size()) {
-                                    dist = glm::distance(viewPos, meshVertices[vertIdx].position);
-                                }
-                            }
-                        }
-                        
-                        cellDrawCalls.push_back({ idx, dist });
+                    // Быстрый путь: если в ячейке один объект, добавляем без сортировки
+                    if (cell.drawCallIndices.size() == 1) {
+                        sorted.push_back(faceDrawCalls[cell.drawCallIndices[0]]);
+                        continue;
                     }
                     
-                    // Сортируем draw calls внутри ячейки от дальних к ближним
-                    std::sort(cellDrawCalls.begin(), cellDrawCalls.end(),
-                        [](const auto& a, const auto& b) {
-                            return a.second > b.second;
-                        });
-                    
-                    // Добавляем в общий список
-                    for (const auto& [idx, dist] : cellDrawCalls) {
-                        sorted.push_back({ faceDrawCalls[idx], dist });
+                    // Для нескольких объектов используем аппроксимацию расстоянием до центроида ячейки
+                    // Это быстрее и достаточно точно для объектов в одной ячейке
+                    for (size_t idx : cell.drawCallIndices) {
+                        sorted.push_back(faceDrawCalls[idx]);
                     }
                 }
                 
                 // Кэшируем отсортированные draw calls
                 sortedTransparentFaceDrawCalls.clear();
                 sortedTransparentFaceDrawCalls.reserve(sorted.size());
-                transparentFaceDistances.clear();
-                transparentFaceDistances.reserve(sorted.size());
                 
-                for (const auto& item : sorted) {
-                    sortedTransparentFaceDrawCalls.push_back(item.dc);
-                    transparentFaceDistances.push_back(item.distance);
+                for (const auto& dc : sorted) {
+                    sortedTransparentFaceDrawCalls.push_back(dc);
                 }
             } else {
-                // Fallback: обычная полная сортировка
+                // Fallback: обычная полная сортировка (только если spatial hash не построен)
                 struct SortedDrawCall {
                     const LMFaceDrawCall* dc;
                     float distance;
                 };
 
                 std::vector<SortedDrawCall> sorted;
+                sorted.reserve(faceDrawCalls.size());
 
                 for (const auto& dc : faceDrawCalls) {
                     if (!dc.isTransparent) continue;
@@ -689,12 +661,9 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
                 sortedTransparentFaceDrawCalls.clear();
                 sortedTransparentFaceDrawCalls.reserve(sorted.size());
-                transparentFaceDistances.clear();
-                transparentFaceDistances.reserve(sorted.size());
                 
                 for (const auto& item : sorted) {
                     sortedTransparentFaceDrawCalls.push_back(*item.dc);
-                    transparentFaceDistances.push_back(item.distance);
                 }
             }
             
