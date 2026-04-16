@@ -536,6 +536,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // Устанавливаем состояния для непрозрачной геометрии ОДИН РАЗ
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -552,6 +553,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     // ============================================
     // ПРОХОД 3: Прозрачная геометрия (поверх всего)
     // ============================================
+    // Переключаем состояния МИНИМАЛЬНО НЕОБХОДИМОЕ количество раз
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);  // ← КЛЮЧЕВОЙ МОМЕНТ!
@@ -560,7 +562,7 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     // Рисуем ПРОЗРАЧНЫЕ draw calls (отсортированные)
     renderTransparentFacesForward(view, projection, viewPos);
 
-    // Восстанавливаем состояние
+    // Восстанавливаем состояние ОДИН РАЗ в конце кадра
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDepthFunc(GL_LESS);
@@ -569,10 +571,11 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
 void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool onlyTransparent) {
     gBuffer.bindForWriting();
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    // Состояния уже установлены в renderWorld(), не перестанавливаем их повторно
+    // glEnable(GL_DEPTH_TEST);      // Уже включено
+    // glDepthFunc(GL_LESS);         // Уже установлено
+    // glDepthMask(GL_TRUE);         // Уже установлено
+    // glDisable(GL_BLEND);          // Уже выключено
 
     geometryShader->bind();
     geometryShader->setMat4("model", glm::mat4(1.0f));
@@ -696,8 +699,12 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
     (void)viewPos;
 
     GBuffer::unbind();
+    // Состояния уже установлены правильно из renderWorld():
+    // - GL_DEPTH_TEST включен для geometry pass
+    // - GL_BLEND выключен
+    // Для lighting pass нам нужно только отключить depth test
     glDisable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
+    // glDisable(GL_BLEND);  // Уже выключен из geometry pass
 
     lightingShader->bind();
     gBuffer.bindForReading(GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE2);

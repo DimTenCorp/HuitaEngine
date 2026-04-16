@@ -499,10 +499,11 @@ void LightmappedRenderer::unloadWorld() {
 void LightmappedRenderer::beginFrame(const glm::vec3& clearColor, bool clearColorBuffer) {
     stats.reset();
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    // Состояния устанавливаются один раз в renderWorld(), не перестанавливаем здесь
+    // glEnable(GL_DEPTH_TEST);      // Будет установлено в renderWorld()
+    // glDepthFunc(GL_LESS);         // Будет установлено в renderWorld()
+    // glDepthMask(GL_TRUE);         // Будет установлено в renderWorld()
+    // glDisable(GL_BLEND);          // Будет установлено в renderWorld()
 
     if (clearColorBuffer) {
         glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
@@ -521,6 +522,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
+    // Устанавливаем состояния для непрозрачной геометрии ОДИН РАЗ в начале кадра
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -699,6 +701,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
             lastCameraPos = viewPos;
         }
 
+        // Переключаем состояния МИНИМАЛЬНО НЕОБХОДИМОЕ количество раз для прозрачных объектов
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
@@ -737,6 +740,7 @@ void LightmappedRenderer::renderWorld(const glm::mat4& view, const glm::vec3& vi
 
         lightmappedShader->unbind();
 
+        // Восстанавливаем состояние ОДИН РАЗ в конце рендеринга прозрачных объектов
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glDepthFunc(GL_LESS);
