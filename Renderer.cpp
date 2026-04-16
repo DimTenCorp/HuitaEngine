@@ -499,6 +499,9 @@ void Renderer::unloadWorld() {
     meshIndices.clear();
     opaqueDrawCalls.clear();
     transparentDrawCalls.clear();
+    sortedTransparentDrawCalls.clear();
+    transparentDistances.clear();
+    lastCameraPos = glm::vec3(0.0f);
     worldLoaded = false;
 }
 
@@ -614,34 +617,53 @@ void Renderer::lightingPass(const glm::vec3& viewPos) {
 void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& viewPos) {
     if (transparentDrawCalls.empty() || !transparentShader) return;
 
-    // Сортируем прозрачные объекты от дальних к ближним
-    struct SortedDrawCall {
-        FaceDrawCall dc;
-        float distance;
-    };
+    // Проверяем, нужно ли пересортировывать (только если камера сдвинулась значительно)
+    bool needsResort = sortedTransparentDrawCalls.empty() || 
+                       glm::distance(viewPos, lastCameraPos) > cameraMoveThreshold;
+    
+    if (needsResort && sortTransparentFaces) {
+        // Сортируем прозрачные объекты от дальних к ближним
+        struct SortedDrawCall {
+            FaceDrawCall dc;
+            float distance;
+        };
 
-    std::vector<SortedDrawCall> sorted;
-    sorted.reserve(transparentDrawCalls.size());
+        std::vector<SortedDrawCall> sorted;
+        sorted.reserve(transparentDrawCalls.size());
 
-    for (const auto& dc : transparentDrawCalls) {
-        float dist = 0.0f;
-        if (dc.indexCount > 0 && !meshIndices.empty() && !meshVertices.empty()) {
-            unsigned int firstIdx = dc.indexOffset;
-            if (firstIdx < meshIndices.size()) {
-                unsigned int vertIdx = meshIndices[firstIdx];
-                if (vertIdx < meshVertices.size()) {
-                    glm::vec3 worldPos = meshVertices[vertIdx].position;
-                    dist = glm::distance(viewPos, worldPos);
+        for (const auto& dc : transparentDrawCalls) {
+            float dist = 0.0f;
+            if (dc.indexCount > 0 && !meshIndices.empty() && !meshVertices.empty()) {
+                unsigned int firstIdx = dc.indexOffset;
+                if (firstIdx < meshIndices.size()) {
+                    unsigned int vertIdx = meshIndices[firstIdx];
+                    if (vertIdx < meshVertices.size()) {
+                        glm::vec3 worldPos = meshVertices[vertIdx].position;
+                        dist = glm::distance(viewPos, worldPos);
+                    }
                 }
             }
+            sorted.push_back({ dc, dist });
         }
-        sorted.push_back({ dc, dist });
-    }
 
-    // Сортируем от дальних к ближним
-    std::sort(sorted.begin(), sorted.end(), [](const SortedDrawCall& a, const SortedDrawCall& b) {
-        return a.distance > b.distance;
-        });
+        // Сортируем от дальних к ближним
+        std::sort(sorted.begin(), sorted.end(), [](const SortedDrawCall& a, const SortedDrawCall& b) {
+            return a.distance > b.distance;
+            });
+
+        // Кэшируем отсортированные draw calls и расстояния
+        sortedTransparentDrawCalls.clear();
+        sortedTransparentDrawCalls.reserve(sorted.size());
+        transparentDistances.clear();
+        transparentDistances.reserve(sorted.size());
+        
+        for (const auto& item : sorted) {
+            sortedTransparentDrawCalls.push_back(item.dc);
+            transparentDistances.push_back(item.distance);
+        }
+        
+        lastCameraPos = viewPos;
+    }
 
     transparentShader->bind();
     transparentShader->setMat4("view", view);
@@ -651,8 +673,10 @@ void Renderer::renderTransparentFacesForward(const glm::mat4& view, const glm::m
     worldMesh.bind();
 
     GLuint currentTex = 0;
-    for (const auto& item : sorted) {
-        const auto& dc = item.dc;
+    const auto& drawCallsToRender = needsResort && sortTransparentFaces ? 
+                                    sortedTransparentDrawCalls : transparentDrawCalls;
+    
+    for (const auto& dc : drawCallsToRender) {
 
         if (dc.texID != currentTex) {
             glActiveTexture(GL_TEXTURE0);
