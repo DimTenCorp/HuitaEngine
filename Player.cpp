@@ -28,8 +28,8 @@ Player::Player() {
     onGround = false;
     speed = 200.0f;
     jumpForce = 270.0f;
-    gravity = 600.0f;  // УМЕНЬШЕНО с 800
-    friction = 4.0f;   // УМЕНЬШЕНО с 7.0 для меньшего скольжения
+    gravity = 600.0f;
+    friction = 4.0f;
 
     yaw = -90.0f;
     pitch = 0.0f;
@@ -59,12 +59,8 @@ Player::Player() {
     m_flSwimTime = 0.0f;
     m_bWasInWater = false;
 
-    m_physicsAccumulator = 0.0f;
-    
-    // Инициализация интерполяции
     m_previousPosition = position;
     m_renderPosition = position;
-    m_interpolationAlpha = 0.0f;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -254,7 +250,6 @@ void Player::Duck(float deltaTime) {
     }
 
     float halfHeight = m_fHullHeight * 0.5f;
-    // ИСПРАВЛЕНО: -m_fHullRadius для Z
     m_vecHullMin = glm::vec3(-m_fHullRadius, -halfHeight, -m_fHullRadius);
     m_vecHullMax = glm::vec3(m_fHullRadius, halfHeight, m_fHullRadius);
 }
@@ -267,11 +262,11 @@ void Player::Jump() {
         float yawRad = glm::radians(yaw);
         velocity.x = cos(yawRad) * PLAYER_LONGJUMP_SPEED;
         velocity.z = sin(yawRad) * PLAYER_LONGJUMP_SPEED;
-        velocity.y = sqrt(2.0f * gravity * 30.0f);  // ← ВЫСОТА LONGJUMP
+        velocity.y = sqrt(2.0f * gravity * 30.0f);
         StopDuck();
     }
     else {
-        velocity.y = sqrt(2.0f * gravity * 40.0f);  // ← ВЫСОТА ОБЫЧНОГО ПРЫЖКА
+        velocity.y = sqrt(2.0f * gravity * 40.0f);
     }
     onGround = false;
 }
@@ -292,7 +287,6 @@ void Player::WalkMove(float deltaTime) {
     float wishspeed = glm::length(wishvel);
     glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    // Friction - как в старом коде с уменьшенным коэффициентом
     if (onGround) {
         float speed = glm::length(glm::vec2(velocity.x, velocity.z));
         if (speed > 0.001f) {
@@ -322,7 +316,6 @@ void Player::WalkMove(float deltaTime) {
         velocity.z += accelspeed * wishdir.z;
     }
 
-    // Полная остановка при отсутствии ввода
     float horizSpeed = glm::length(glm::vec2(velocity.x, velocity.z));
     if (horizSpeed < 0.5f && onGround) {
         GLFWwindow* window = glfwGetCurrentContext();
@@ -354,7 +347,7 @@ void Player::FlyMove(float deltaTime) {
     float wishspeed = glm::length(wishvel);
     glm::vec3 wishdir = (wishspeed > 0) ? wishvel / wishspeed : glm::vec3(0.0f);
 
-    float airAccel = 0.3f;  // УМЕНЬШЕНО с 10.0 для меньшего контроля в воздухе
+    float airAccel = 0.3f;
     float currentspeed = glm::dot(glm::vec2(velocity.x, velocity.z), glm::vec2(wishdir.x, wishdir.z));
     float addspeed = wishspeed - currentspeed;
 
@@ -401,12 +394,10 @@ void Player::PostThink(float deltaTime) {
 }
 
 bool Player::checkCollisionMesh(const glm::vec3& pos) const {
-    // Сначала проверяем статичный мир
     if (meshCollider && meshCollider->intersectCapsule(getPlayerCapsule(pos))) {
         return true;
     }
 
-    // Затем проверяем двери через Engine (оптимизированно)
     if (Engine* engine = Engine::getInstance()) {
         if (engine->checkDoorCollisionSimple(getPlayerCapsule(pos))) {
             return true;
@@ -748,16 +739,6 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
-// === ИНТЕРПОЛЯЦИЯ ДЛЯ ПЛАВНОГО РЕНДЕРИНГА ===
-void Player::updateInterpolation(float alpha) {
-    m_interpolationAlpha = glm::clamp(alpha, 0.0f, 1.0f);
-    // Интерполируем ОТ previousPosition К position
-    // alpha = 0 -> показываем previousPosition
-    // alpha = 1 -> показываем position
-    m_renderPosition = glm::mix(m_previousPosition, position, m_interpolationAlpha);
-}
-
-// === ОСНОВНОЙ UPDATE С ФИКСИРОВАННЫМ ТАЙМШАПОМ И ИНТЕРПОЛЯЦИЕЙ ===
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
     yaw = cameraYaw;
     pitch = cameraPitch;
@@ -766,40 +747,34 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     handleInput(deltaTime);
 
     if (noclipMode) {
-        // Для noclip сохраняем предыдущую позицию перед движением
         m_previousPosition = position;
         moveNoclip(deltaTime);
-        // Сразу устанавливаем render position в текущую для noclip
         m_renderPosition = position;
-        m_interpolationAlpha = 1.0f;
         return;
     }
 
-    // Сохраняем предыдущую позицию перед обновлением физики
-    m_previousPosition = position;
-    
-    // === ФИКСИРОВАННЫЙ ТАЙМШАП как в старом коде ===
-    m_physicsAccumulator += deltaTime;
-
-    while (m_physicsAccumulator >= FIXED_TIMESTEP) {
-        moveWithCollision(FIXED_TIMESTEP);
-
-        // Водная физика внутри фиксированного шага
-        if (IsInWater()) {
-            ApplyWaterPhysics(FIXED_TIMESTEP);
-        }
-
-        m_physicsAccumulator -= FIXED_TIMESTEP;
+    // Ограничиваем максимальный шаг физики для стабильности
+    const float MAX_DELTA = 0.05f;  // 20 FPS минимум
+    if (deltaTime > MAX_DELTA) {
+        deltaTime = MAX_DELTA;
     }
-    
-    // Вычисляем альфу для интерполяции
-    // Прогресс между последним шагом физики и следующим
-    float interpolationAlpha = m_physicsAccumulator / FIXED_TIMESTEP;
-    updateInterpolation(interpolationAlpha);
+
+    // Сохраняем позицию для интерполяции
+    m_previousPosition = m_renderPosition;
+
+    // Один шаг физики за кадр — плавно при любом FPS
+    moveWithCollision(deltaTime);
+
+    if (IsInWater()) {
+        ApplyWaterPhysics(deltaTime);
+    }
+
+    // Позиция для рендеринга = физическая позиция
+    // Интерполяция не нужна при правильном подходе
+    m_renderPosition = position;
 }
 
 glm::vec3 Player::getEyePosition() const {
-    // Используем интерполированную позицию для рендеринга
     return m_renderPosition + GetCurrentViewOffset();
 }
 

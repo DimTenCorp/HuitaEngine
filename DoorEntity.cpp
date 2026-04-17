@@ -14,6 +14,8 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     classname = entity.classname;
     entityProperties = entity.properties;
 
+    glm::vec3 hlAngles = entity.angles;
+
     if (classname == "func_door_rotating") {
         moveType = DoorMoveType::Rotating;
     }
@@ -38,7 +40,6 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
 
     const BSPModel& model = bsp.getModels()[modelIndex];
 
-    // Конвертация bounds BSP → OpenGL
     modelMins = glm::vec3(-model.max[0], model.min[2], model.min[1]);
     modelMaxs = glm::vec3(-model.min[0], model.max[2], model.max[1]);
 
@@ -48,9 +49,24 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
 
     modelOrigin = glm::vec3(-model.origin[0], model.origin[2], model.origin[1]);
 
-    // Центр AABB как начальная позиция
-    startOrigin = (modelMins + modelMaxs) * 0.5f;
+    if (moveType == DoorMoveType::Rotating) {
+        startOrigin = modelOrigin;
+    }
+    else {
+        startOrigin = (modelMins + modelMaxs) * 0.5f;
+    }
+
     origin = startOrigin;
+
+    if (entity.origin != glm::vec3(0.0f)) {
+        float dist = glm::distance(entity.origin, modelOrigin);
+        if (dist > 1.0f) {
+            std::cout << "[DOOR] Entity origin differs from modelOrigin by " << dist
+                << ", using entity origin" << std::endl;
+            origin = entity.origin;
+            startOrigin = entity.origin;
+        }
+    }
 
     targetname = entity.properties.count("targetname") ? entity.properties.at("targetname") : "";
 
@@ -81,27 +97,44 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         catch (...) {}
     }
 
+    // === Углы ===
     if (entity.properties.count("angles")) {
         try {
             float ax, ay, az;
             sscanf_s(entity.properties.at("angles").c_str(), "%f %f %f", &ax, &ay, &az);
-            angles = glm::vec3(ax, ay, az);
+            hlAngles = glm::vec3(ax, ay, az);
+            angles = glm::vec3(-ax, az, ay);
         }
         catch (...) {}
     }
     startAngles = angles;
 
+    // === Направление движения (только для linear) ===
     if (entity.properties.count("movedir")) {
         try {
             float dx, dy, dz;
             sscanf_s(entity.properties.at("movedir").c_str(), "%f %f %f", &dx, &dy, &dz);
-            moveDir = glm::normalize(glm::vec3(dx, dy, dz));
+            moveDir = glm::normalize(glm::vec3(-dx, dz, dy));
         }
         catch (...) {}
     }
-    else {
-        float yaw = angles.y;
-        moveDir = glm::vec3(cos(glm::radians(yaw)), 0.0f, sin(glm::radians(yaw)));
+    else if (moveType == DoorMoveType::Linear) {
+        float pitch = hlAngles.x;
+        float yaw = hlAngles.y;
+
+        while (yaw < 0) yaw += 360.0f;
+        while (yaw >= 360) yaw -= 360.0f;
+
+        while (pitch > 180.0f) pitch -= 360.0f;
+        while (pitch < -180.0f) pitch += 360.0f;
+
+        if (std::abs(pitch) > 45.0f && std::abs(pitch) < 135.0f) {
+            moveDir = glm::vec3(0.0f, (pitch < 0) ? 1.0f : -1.0f, 0.0f);
+        }
+        else {
+            float rad = glm::radians(yaw - 90.0f);
+            moveDir = glm::vec3(sin(rad), 0.0f, cos(rad));
+        }
     }
 
     if (entity.properties.count("movesnd")) {
@@ -111,6 +144,22 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     if (entity.properties.count("stopsnd")) {
         try { stopSound = std::stoi(entity.properties.at("stopsnd")); }
         catch (...) {}
+    }
+
+    // === Проверяем distance - если задан, направление фиксировано ===
+    if (entity.properties.count("distance")) {
+        try {
+            rotationAngle = std::stof(entity.properties.at("distance"));
+            rotationDirectionFixed = true;
+        }
+        catch (...) {
+            rotationAngle = 90.0f;
+            rotationDirectionFixed = false;
+        }
+    }
+    else {
+        rotationAngle = 90.0f;
+        rotationDirectionFixed = false;
     }
 
     if (entity.properties.count("spawnflags")) {
@@ -126,8 +175,10 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         catch (...) {}
     }
 
+    // Рассчитываем конечную позицию/углы
     calculateEndPosition(bsp);
 
+    // Если startOpen — меняем местами начальную и конечную позицию
     if (startOpen) {
         std::swap(startOrigin, endOrigin);
         std::swap(startAngles, endAngles);
@@ -138,35 +189,76 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
     }
 
     buildGeometry(bsp);
-    buildBuffers();  // Создаём OpenGL буферы
+    buildBuffers();
 
     bounds.min = modelMins;
     bounds.max = modelMaxs;
+    updateBounds();
 
     std::cout << "[DOOR] Created " << classname << " model*" << modelIndex
-        << " speed=" << speed << " wait=" << waitTime
-        << " type=" << (moveType == DoorMoveType::Linear ? "linear" : "rotating")
-        << " verts=" << vertices.size() << std::endl;
+        << "\\n  Type: " << (moveType == DoorMoveType::Linear ? "linear" : "rotating")
+        << "\\n  HL angles: (" << hlAngles.x << ", " << hlAngles.y << ", " << hlAngles.z << ")"
+        << "\\n  moveDir: (" << moveDir.x << ", " << moveDir.y << ", " << moveDir.z << ")"
+        << "\\n  startOrigin: (" << startOrigin.x << ", " << startOrigin.y << ", " << startOrigin.z << ")"
+        << "\\n  endOrigin: (" << endOrigin.x << ", " << endOrigin.y << ", " << endOrigin.z << ")"
+        << "\\n  rotationFixed: " << (rotationDirectionFixed ? "yes" : "no (dynamic)")
+        << std::endl;
 }
 
 void DoorEntity::calculateEndPosition(const BSPLoader& bsp) {
     if (moveType == DoorMoveType::Linear) {
         glm::vec3 size = modelMaxs - modelMins;
-        float projection = std::abs(glm::dot(size, glm::abs(moveDir)));
+        float projection = 0.0f;
+
+        if (std::abs(moveDir.y) > 0.5f) {
+            projection = size.y;
+        }
+        else {
+            projection = std::abs(moveDir.x) * size.x + std::abs(moveDir.z) * size.z;
+        }
+
         moveDistance = projection - lip;
         if (moveDistance < 0) moveDistance = projection * 0.8f;
+        if (moveDistance < 1.0f) moveDistance = projection;
 
-        endOrigin = startOrigin - moveDir * moveDistance;
+        endOrigin = startOrigin + moveDir * moveDistance;
     }
     else {
-        float rotationAngle = 90.0f;
-        auto it = entityProperties.find("distance");
-        if (it != entityProperties.end()) {
-            try { rotationAngle = std::stof(it->second); }
-            catch (...) {}
+        // === Для rotating дверей: если direction фиксирован, устанавливаем endAngles ===
+        // Если нет - endAngles будет определён динамически при первом open()
+        if (rotationDirectionFixed) {
+            endAngles = startAngles + glm::vec3(0.0f, rotationAngle, 0.0f);
         }
-        endAngles = startAngles + glm::vec3(0.0f, rotationAngle, 0.0f);
+        // Иначе endAngles пока не трогаем - определим при активации
     }
+}
+
+// === НОВЫЙ МЕТОД: Определяем направление вращения от игрока ===
+void DoorEntity::determineRotationDirection(const glm::vec3& playerPos) {
+    if (moveType != DoorMoveType::Rotating) return;
+    if (rotationDirectionFixed) return;
+
+    // rotationAxis уже хранится как член класса, используем её
+    glm::vec3 toPlayer = playerPos - origin;
+
+    // Проецируем на плоскость перпендикулярную оси вращения
+    glm::vec3 toPlayerProj = toPlayer - rotationAxis * glm::dot(toPlayer, rotationAxis);
+
+    if (glm::length(toPlayerProj) < 0.001f) {
+        rotationAngle = 90.0f;
+        return;
+    }
+
+    // "Правое" направление относительно оси вращения
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    glm::vec3 right = glm::cross(rotationAxis, up);
+
+    // Смотрим, с какой стороны от оси находится игрок
+    float side = glm::dot(glm::normalize(toPlayerProj), glm::normalize(right));
+
+    // side > 0: игрок справа -> открываемся влево (-90)
+    // side < 0: игрок слева -> открываемся вправо (+90)
+    rotationAngle = (side > 0) ? -90.0f : 90.0f;
 }
 
 void DoorEntity::buildGeometry(const BSPLoader& bsp) {
@@ -233,20 +325,21 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
 
         glm::vec3 bspNormal = planes[face.planeNum].normal;
         if (face.side != 0) bspNormal = -bspNormal;
-        glm::vec3 worldNormal(-bspNormal.x, bspNormal.z, bspNormal.y);
-        worldNormal = glm::normalize(worldNormal);
+        glm::vec3 worldNormal = glm::normalize(glm::vec3(-bspNormal.x, bspNormal.z, bspNormal.y));
 
-        unsigned int baseIdx = vertices.size();
+        unsigned int baseIdx = (unsigned int)vertices.size();
 
-        for (const auto& v : faceVerts) {
+        for (const auto& bspPos : faceVerts) {
             BSPVertex bv;
-            // === ИСПРАВЛЕНО: вершины в ЛОКАЛЬНЫХ координатах относительно modelOrigin
-            // НЕ вычитаем modelOrigin здесь - делаем это в шейдере через матрицу
-            bv.position = glm::vec3(-v.x, v.z, v.y);
+            glm::vec3 worldPos = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
+            bv.position = worldPos - modelOrigin;
 
-            float s = v.x * texInfo.s[0] + v.y * texInfo.s[1] + v.z * texInfo.s[2] + texInfo.s[3];
-            float t = v.x * texInfo.t[0] + v.y * texInfo.t[1] + v.z * texInfo.t[2] + texInfo.t[3];
+            float s = bspPos.x * texInfo.s[0] + bspPos.y * texInfo.s[1]
+                + bspPos.z * texInfo.s[2] + texInfo.s[3];
+            float t = bspPos.x * texInfo.t[0] + bspPos.y * texInfo.t[1]
+                + bspPos.z * texInfo.t[2] + texInfo.t[3];
             bv.texCoord = glm::vec2(s / texW, t / texH);
+
             bv.normal = worldNormal;
 
             vertices.push_back(bv);
@@ -254,8 +347,8 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
 
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
             indices.push_back(baseIdx);
-            indices.push_back(baseIdx + j + 1);
-            indices.push_back(baseIdx + j);
+            indices.push_back(baseIdx + (unsigned int)j + 1);
+            indices.push_back(baseIdx + (unsigned int)j);
         }
     }
 
@@ -267,7 +360,7 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
 }
 
 void DoorEntity::buildBuffers() {
-    cleanupBuffers();  // На всякий случай
+    cleanupBuffers();
 
     if (vertices.empty() || indices.empty()) return;
 
@@ -294,16 +387,13 @@ void DoorEntity::updateBuffers() {
         indices.size() * sizeof(unsigned int),
         indices.data(), GL_STATIC_DRAW);
 
-    // layout(location = 0) position
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // layout(location = 1) normal
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
         (void*)offsetof(BSPVertex, normal));
     glEnableVertexAttribArray(1);
 
-    // layout(location = 2) texCoord
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
         (void*)offsetof(BSPVertex, texCoord));
     glEnableVertexAttribArray(2);
@@ -338,7 +428,6 @@ void DoorEntity::update(float deltaTime, MeshCollider* worldCollider) {
         moveProgress = glm::clamp(moveProgress, 0.0f, 1.0f);
 
         float t = moveProgress;
-        // Ease-out для плавности
         t = 1.0f - (1.0f - t) * (1.0f - t);
 
         if (moveType == DoorMoveType::Linear) {
@@ -378,7 +467,7 @@ void DoorEntity::update(float deltaTime, MeshCollider* worldCollider) {
         moveProgress = glm::clamp(moveProgress, 0.0f, 1.0f);
 
         float t = moveProgress;
-        t = t * t;  // Ease-in
+        t = t * t;
 
         if (moveType == DoorMoveType::Linear) {
             origin = glm::mix(startOrigin, endOrigin, t);
@@ -395,7 +484,6 @@ void DoorEntity::update(float deltaTime, MeshCollider* worldCollider) {
     }
     }
 
-    // Обновляем bounds только если дверь движется или изменилась
     if (oldState != state || state == DoorState::Opening || state == DoorState::Closing) {
         updateBounds();
     }
@@ -431,21 +519,29 @@ void DoorEntity::updateBounds() {
     }
 }
 
-void DoorEntity::activate() {
+// === ИЗМЕНЕНО: Теперь принимаем позицию игрока ===
+void DoorEntity::activate(const glm::vec3& playerPos) {
     if (state == DoorState::Closed || state == DoorState::Closing) {
-        open();
+        open(playerPos);
     }
     else if (state == DoorState::Open || state == DoorState::Opening) {
         if (!noAutoReturn && waitTime >= 0) {
-            stateTimer = 0.0f;  // Сброс таймера
+            stateTimer = 0.0f;
         }
     }
 }
 
-void DoorEntity::open() {
+// === ИЗМЕНЕНО: Теперь принимаем позицию игрока ===
+void DoorEntity::open(const glm::vec3& playerPos) {
     if (state == DoorState::Open || state == DoorState::Opening) return;
+
+    // === КЛЮЧЕВОЕ: Определяем направление перед открытием ===
+    if (moveType == DoorMoveType::Rotating) {
+        determineRotationDirection(playerPos);  // <-- Здесь устанавливается rotationAngle
+    }
+
     state = DoorState::Opening;
-    std::cout << "[DOOR] Opening" << std::endl;
+    std::cout << "[DOOR] Opening with angle: " << rotationAngle << std::endl;
 }
 
 void DoorEntity::close() {
@@ -472,20 +568,27 @@ AABB DoorEntity::getCurrentBounds() const {
 glm::mat4 DoorEntity::getTransform() const {
     glm::mat4 transform = glm::mat4(1.0f);
 
-    // === ИСПРАВЛЕНО: правильный порядок трансформаций ===
-    // 1. Перенос в точку вращения (modelOrigin)
-    transform = glm::translate(transform, modelOrigin);
-
-    // 2. Линейное движение (только для linear дверей)
-    if (moveType == DoorMoveType::Linear) {
-        glm::vec3 currentOffset = glm::mix(glm::vec3(0.0f), endOrigin - startOrigin, moveProgress);
-        transform = glm::translate(transform, currentOffset);
-    }
-
-    // 3. Вращение (только для rotating дверей)
     if (moveType == DoorMoveType::Rotating) {
+        // === Для rotating дверей ===
+        // 1. Перенос в текущую позицию (origin)
+        transform = glm::translate(transform, origin);
+
+        // 2. Вращение вокруг вертикальной оси Y
         glm::vec3 currentAngles = glm::mix(startAngles, endAngles, moveProgress);
         transform = glm::rotate(transform, glm::radians(currentAngles.y), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // 3. Дополнительные вращения по X и Z если нужны
+        if (currentAngles.x != 0.0f) {
+            transform = glm::rotate(transform, glm::radians(currentAngles.x), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+        if (currentAngles.z != 0.0f) {
+            transform = glm::rotate(transform, glm::radians(currentAngles.z), glm::vec3(0.0f, 0.0f, 1.0f));
+        }
+    }
+    else {
+        // === Для linear дверей ===
+        glm::vec3 worldPos = modelOrigin + (origin - startOrigin);
+        transform = glm::translate(transform, worldPos);
     }
 
     return transform;

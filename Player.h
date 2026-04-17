@@ -30,7 +30,7 @@ class CFuncWater;
 #define TIME_TO_DUCK                0.25f
 #define MAX_CLIMB_SPEED             200.0f
 
-// Hull sizes как в HL1
+// Hull sizes
 #define VEC_HULL_MIN        glm::vec3(-16.0f, -36.0f, -16.0f)
 #define VEC_HULL_MAX        glm::vec3(16.0f, 36.0f, 16.0f)
 #define VEC_DUCK_HULL_MIN   glm::vec3(-16.0f, -18.0f, -16.0f)
@@ -90,14 +90,9 @@ private:
     float m_flSwimTime;
     bool m_bWasInWater;
 
-    // === ФИКСИРОВАННЫЙ ТАЙМШАП ===
-    float m_physicsAccumulator = 0.0f;
-    static constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;
-    
-    // Интерполяция для плавного рендеринга
+    // Для плавности рендеринга
     glm::vec3 m_previousPosition;
     glm::vec3 m_renderPosition;
-    float m_interpolationAlpha = 0.0f;
 
     float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
 
@@ -174,8 +169,6 @@ public:
     bool IsInWater() const { return (m_afPhysicsFlags & PFLAG_INWATER) != 0; }
     void CheckWater(const std::vector<CFuncWater*>& waterZones);
     void ApplyWaterPhysics(float deltaTime);
-    
-    // Интерполяция для плавного рендеринга
+
     glm::vec3 getRenderPosition() const { return m_renderPosition; }
-    void updateInterpolation(float alpha);
 };

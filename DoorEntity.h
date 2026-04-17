@@ -4,6 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <string>
+#include <sstream>  // Добавлено для парсинга movedir
 #include "BSPLoader.h"
 #include "AABB.h"
 
@@ -59,6 +60,12 @@ struct DoorEntity {
     bool oneWay = false;
     bool silent = false;
 
+    bool rotationDirectionFixed = false;
+    float rotationAngle = 90.0f;
+
+    // НОВОЕ: Ось вращения (из movedir или Z по умолчанию)
+    glm::vec3 rotationAxis = glm::vec3(0.0f, 0.0f, 1.0f);
+
     AABB bounds;
     std::vector<BSPVertex> vertices;
     std::vector<unsigned int> indices;
@@ -76,8 +83,9 @@ struct DoorEntity {
 
     void initFromEntity(const BSPEntity& entity, const BSPLoader& bsp);
     void update(float deltaTime, MeshCollider* worldCollider);
-    void activate();
-    void open();
+
+    void activate(const glm::vec3& playerPos);
+    void open(const glm::vec3& playerPos);
     void close();
 
     bool intersectsPlayer(const glm::vec3& playerPos, const Capsule& playerCapsule) const;
@@ -89,11 +97,11 @@ struct DoorEntity {
     void updateBuffers();
     void cleanupBuffers();
 
-    // === НОВЫЙ МЕТОД ===
     bool isMoving() const { return state == DoorState::Opening || state == DoorState::Closing; }
 
 private:
     void calculateEndPosition(const BSPLoader& bsp);
     void buildGeometry(const BSPLoader& bsp);
     void updateBounds();
+    void determineRotationDirection(const glm::vec3& playerPos);
 };

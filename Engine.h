@@ -75,9 +75,12 @@ public:
     const std::vector<std::unique_ptr<DoorEntity>>& getDoors() const { return doors; }
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
     void cleanupDoors();
+    void useDoors();
 
 private:
     static Engine* instance;
+
+    void checkPlayerTouchDoors();  // Проверка касания дверей
 
     std::vector<std::unique_ptr<DoorEntity>> doors;
 

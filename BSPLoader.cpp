@@ -579,10 +579,36 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         dc.isWater = isWaterModel;
         dc.isSky = isSky;
 
-        dc.isTransparent = (rendermode == 2) ||
-            (rendermode == 5) ||
-            (rendermode == 1 && renderamt < 255) ||
-            (rendermode == 3);
+        // === ИСПРАВЛЕННАЯ ЛОГИКА ПРОЗРАЧНОСТИ ===
+        // rendermode: 0=Normal, 1=Color, 2=Texture, 3=Glow, 4=Solid, 5=Additive
+        if (rendermode == 0) {
+            // Normal - непрозрачный, независимо от renderamt
+            dc.isTransparent = false;
+        }
+        else if (rendermode == 1) {
+            // Color - прозрачность от renderamt
+            dc.isTransparent = (renderamt < 255);
+        }
+        else if (rendermode == 2) {
+            // Texture - всегда прозрачный (классическая вода HL)
+            dc.isTransparent = true;
+        }
+        else if (rendermode == 3) {
+            // Glow - аддитивное смешивание
+            dc.isTransparent = true;
+        }
+        else if (rendermode == 4) {
+            // Solid - непрозрачный
+            dc.isTransparent = false;
+        }
+        else if (rendermode == 5) {
+            // Additive - всегда прозрачный
+            dc.isTransparent = true;
+        }
+        else {
+            // Неизвестный режим - используем renderamt
+            dc.isTransparent = (renderamt < 255);
+        }
 
         drawCalls.push_back(dc);
         baseVertex += (unsigned int)faceMeshVerts.size();
@@ -596,8 +622,10 @@ void BSPLoader::buildMesh() {
     drawCalls.clear();
     if (models.empty()) return;
 
+    // Модель 0 - это worldspawn, всегда непрозрачная
     buildSubmodelMesh(models[0], 0, 255, false);
 
+    // Обрабатываем суб-модели из энтитей
     for (const auto& entity : entities) {
         if (entity.model.empty() || entity.model == "*0") continue;
         if (entity.model.length() < 2 || entity.model[0] != '*') continue;
@@ -623,23 +651,57 @@ void BSPLoader::buildMesh() {
         bool isWater = false;
 
         if (entity.classname == "func_water") {
-            rendermode = 2;
-            renderamt = 128;
             isWater = true;
 
-            auto it = entity.properties.find("renderamt");
+            // Читаем rendermode из свойств карты (по умолчанию 0 = Normal)
+            auto it = entity.properties.find("rendermode");
             if (it != entity.properties.end()) {
-                try { renderamt = std::stoi(it->second); }
-                catch (...) {}
+                try {
+                    rendermode = std::stoi(it->second);
+                    std::cout << "[BSP] Water *" << modelIndex << " rendermode from map: " << rendermode << std::endl;
+                }
+                catch (...) {
+                    rendermode = 0;
+                }
             }
+            else {
+                std::cout << "[BSP] Water *" << modelIndex << " no rendermode specified, using default 0 (Normal)" << std::endl;
+            }
+
+            // Читаем renderamt из свойств карты (по умолчанию 255)
+            it = entity.properties.find("renderamt");
+            if (it != entity.properties.end()) {
+                try {
+                    renderamt = std::stoi(it->second);
+                    std::cout << "[BSP] Water *" << modelIndex << " renderamt from map: " << renderamt << std::endl;
+                }
+                catch (...) {
+                    renderamt = 255;
+                }
+            }
+
+            // Альтернативное имя ключа (FX Amount)
             it = entity.properties.find("FX Amount");
             if (it != entity.properties.end()) {
-                try { renderamt = std::stoi(it->second); }
+                try {
+                    int fxAmt = std::stoi(it->second);
+                    // Используем FX Amount только если renderamt не был задан явно
+                    if (renderamt == 255 && entity.properties.find("renderamt") == entity.properties.end()) {
+                        renderamt = fxAmt;
+                        std::cout << "[BSP] Water *" << modelIndex << " FX Amount: " << renderamt << std::endl;
+                    }
+                }
                 catch (...) {}
             }
-            renderamt = std::max(1, std::min(255, renderamt));
+
+            // Ограничиваем диапазон
+            renderamt = std::max(0, std::min(255, renderamt));
+
+            std::cout << "[BSP] Final water *" << modelIndex << " settings: rendermode="
+                << rendermode << ", renderamt=" << renderamt << std::endl;
         }
         else {
+            // Для не-воды читаем стандартные свойства
             auto it = entity.properties.find("rendermode");
             if (it != entity.properties.end()) {
                 try { rendermode = std::stoi(it->second); }
@@ -664,9 +726,16 @@ void BSPLoader::buildMesh() {
     int transparentCount = 0;
     int waterCount = 0;
     int skyCount = 0;
+    int normalWaterCount = 0;  // Вода с rendermode=0
+    int textureWaterCount = 0; // Вода с rendermode=2
+
     for (const auto& dc : drawCalls) {
         if (dc.isTransparent) transparentCount++;
-        if (dc.isWater) waterCount++;
+        if (dc.isWater) {
+            waterCount++;
+            if (dc.rendermode == 0) normalWaterCount++;
+            if (dc.rendermode == 2) textureWaterCount++;
+        }
         if (dc.isSky) skyCount++;
     }
 
@@ -675,7 +744,7 @@ void BSPLoader::buildMesh() {
         << drawCalls.size() << " draw calls\n";
     std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount - skyCount)
         << ", Transparent: " << transparentCount
-        << ", Water: " << waterCount
+        << ", Water: " << waterCount << " (Normal: " << normalWaterCount << ", Texture: " << textureWaterCount << ")"
         << ", Sky: " << skyCount << "\n";
 }
 

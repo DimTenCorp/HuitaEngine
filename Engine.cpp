@@ -59,6 +59,10 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (engine && engine->isMenuActive() && engine->getMenu()) {
         engine->getMenu()->handleKey(key, action);
     }
+
+    if (engine && !engine->isMenuActive() && action == GLFW_PRESS && key == GLFW_KEY_E) {
+        engine->useDoors();
+    }
 }
 
 Engine::Engine() {
@@ -542,7 +546,6 @@ void Engine::doLoadMap(const std::string& mapPath) {
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // Сбрасываем флаг коллайдера дверей при загрузке новой карты
     doorColliderDirty = true;
     doorColliderUpdateTimer = 0.0f;
 }
@@ -747,46 +750,111 @@ void Engine::shutdown() {
 // ============================================================================
 
 void Engine::updateDoors(float deltaTime) {
-    // 1. Обновляем анимацию всех дверей
     bool anyMoving = false;
     bool anyStateChanged = false;
 
     for (auto& door : doors) {
         DoorState oldState = door->state;
-        door->update(deltaTime, nullptr);  // Не передаём коллайдер - проверяем сами
+        door->update(deltaTime, nullptr);
 
-        if (door->isMoving()) {
-            anyMoving = true;
-        }
-        if (oldState != door->state) {
-            anyStateChanged = true;
-        }
+        if (door->isMoving()) anyMoving = true;
+        if (oldState != door->state) anyStateChanged = true;
     }
 
-    // 2. Обновляем коллайдер ТОЛЬКО если:
-    // - Есть движущиеся двери И
-    // - Прошло достаточно времени с последнего обновления
+    checkPlayerTouchDoors();
+
+    // ОПТИМИЗАЦИЯ: Обновляем коллайдер реже
     if (anyMoving) {
         doorColliderUpdateTimer += deltaTime;
-
         if (doorColliderUpdateTimer >= DOOR_COLLIDER_UPDATE_INTERVAL) {
             doorColliderUpdateTimer = 0.0f;
             updateDoorCollider();
         }
     }
     else if (anyStateChanged) {
-        // Дверь остановилась - обновляем один раз
         updateDoorCollider();
+    }
+}
+
+// === НОВЫЙ МЕТОД: Проверка касания дверей игроком ===
+void Engine::checkPlayerTouchDoors() {
+    if (!game || !game->getPlayer()) return;
+
+    Player* player = game->getPlayer();
+    glm::vec3 playerPos = player->getPosition();
+    Capsule playerCapsule = player->getPlayerCapsule(playerPos);
+
+    for (auto& door : doors) {
+        // Пропускаем проходимые двери
+        if (door->passable) continue;
+
+        // Пропускаем двери, которые уже движутся
+        if (door->isMoving()) continue;
+
+        // Для дверей с useOnly - только через клавишу E
+        if (door->useOnly) continue;
+
+        // Проверяем касание
+        if (door->intersectsPlayer(playerPos, playerCapsule)) {
+            // Дверь закрыта или закрывается - открываем (с передачей позиции игрока!)
+            if (door->state == DoorState::Closed || door->state == DoorState::Closing) {
+                std::cout << "[DOOR] Player touched door *" << door->modelIndex << ", opening" << std::endl;
+                door->open(playerPos);  // === Передаём позицию игрока ===
+            }
+            // Дверь открыта и не ждёт автозакрытия - закрываем вручную
+            else if (door->state == DoorState::Open && door->noAutoReturn) {
+                std::cout << "[DOOR] Player touched door *" << door->modelIndex << ", closing (no auto-return)" << std::endl;
+                door->close();
+            }
+        }
+    }
+}
+
+// === НОВЫЙ МЕТОД: Использование дверей по клавише E ===
+void Engine::useDoors() {
+    if (!game || !game->getPlayer()) return;
+
+    Player* player = game->getPlayer();
+    glm::vec3 playerPos = player->getPosition();
+    Capsule playerCapsule = player->getPlayerCapsule(playerPos);
+
+    // Ищем ближайшую дверь, к которой можно применить use
+    DoorEntity* nearestDoor = nullptr;
+    float nearestDist = 999999.0f;
+
+    for (auto& door : doors) {
+        // Пропускаем проходимые
+        if (door->passable) continue;
+
+        // Проверяем расстояние до двери
+        AABB doorBounds = door->getCurrentBounds();
+        glm::vec3 doorCenter = (doorBounds.min + doorBounds.max) * 0.5f;
+        float dist = glm::distance(playerPos, doorCenter);
+
+        // Дверь должна быть достаточно близко (64 units - типичная дистанция use в HL)
+        if (dist > 64.0f) continue;
+
+        // Проверяем пересечение
+        if (door->intersectsPlayer(playerPos, playerCapsule)) {
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestDoor = door.get();
+            }
+        }
+    }
+
+    if (nearestDoor) {
+        std::cout << "[DOOR] Player used door *" << nearestDoor->modelIndex << std::endl;
+        // === КЛЮЧЕВОЕ: Передаём позицию игрока ===
+        nearestDoor->activate(playerPos);
     }
 }
 
 void Engine::updateDoorCollider() {
     if (!meshCollider || doors.empty()) return;
 
-    // Собираем треугольники ТОЛЬКО от дверей, которые влияют на коллизии
     std::vector<Triangle> doorTriangles;
 
-    // Резервируем примерно 100 треугольников на дверь (с запасом)
     size_t estimatedTris = 0;
     for (const auto& door : doors) {
         if (!door->passable && door->vao != 0) {
@@ -796,10 +864,7 @@ void Engine::updateDoorCollider() {
     doorTriangles.reserve(estimatedTris);
 
     for (const auto& door : doors) {
-        // Пропускаем проходимые двери
         if (door->passable) continue;
-
-        // Пропускаем двери без геометрии
         if (door->vao == 0 || door->indices.empty()) continue;
 
         glm::mat4 transform = door->getTransform();
@@ -809,7 +874,6 @@ void Engine::updateDoorCollider() {
         for (size_t i = 0; i < idxs.size(); i += 3) {
             Triangle tri;
 
-            // Трансформируем вершины
             glm::vec4 v0 = transform * glm::vec4(verts[idxs[i]].position, 1.0f);
             glm::vec4 v1 = transform * glm::vec4(verts[idxs[i + 1]].position, 1.0f);
             glm::vec4 v2 = transform * glm::vec4(verts[idxs[i + 2]].position, 1.0f);
@@ -818,7 +882,6 @@ void Engine::updateDoorCollider() {
             tri.vertices[1] = glm::vec3(v1);
             tri.vertices[2] = glm::vec3(v2);
 
-            // Вычисляем нормаль
             tri.normal = glm::normalize(glm::cross(
                 tri.vertices[1] - tri.vertices[0],
                 tri.vertices[2] - tri.vertices[0]
@@ -844,19 +907,15 @@ bool Engine::checkDoorCollision(const Capsule& capsule, glm::vec3& outPush) cons
     for (const auto& door : doors) {
         if (door->passable) continue;
 
-        // Быстрая проверка AABB
         AABB doorBounds = door->getCurrentBounds();
 
-        // Расширяем bounds на радиус капсулы
         AABB expandedBounds = doorBounds;
         expandedBounds.min -= glm::vec3(capsule.radius);
         expandedBounds.max += glm::vec3(capsule.radius);
 
         glm::vec3 capsuleCenter = capsule.getCenter();
 
-        // Если центр капсулы далеко от bounds - пропускаем
         if (!expandedBounds.contains(capsuleCenter)) {
-            // Дополнительная проверка: расстояние до AABB
             glm::vec3 closest = glm::clamp(capsuleCenter, expandedBounds.min, expandedBounds.max);
             float distSq = glm::length(capsuleCenter - closest);
             distSq = distSq * distSq;
@@ -865,14 +924,11 @@ bool Engine::checkDoorCollision(const Capsule& capsule, glm::vec3& outPush) cons
             }
         }
 
-        // Точная проверка: капсула против AABB двери
-        // Находим ближайшую точку на AABB к центру капсулы
         glm::vec3 closestOnAABB = glm::clamp(capsuleCenter, doorBounds.min, doorBounds.max);
         glm::vec3 toCapsule = capsuleCenter - closestOnAABB;
         float dist = glm::length(toCapsule);
 
         if (dist < capsule.radius) {
-            // Есть коллизия - вычисляем push вектор
             glm::vec3 pushDir = (dist > 0.001f) ? (toCapsule / dist) : glm::vec3(0.0f, 1.0f, 0.0f);
             float pushAmount = capsule.radius - dist;
 
