@@ -364,3 +364,4 @@ FodyWeavers.xsd
 /lesha
 /game/maps/Labradoria.bsp
 /game
+/BSPLoader.cpp
