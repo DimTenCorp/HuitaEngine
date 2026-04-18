@@ -2,6 +2,7 @@
 #include "DoorEntity.h"
 #include "TriangleCollider.h"
 #include "BSPLoader.h"
+#include "LightmapManager.h"  // <-- Добавлено
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -10,7 +11,7 @@ static glm::vec3 convertHLAngles(const glm::vec3& angles) {
     return glm::vec3(-angles.x, angles.z, angles.y);
 }
 
-void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
+void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp, const LightmapManager* lmManager) {
     classname = entity.classname;
     entityProperties = entity.properties;
 
@@ -188,7 +189,7 @@ void DoorEntity::initFromEntity(const BSPEntity& entity, const BSPLoader& bsp) {
         moveProgress = 1.0f;
     }
 
-    buildGeometry(bsp);
+    buildGeometry(bsp, lmManager);  // <-- Передаём lmManager
     buildBuffers();
 
     bounds.min = modelMins;
@@ -224,8 +225,7 @@ void DoorEntity::calculateEndPosition(const BSPLoader& bsp) {
         endOrigin = startOrigin + moveDir * moveDistance;
     }
     else {
-        // === Для rotating дверей: если direction фиксирован, устанавливаем endAngles ===
-        // Если нет - endAngles будет определён динамически при первом open()
+        // Для rotating дверей: если direction фиксирован, устанавливаем endAngles
         if (rotationDirectionFixed) {
             endAngles = startAngles + glm::vec3(0.0f, rotationAngle, 0.0f);
         }
@@ -233,15 +233,11 @@ void DoorEntity::calculateEndPosition(const BSPLoader& bsp) {
     }
 }
 
-// === НОВЫЙ МЕТОД: Определяем направление вращения от игрока ===
 void DoorEntity::determineRotationDirection(const glm::vec3& playerPos) {
     if (moveType != DoorMoveType::Rotating) return;
     if (rotationDirectionFixed) return;
 
-    // rotationAxis уже хранится как член класса, используем её
     glm::vec3 toPlayer = playerPos - origin;
-
-    // Проецируем на плоскость перпендикулярную оси вращения
     glm::vec3 toPlayerProj = toPlayer - rotationAxis * glm::dot(toPlayer, rotationAxis);
 
     if (glm::length(toPlayerProj) < 0.001f) {
@@ -249,19 +245,15 @@ void DoorEntity::determineRotationDirection(const glm::vec3& playerPos) {
         return;
     }
 
-    // "Правое" направление относительно оси вращения
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     glm::vec3 right = glm::cross(rotationAxis, up);
 
-    // Смотрим, с какой стороны от оси находится игрок
     float side = glm::dot(glm::normalize(toPlayerProj), glm::normalize(right));
-
-    // side > 0: игрок справа -> открываемся влево (-90)
-    // side < 0: игрок слева -> открываемся вправо (+90)
     rotationAngle = (side > 0) ? -90.0f : 90.0f;
 }
 
-void DoorEntity::buildGeometry(const BSPLoader& bsp) {
+// <-- ИСПРАВЛЕНО: Добавлена поддержка lightmap координат
+void DoorEntity::buildGeometry(const BSPLoader& bsp, const LightmapManager* lmManager) {
     const auto& faces = bsp.getFaces();
     const auto& texInfos = bsp.getTexInfos();
     const auto& surfEdges = bsp.getSurfEdges();
@@ -327,22 +319,48 @@ void DoorEntity::buildGeometry(const BSPLoader& bsp) {
         if (face.side != 0) bspNormal = -bspNormal;
         glm::vec3 worldNormal = glm::normalize(glm::vec3(-bspNormal.x, bspNormal.z, bspNormal.y));
 
+        // <-- НОВОЕ: Получаем lightmap информацию для этого face
+        const FaceLightmap* lm = nullptr;
+        if (lmManager) {
+            lm = &lmManager->getFaceLightmap(faceIdx);
+        }
+
         unsigned int baseIdx = (unsigned int)vertices.size();
 
         for (const auto& bspPos : faceVerts) {
-            BSPVertex bv;
+            DoorVertex dv;  // <-- Используем DoorVertex вместо BSPVertex
+
             glm::vec3 worldPos = glm::vec3(-bspPos.x, bspPos.z, bspPos.y);
-            bv.position = worldPos - modelOrigin;
+            dv.position = worldPos - modelOrigin;
 
             float s = bspPos.x * texInfo.s[0] + bspPos.y * texInfo.s[1]
                 + bspPos.z * texInfo.s[2] + texInfo.s[3];
             float t = bspPos.x * texInfo.t[0] + bspPos.y * texInfo.t[1]
                 + bspPos.z * texInfo.t[2] + texInfo.t[3];
-            bv.texCoord = glm::vec2(s / texW, t / texH);
+            dv.texCoord = glm::vec2(s / texW, t / texH);
 
-            bv.normal = worldNormal;
+            dv.normal = worldNormal;
 
-            vertices.push_back(bv);
+            // <-- НОВОЕ: Вычисляем lightmap UV координаты
+            if (lm && lm->valid && lm->width > 0 && lm->height > 0) {
+                // Преобразуем текстурные координаты в lightmap координаты
+                float lmU = (s / 16.0f) - std::floor(lm->minS / 16.0f);
+                float lmV = (t / 16.0f) - std::floor(lm->minT / 16.0f);
+
+                // Нормализуем к размеру lightmap
+                lmU = (lmU + 0.5f) / (float)lm->width;
+                lmV = (lmV + 0.5f) / (float)lm->height;
+
+                // Преобразуем в координаты атласа
+                dv.lightmapCoord.x = lm->uvMin.x + lmU * (lm->uvMax.x - lm->uvMin.x);
+                dv.lightmapCoord.y = lm->uvMin.y + lmV * (lm->uvMax.y - lm->uvMin.y);
+            }
+            else {
+                // Fallback: используем маленький чёрный уголок атласа
+                dv.lightmapCoord = glm::vec2(0.001f, 0.001f);
+            }
+
+            vertices.push_back(dv);
         }
 
         for (size_t j = 1; j + 1 < faceVerts.size(); j++) {
@@ -379,7 +397,7 @@ void DoorEntity::updateBuffers() {
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER,
-        vertices.size() * sizeof(BSPVertex),
+        vertices.size() * sizeof(DoorVertex),  // <-- Изменён размер
         vertices.data(), GL_STATIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -387,16 +405,22 @@ void DoorEntity::updateBuffers() {
         indices.size() * sizeof(unsigned int),
         indices.data(), GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex), (void*)0);
+    // <-- ИСПРАВЛЕНО: Обновлены stride и offsets для DoorVertex
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DoorVertex), (void*)0);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-        (void*)offsetof(BSPVertex, normal));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DoorVertex),
+        (void*)offsetof(DoorVertex, normal));
     glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(BSPVertex),
-        (void*)offsetof(BSPVertex, texCoord));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(DoorVertex),
+        (void*)offsetof(DoorVertex, texCoord));
     glEnableVertexAttribArray(2);
+
+    // <-- НОВОЕ: Атрибут lightmapCoord (location = 3)
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(DoorVertex),
+        (void*)offsetof(DoorVertex, lightmapCoord));
+    glEnableVertexAttribArray(3);
 
     glBindVertexArray(0);
     buffersDirty = false;
@@ -519,7 +543,6 @@ void DoorEntity::updateBounds() {
     }
 }
 
-// === ИЗМЕНЕНО: Теперь принимаем позицию игрока ===
 void DoorEntity::activate(const glm::vec3& playerPos) {
     if (state == DoorState::Closed || state == DoorState::Closing) {
         open(playerPos);
@@ -531,13 +554,11 @@ void DoorEntity::activate(const glm::vec3& playerPos) {
     }
 }
 
-// === ИЗМЕНЕНО: Теперь принимаем позицию игрока ===
 void DoorEntity::open(const glm::vec3& playerPos) {
     if (state == DoorState::Open || state == DoorState::Opening) return;
 
-    // === КЛЮЧЕВОЕ: Определяем направление перед открытием ===
     if (moveType == DoorMoveType::Rotating) {
-        determineRotationDirection(playerPos);  // <-- Здесь устанавливается rotationAngle
+        determineRotationDirection(playerPos);
     }
 
     state = DoorState::Opening;
@@ -569,15 +590,11 @@ glm::mat4 DoorEntity::getTransform() const {
     glm::mat4 transform = glm::mat4(1.0f);
 
     if (moveType == DoorMoveType::Rotating) {
-        // === Для rotating дверей ===
-        // 1. Перенос в текущую позицию (origin)
+        // Для rotating дверей
         transform = glm::translate(transform, origin);
-
-        // 2. Вращение вокруг вертикальной оси Y
         glm::vec3 currentAngles = glm::mix(startAngles, endAngles, moveProgress);
         transform = glm::rotate(transform, glm::radians(currentAngles.y), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // 3. Дополнительные вращения по X и Z если нужны
         if (currentAngles.x != 0.0f) {
             transform = glm::rotate(transform, glm::radians(currentAngles.x), glm::vec3(1.0f, 0.0f, 0.0f));
         }
@@ -586,7 +603,7 @@ glm::mat4 DoorEntity::getTransform() const {
         }
     }
     else {
-        // === Для linear дверей ===
+        // Для linear дверей
         glm::vec3 worldPos = modelOrigin + (origin - startOrigin);
         transform = glm::translate(transform, worldPos);
     }

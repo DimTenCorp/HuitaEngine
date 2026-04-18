@@ -9,6 +9,7 @@
 #include "Menu.h"
 #include "SkyboxRenderer.h"
 #include "DoorEntity.h"
+#include "LadderEntity.h"
 
 constexpr float DEFAULT_LIGHTMAP_INTENSITY = 2.0f;
 
@@ -76,12 +77,14 @@ public:
     void renderDoors(const glm::mat4& view, const glm::mat4& projection);
     void cleanupDoors();
     void useDoors();
+    const std::vector<CFuncLadder*>& getLadderZones() const { return ladderZones; }
 
 private:
     static Engine* instance;
 
     void checkPlayerTouchDoors();  // Проверка касания дверей
 
+    std::vector<CFuncLadder*> ladderZones;
     std::vector<std::unique_ptr<DoorEntity>> doors;
 
     GLFWwindow* window = nullptr;

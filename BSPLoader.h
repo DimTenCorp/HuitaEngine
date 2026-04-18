@@ -70,6 +70,7 @@ struct FaceDrawCall {
     bool isTransparent = false;
     bool isWater = false;
     bool isSky = false;
+    bool isLadder = false;  // <-- ДОБАВЛЕНО: флаг лестницы (нет коллизии)
 };
 
 class BSPLoader {
@@ -110,7 +111,7 @@ private:
     bool parseEntities(FILE* file, const BSPHeader& header);
     bool loadRequiredWADsFromEntities();
     void buildMesh();
-    void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel = false);
+    void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel = false, bool isLadderModel = false);
     bool loadLighting(FILE* file, const BSPHeader& header);
 
 public:
@@ -162,6 +163,8 @@ public:
     const std::vector<BSPPlane>& getPlanes() const { return planes; }
 
     void getFaceLightmapDims(int faceIndex, int& width, int& height, float& minS, float& minT) const;
+
+    bool isTriggerTexture(int textureIndex) const;
 
     GLuint getTextureID(int index) const {
         if (index >= 0 && index < static_cast<int>(glTextureIds.size())) {

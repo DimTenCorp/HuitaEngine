@@ -7,8 +7,9 @@
 
 class MeshCollider;
 class CFuncWater;
+class CFuncLadder;  // Forward declaration
 
-// HL Physics flags
+// HL Physics flags - только ОДНО определение каждого флага
 #define PFLAG_ONLADDER      (1<<0)
 #define PFLAG_ONTRAIN       (1<<1)
 #define PFLAG_ONBARNACLE    (1<<2)
@@ -28,7 +29,7 @@ class CFuncWater;
 #define PLAYER_WALLJUMP_SPEED       300.0f
 #define PLAYER_LONGJUMP_SPEED       350.0f
 #define TIME_TO_DUCK                0.25f
-#define MAX_CLIMB_SPEED             200.0f
+#define MAX_CLIMB_SPEED             300.0f
 
 // Hull sizes
 #define VEC_HULL_MIN        glm::vec3(-16.0f, -36.0f, -16.0f)
@@ -90,9 +91,11 @@ private:
     float m_flSwimTime;
     bool m_bWasInWater;
 
-    // Для плавности рендеринга
     glm::vec3 m_previousPosition;
     glm::vec3 m_renderPosition;
+
+    // НОВОЕ: Нормаль лестницы для физики
+    glm::vec3 m_ladderNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
     float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
 
@@ -171,4 +174,16 @@ public:
     void ApplyWaterPhysics(float deltaTime);
 
     glm::vec3 getRenderPosition() const { return m_renderPosition; }
+
+    bool IsOnLadder() const { return (m_afPhysicsFlags & PFLAG_ONLADDER) != 0; }
+    void SetOnLadder(bool onLadder);
+    void CheckLadder(const std::vector<CFuncLadder*>& ladderZones);
+    void ApplyLadderPhysics(float deltaTime);
+
+    // НОВОЕ: Методы для работы с нормалью лестницы
+    void SetLadderNormal(const glm::vec3& normal) { m_ladderNormal = normal; }
+    glm::vec3 GetLadderNormal() const { return m_ladderNormal; }
+
+    float m_flLadderReenterTime = 0.0f;
+    static constexpr float LADDER_REENTER_DELAY = 0.3f;
 };

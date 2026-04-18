@@ -9,6 +9,7 @@
 #include "TriangleCollider.h"
 #include "WaterEntity.h"
 #include "Engine.h"
+#include "LadderEntity.h"
 
 AABB Player::getPlayerAABB(const glm::vec3& pos) const {
     return getPlayerCapsule(pos).getBounds();
@@ -479,6 +480,157 @@ void Player::WalkMove_Sliding(float deltaTime) {
     }
 }
 
+void Player::SetOnLadder(bool onLadder) {
+    if (onLadder) {
+        m_afPhysicsFlags |= PFLAG_ONLADDER;
+    }
+    else {
+        m_afPhysicsFlags &= ~PFLAG_ONLADDER;
+    }
+}
+
+void Player::CheckLadder(const std::vector<CFuncLadder*>& ladderZones) {
+    // === НОВОЕ: Проверяем таймер задержки ===
+    float currentTime = (float)glfwGetTime();
+    if (currentTime < m_flLadderReenterTime) {
+        return; // Ещё нельзя входить на лестницу
+    }
+
+    Capsule capsule = getPlayerCapsule(position);
+    bool onLadder = false;
+
+    for (const auto* ladder : ladderZones) {
+        if (ladder->intersectsCapsule(capsule)) {
+            onLadder = true;
+            break;
+        }
+    }
+
+    if (onLadder && !this->IsOnLadder()) {
+        std::cout << "[LADDER] Player entered ladder" << std::endl;
+        this->SetOnLadder(true);
+        this->velocity = glm::vec3(0.0f);
+    }
+    else if (!onLadder && this->IsOnLadder()) {
+        std::cout << "[LADDER] Player left ladder" << std::endl;
+        this->SetOnLadder(false);
+    }
+}
+
+void Player::ApplyLadderPhysics(float deltaTime) {
+    if (!IsOnLadder()) return;
+
+    GLFWwindow* window = glfwGetCurrentContext();
+
+    // Сбрасываем гравитацию и вертикальную скорость
+    velocity.y = 0;
+
+    // Получаем направление взгляда
+    float yawRad = glm::radians(yaw);
+    float pitchRad = glm::radians(pitch);
+
+    // Forward вектор по направлению взгляда (как в noclip)
+    glm::vec3 lookDir(
+        cos(yawRad) * cos(pitchRad),
+        sin(pitchRad),
+        sin(yawRad) * cos(pitchRad)
+    );
+
+    // Проецируем lookDir на плоскость лестницы (убираем компоненту вдоль нормали)
+    // Но для простоты — используем pitch для определения направления движения
+    float pitchFactor = -sin(pitchRad); // -1 когда смотрим вниз, +1 когда вверх, 0 когда ровно
+
+    // Нормализуем горизонтальное направление (без учета pitch)
+    glm::vec3 flatForward(cos(yawRad), 0.0f, sin(yawRad));
+    glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
+
+    // Скорость движения
+    float climbSpeed = speed * 0.8f;
+
+    // Определяем желаемое движение относительно направления взгляда
+    glm::vec3 wishvel(0.0f);
+    bool moving = false;
+
+    // W/S — движение вперед/назад по направлению взгляда
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+        wishvel += lookDir * climbSpeed;
+        moving = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        wishvel -= lookDir * climbSpeed;
+        moving = true;
+    }
+
+    // A/D — стрейф влево/вправо (горизонтально, без вертикальной компоненты)
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        wishvel -= right * climbSpeed * 0.8f;
+        moving = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        wishvel += right * climbSpeed * 0.8f;
+        moving = true;
+    }
+
+    // Применяем движение с коллизией
+    if (moving && glm::length(wishvel) > 0.001f) {
+        // Нормализуем, чтобы не ускоряться по диагонали
+        float currentSpeed = glm::length(wishvel);
+        if (currentSpeed > climbSpeed) {
+            wishvel = glm::normalize(wishvel) * climbSpeed;
+        }
+
+        glm::vec3 newPos = position + wishvel * deltaTime;
+
+        // Проверяем столкновение
+        if (!checkCollisionMesh(newPos)) {
+            position = newPos;
+        }
+        else {
+            // Пробуем по осям отдельно
+            glm::vec3 testX = position + glm::vec3(wishvel.x * deltaTime, 0, 0);
+            if (!checkCollisionMesh(testX)) position.x = testX.x;
+
+            glm::vec3 testY = position + glm::vec3(0, wishvel.y * deltaTime, 0);
+            if (!checkCollisionMesh(testY)) position.y = testY.y;
+
+            glm::vec3 testZ = position + glm::vec3(0, 0, wishvel.z * deltaTime);
+            if (!checkCollisionMesh(testZ)) position.z = testZ.z;
+        }
+    }
+
+    // === ПРЫЖОК С ЛЕСТНИЦЫ ===
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        SetOnLadder(false);
+
+        // === НОВОЕ: Устанавливаем таймер задержки ===
+        m_flLadderReenterTime = (float)glfwGetTime() + LADDER_REENTER_DELAY;
+
+        // Толкаем вперед и вверх (как в HL1)
+        glm::vec3 pushDir = flatForward;
+        pushDir.y = 0.5f;
+        pushDir = glm::normalize(pushDir);
+
+        float pushForce = 270.0f;
+        velocity = pushDir * pushForce;
+
+        onGround = false;
+        std::cout << "[LADDER] Jumped off ladder (reenter blocked for "
+            << LADDER_REENTER_DELAY << "s)" << std::endl;
+        return;
+    }
+
+    // Проверяем выход снизу (стоим на земле)
+    if (velocity.y <= 0 || !moving) {
+        glm::vec3 groundTest = position;
+        groundTest.y -= 2.0f;
+        if (checkCollisionMesh(groundTest)) {
+            SetOnLadder(false);
+            onGround = true;
+            velocity = glm::vec3(0.0f);
+        }
+    }
+}
+
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
     glm::vec3 testPos = position;
@@ -751,6 +903,17 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
         moveNoclip(deltaTime);
         m_renderPosition = position;
         return;
+    }
+
+    // Проверяем лестницу
+    if (Engine* engine = Engine::getInstance()) {
+        CheckLadder(engine->getLadderZones());
+    }
+
+    if (IsOnLadder()) {
+        ApplyLadderPhysics(deltaTime);
+        m_renderPosition = position;
+        return; // На лестнице своя физика
     }
 
     // Ограничиваем максимальный шаг физики для стабильности

@@ -50,9 +50,20 @@ public:
     void unloadWorld();
 
     void beginFrame(const glm::vec3& clearColor, bool clearColorBuffer = true);
+
+    // <-- ИЗМЕНЕНО: Разделённые методы для правильного порядка рендеринга
+    void renderWorldOpaque(const glm::mat4& view, const glm::vec3& viewPos,
+        BSPLoader& bsp, const glm::vec3& ambientColor = glm::vec3(0.05f));
+    void renderWorldTransparent(const glm::mat4& view, const glm::vec3& viewPos,
+        BSPLoader& bsp, const glm::vec3& ambientColor = glm::vec3(0.05f));
+
+    // <-- Устаревший метод для обратной совместимости (рендерит всё)
     void renderWorld(const glm::mat4& view, const glm::vec3& viewPos,
-        BSPLoader& bsp,
-        const glm::vec3& ambientColor = glm::vec3(0.05f));
+        BSPLoader& bsp, const glm::vec3& ambientColor = glm::vec3(0.05f));
+
+    // <-- Двери рендерятся отдельно между opaque и transparent
+    void renderDoors(const std::vector<std::unique_ptr<DoorEntity>>& doors,
+        const glm::mat4& view, const glm::mat4& projection);
 
     void setLightmapIntensity(float intensity) { lightmapIntensity = intensity; }
     float getLightmapIntensity() const { return lightmapIntensity; }
@@ -70,9 +81,6 @@ public:
     void setSkipSkyFaces(bool skip) { skipSkyFaces = skip; }
     bool getSkipSkyFaces() const { return skipSkyFaces; }
 
-    void renderDoors(const std::vector<std::unique_ptr<DoorEntity>>& doors,
-        const glm::mat4& view, const glm::mat4& projection);
-
 private:
     std::unique_ptr<Shader> lightmappedShader;
     GLuint worldVAO = 0, worldVBO = 0, worldEBO = 0;
@@ -89,34 +97,30 @@ private:
 
     std::vector<LMRenderVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
-    
-    // Кэширование для сортировки прозрачных объектов по текстуре
+
     std::vector<LMFaceDrawCall> sortedOpaqueFaceDrawCalls;
     bool opaqueFacesSorted = false;
-    
-    // Кэширование для сортировки прозрачных объектов (от дальних к ближним)
+
     std::vector<LMFaceDrawCall> sortedTransparentFaceDrawCalls;
     glm::vec3 lastCameraPos = glm::vec3(0.0f);
-    float cameraMoveThreshold = 5.0f; // Увеличенный порог: пересортировывать только если камера сдвинулась больше чем на 5 единиц
-    
-    // Spatial hashing для оптимизации сортировки прозрачных объектов
+    float cameraMoveThreshold = 5.0f;
+
     struct SpatialHashCell {
-        std::vector<size_t> drawCallIndices;  // Индексы в faceDrawCalls
-        glm::vec3 centroid;                    // Центроид ячейки для быстрой проверки расстояния
+        std::vector<size_t> drawCallIndices;
+        glm::vec3 centroid;
     };
     std::unordered_map<uint64_t, SpatialHashCell> spatialHashGrid;
-    std::vector<uint64_t> activeSpatialCells;  // Ячейки, содержащие прозрачные объекты
-    bool spatialHashValid = false;             // Флаг валидности spatial hash
+    std::vector<uint64_t> activeSpatialCells;
+    bool spatialHashValid = false;
 
     bool initShaders();
     bool buildLightmappedMesh(BSPLoader& bsp, LightmapManager& lmManager);
     void cleanup();
-    
-    // Методы для spatial hashing прозрачных объектов
+
     uint64_t hashPosition(const glm::vec3& pos, float cellSize = 10.0f) const;
     void buildSpatialHashForTransparent();
     void invalidateSpatialHash();
-    
+
     void sortOpaqueFaceDrawCallsByTexture();
     static const char* getVertexShaderSource();
     static const char* getFragmentShaderSource();

@@ -61,6 +61,7 @@ void Game::update(float deltaTime) {
     auto* engine = Engine::getInstance();
     auto* collider = engine->getCollider();
     auto& waterZones = engine->getWaterZones();
+    auto& ladderZones = engine->getLadderZones();
 
     // Обновляем двери (оптимизировано - коллайдер обновляется редко)
     engine->updateDoors(deltaTime);
@@ -73,6 +74,14 @@ void Game::update(float deltaTime) {
     if (needWaterCheck) {
         waterCheckTimer = 0;
         player->CheckWater(waterZones);
+    }
+
+    static float ladderCheckTimer = 0;
+    ladderCheckTimer += deltaTime;
+    bool needLadderCheck = player->IsOnLadder() || ladderCheckTimer >= 0.2f;
+    if (needLadderCheck) {
+        ladderCheckTimer = 0;
+        player->CheckLadder(ladderZones);
     }
 
     if (collider) {

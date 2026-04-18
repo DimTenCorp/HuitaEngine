@@ -454,7 +454,7 @@ bool BSPLoader::parseEntities(FILE* file, const BSPHeader& header) {
     return true;
 }
 
-void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel) {
+void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel, bool isLadderModel) {
     unsigned int baseVertex = (unsigned int)meshVertices.size();
 
     int modelIdx = -1;
@@ -471,6 +471,14 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         return;
     }
 
+    // === ИСПРАВЛЕНИЕ: Пропускаем лестницы - они триггеры, без коллизии ===
+    if (isLadderModel) {
+        std::cout << "[BSP] Skipping ladder model *" << modelIdx << " from static collision mesh (trigger only)" << std::endl;
+        // Не возвращаемся - если нужна визуализация, можно построить меш но пометить как isLadder
+        // Но для чистоты - пропускаем полностью, коллизии не будет
+        return;
+    }
+
     for (int i = 0; i < subModel.numFaces; i++) {
         int faceIdx = subModel.firstFace + i;
         if (faceIdx < 0 || faceIdx >= (int)faces.size()) continue;
@@ -480,11 +488,16 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         if (face.planeNum >= planes.size()) continue;
         if (face.texInfo >= texInfos.size()) continue;
 
+        const BSPTexInfo& texInfo = texInfos[face.texInfo];
+
+        // === НОВОЕ: Пропускаем триггерные текстуры ===
+        if (isTriggerTexture(texInfo.textureIndex)) {
+            continue; // Не рендерим AAATRIGGER, ORIGIN и т.д.
+        }
+
         glm::vec3 bspNormal = planes[face.planeNum].normal;
         if (face.side != 0) bspNormal = -bspNormal;
         glm::vec3 worldNormal = convertNormal(bspNormal);
-
-        const BSPTexInfo& texInfo = texInfos[face.texInfo];
 
         std::vector<glm::vec3> faceBspVerts;
         faceBspVerts.reserve(face.numEdges);
@@ -578,6 +591,7 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
 
         dc.isWater = isWaterModel;
         dc.isSky = isSky;
+        dc.isLadder = isLadderModel;  // Установим флаг (хотя для лестниц мы уже вышли выше)
 
         // === ИСПРАВЛЕННАЯ ЛОГИКА ПРОЗРАЧНОСТИ ===
         // rendermode: 0=Normal, 1=Color, 2=Texture, 3=Glow, 4=Solid, 5=Additive
@@ -623,7 +637,7 @@ void BSPLoader::buildMesh() {
     if (models.empty()) return;
 
     // Модель 0 - это worldspawn, всегда непрозрачная
-    buildSubmodelMesh(models[0], 0, 255, false);
+    buildSubmodelMesh(models[0], 0, 255, false, false);
 
     // Обрабатываем суб-модели из энтитей
     for (const auto& entity : entities) {
@@ -641,14 +655,16 @@ void BSPLoader::buildMesh() {
 
         if (modelIndex <= 0 || modelIndex >= (int)models.size()) continue;
 
-        if (entity.classname.find("trigger_") == 0) {
-            std::cout << "[BSP] Skipping trigger entity: " << entity.classname << " model *" << modelIndex << std::endl;
+        // === ИСПРАВЛЕНИЕ: Пропускаем trigger_ и func_ladder (нет коллизии) ===
+        if (entity.classname.find("trigger_") == 0 || entity.classname == "func_ladder") {
+            std::cout << "[BSP] Skipping trigger/ladder entity: " << entity.classname << " model *" << modelIndex << std::endl;
             continue;
         }
 
         int rendermode = 0;
         int renderamt = 255;
         bool isWater = false;
+        bool isLadder = false;  // Флаг для лестницы
 
         if (entity.classname == "func_water") {
             isWater = true;
@@ -700,6 +716,14 @@ void BSPLoader::buildMesh() {
             std::cout << "[BSP] Final water *" << modelIndex << " settings: rendermode="
                 << rendermode << ", renderamt=" << renderamt << std::endl;
         }
+        // === ИСПРАВЛЕНИЕ: func_ladder обрабатывается как триггер, без коллизии ===
+        else if (entity.classname == "func_ladder") {
+            // Лестницы пропускаются выше по continue, сюда не попадаем
+            // Но если убрать continue выше - можно добавить обработку здесь
+            isLadder = true;
+            // Не строим меш для лестницы - она чистый триггер
+            continue;
+        }
         else {
             // Для не-воды читаем стандартные свойства
             auto it = entity.properties.find("rendermode");
@@ -720,7 +744,7 @@ void BSPLoader::buildMesh() {
             renderamt = std::max(0, std::min(255, renderamt));
         }
 
-        buildSubmodelMesh(models[modelIndex], rendermode, renderamt, isWater);
+        buildSubmodelMesh(models[modelIndex], rendermode, renderamt, isWater, isLadder);
     }
 
     int transparentCount = 0;
@@ -728,6 +752,7 @@ void BSPLoader::buildMesh() {
     int skyCount = 0;
     int normalWaterCount = 0;  // Вода с rendermode=0
     int textureWaterCount = 0; // Вода с rendermode=2
+    int ladderCount = 0;       // <-- ДОБАВЛЕНО: счетчик лестниц
 
     for (const auto& dc : drawCalls) {
         if (dc.isTransparent) transparentCount++;
@@ -736,6 +761,7 @@ void BSPLoader::buildMesh() {
             if (dc.rendermode == 0) normalWaterCount++;
             if (dc.rendermode == 2) textureWaterCount++;
         }
+        if (dc.isLadder) ladderCount++;  // <-- ДОБАВЛЕНО
         if (dc.isSky) skyCount++;
     }
 
@@ -745,7 +771,23 @@ void BSPLoader::buildMesh() {
     std::cout << "  - Opaque: " << (drawCalls.size() - transparentCount - skyCount)
         << ", Transparent: " << transparentCount
         << ", Water: " << waterCount << " (Normal: " << normalWaterCount << ", Texture: " << textureWaterCount << ")"
+        << ", Ladders: " << ladderCount  // <-- ДОБАВЛЕНО
         << ", Sky: " << skyCount << "\n";
+}
+
+bool BSPLoader::isTriggerTexture(int textureIndex) const {
+    if (textureIndex < 0 || textureIndex >= (int)textureNames.size()) return false;
+
+    const std::string& name = textureNames[textureIndex];
+    std::string upperName = toUpper(name);
+
+    // Текстуры, которые не должны рендериться
+    return (upperName == "AAATRIGGER" ||
+        upperName == "ORIGIN" ||
+        upperName == "CLIP" ||
+        upperName == "NULL" ||
+        upperName == "HINT" ||
+        upperName == "SKIP");
 }
 
 bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {

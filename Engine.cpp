@@ -303,6 +303,11 @@ void Engine::unloadCurrentMap() {
     useLightmapped = false;
     showLightmapsOnly = false;
 
+    for (auto* ladder : ladderZones) {
+        delete ladder;
+    }
+    ladderZones.clear();
+
     std::cout << "[ENGINE] Resources unloaded.\n";
 }
 
@@ -390,7 +395,8 @@ void Engine::doLoadMap(const std::string& mapPath) {
         if (entity.model.empty() || entity.model[0] != '*') continue;
 
         auto door = std::make_unique<DoorEntity>();
-        door->initFromEntity(entity, *bspLoader);
+        // <-- ИСПРАВЛЕНО: Передаём lightmapManager для правильных lightmap UV
+        door->initFromEntity(entity, *bspLoader, lightmapManager.get());
 
         if (door->modelIndex > 0) {
             doors.push_back(std::move(door));
@@ -427,7 +433,8 @@ void Engine::doLoadMap(const std::string& mapPath) {
         std::unordered_map<unsigned int, unsigned int> vertexMap;
 
         for (const auto& dc : drawCalls) {
-            if (dc.isWater) continue;
+            // === ИСПРАВЛЕНИЕ: Пропускаем воду и лестницы (нет коллизии) ===
+            if (dc.isWater || dc.isLadder) continue;
 
             for (unsigned int i = 0; i < dc.indexCount; i++) {
                 unsigned int oldIdx = allIndices[dc.indexOffset + i];
@@ -446,7 +453,7 @@ void Engine::doLoadMap(const std::string& mapPath) {
         }
 
         meshCollider->buildFromBSP(collisionVertices, collisionIndices);
-        std::cout << "[COLLIDER] " << meshCollider->getTriangleCount() << " triangles (water excluded)\n";
+        std::cout << "[COLLIDER] " << meshCollider->getTriangleCount() << " triangles (water and ladders excluded)\n";
     }
 
     if (renderer) {
@@ -521,6 +528,46 @@ void Engine::doLoadMap(const std::string& mapPath) {
         waterZones.push_back(water);
     }
     std::cout << "[WATER] Loaded " << waterZones.size() << " func_water zones\n";
+
+    ladderZones.clear();
+    auto ladderEntities = bspLoader->getEntitiesByClass("func_ladder");
+
+    for (const auto& entity : ladderEntities) {
+        if (entity.model.empty() || entity.model[0] != '*') {
+            std::cerr << "[LADDER] Skipping func_ladder without valid model: " << entity.classname << std::endl;
+            continue;
+        }
+
+        int modelIndex = 0;
+        try {
+            modelIndex = std::stoi(entity.model.substr(1));
+        }
+        catch (...) {
+            std::cerr << "[LADDER] Failed to parse model index from: " << entity.model << std::endl;
+            continue;
+        }
+
+        if (modelIndex <= 0 || modelIndex >= (int)bspLoader->getModels().size()) {
+            std::cerr << "[LADDER] Invalid model index: " << modelIndex << std::endl;
+            continue;
+        }
+
+        const auto& models = bspLoader->getModels();
+        const BSPModel& model = models[modelIndex];
+
+        AABB modelBounds;
+        modelBounds.min = glm::vec3(-model.min[0], model.min[2], model.min[1]);
+        modelBounds.max = glm::vec3(-model.max[0], model.max[2], model.max[1]);
+
+        if (modelBounds.min.x > modelBounds.max.x) std::swap(modelBounds.min.x, modelBounds.max.x);
+        if (modelBounds.min.y > modelBounds.max.y) std::swap(modelBounds.min.y, modelBounds.max.y);
+        if (modelBounds.min.z > modelBounds.max.z) std::swap(modelBounds.min.z, modelBounds.max.z);
+
+        CFuncLadder* ladder = new CFuncLadder();
+        ladder->initFromBounds(modelBounds);
+        ladderZones.push_back(ladder);
+    }
+    std::cout << "[LADDER] Loaded " << ladderZones.size() << " func_ladder zones\n";
 
     std::cout << "=== MAP LOADED ===\n\n";
 
@@ -715,15 +762,24 @@ void Engine::render() {
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // 1. Skybox (рендерится первым, не пишет в depth buffer обычно)
     if (skyboxRenderer && skyboxRenderer->isLoaded()) {
         skyboxRenderer->render(view, projection, eyePos);
     }
 
-    glClear(GL_DEPTH_BUFFER_BIT);
+    // <-- УБРАНО: glClear(GL_DEPTH_BUFFER_BIT) - это было ошибкой!
+    // Теперь depth buffer сохраняет глубину skybox
 
+    // 2. Рендеринг мира с lightmap'ами
     if (lmRenderer && lightmapManager && lightmapManager->hasLightmaps()) {
-        lmRenderer->renderWorld(view, eyePos, *bspLoader, glm::vec3(0.05f));
+        // <-- НОВЫЙ ПОРЯДОК: Сначала непрозрачная геометрия мира
+        lmRenderer->renderWorldOpaque(view, eyePos, *bspLoader, glm::vec3(0.05f));
+
+        // <-- Затем двери (тоже непрозрачные, но динамические)
         lmRenderer->renderDoors(doors, view, projection);
+
+        // <-- Наконец прозрачные объекты (воды, стёкла и т.д.)
+        lmRenderer->renderWorldTransparent(view, eyePos, *bspLoader, glm::vec3(0.05f));
     }
 
     if (game) {

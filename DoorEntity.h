@@ -4,12 +4,14 @@
 #include <memory>
 #include <unordered_map>
 #include <string>
-#include <sstream>  // Добавлено для парсинга movedir
+#include <sstream>
 #include "BSPLoader.h"
 #include "AABB.h"
 
+// Forward declarations
 class BSPLoader;
 class MeshCollider;
+class LightmapManager;  // <-- Добавлено
 
 enum class DoorMoveType {
     Linear,
@@ -21,6 +23,14 @@ enum class DoorState {
     Opening,
     Open,
     Closing
+};
+
+// Структура вершины с lightmap координатами
+struct DoorVertex {  // <-- Новая структура вместо BSPVertex
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 texCoord;
+    glm::vec2 lightmapCoord;  // <-- Добавлено для lightmap
 };
 
 struct DoorEntity {
@@ -62,12 +72,10 @@ struct DoorEntity {
 
     bool rotationDirectionFixed = false;
     float rotationAngle = 90.0f;
-
-    // НОВОЕ: Ось вращения (из movedir или Z по умолчанию)
     glm::vec3 rotationAxis = glm::vec3(0.0f, 0.0f, 1.0f);
 
     AABB bounds;
-    std::vector<BSPVertex> vertices;
+    std::vector<DoorVertex> vertices;  // <-- Изменено с BSPVertex на DoorVertex
     std::vector<unsigned int> indices;
     GLuint textureID = 0;
 
@@ -81,7 +89,8 @@ struct DoorEntity {
     int lockedSound = 0;
     int unlockedSound = 0;
 
-    void initFromEntity(const BSPEntity& entity, const BSPLoader& bsp);
+    // <-- Добавлено: ссылка на lightmap manager для получения UV координат
+    void initFromEntity(const BSPEntity& entity, const BSPLoader& bsp, const LightmapManager* lmManager = nullptr);
     void update(float deltaTime, MeshCollider* worldCollider);
 
     void activate(const glm::vec3& playerPos);
@@ -101,7 +110,8 @@ struct DoorEntity {
 
 private:
     void calculateEndPosition(const BSPLoader& bsp);
-    void buildGeometry(const BSPLoader& bsp);
+    // <-- Изменена сигнатура: добавлен LightmapManager
+    void buildGeometry(const BSPLoader& bsp, const LightmapManager* lmManager = nullptr);
     void updateBounds();
     void determineRotationDirection(const glm::vec3& playerPos);
 };
