@@ -658,15 +658,19 @@ bool Player::checkOnGround() const {
     
     // Проверяем наличие земли прямо под ногами игрока
     // Используем findGroundHeight для точного определения высоты поверхности
-    float groundY = findGroundHeight(position, 4.0f);
+    float groundY = findGroundHeight(position, 6.0f);
     
-    // Если земля найдена в пределах небольшого расстояния от ног игрока
-    // (учитываем радиус капсулы), считаем что игрок на земле
+    // Если земля не найдена (возвращено специальное значение)
+    if (groundY < -99999.0f) {
+        return false;
+    }
+    
+    // Вычисляем позицию низа капсулы игрока
     float playerBottom = position.y - m_fHullHeight * 0.5f + m_fHullRadius;
     float distToGround = playerBottom - groundY;
     
-    // Допускаем небольшое расстояние (до 1 единицы) для стабильности
-    return (distToGround >= -1.0f && distToGround <= 1.0f);
+    // Допускаем небольшое расстояние (до 2 единиц) для стабильности на склонах
+    return (distToGround >= -2.0f && distToGround <= 2.0f);
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -699,10 +703,9 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
         return false;
     }
 
-    // Проверяем землю под шагом - простой спуск без циклов для производительности
-    // Используем бинарный поиск для быстрого нахождения земли
+    // Проверяем землю под шагом - используем findGroundHeight для быстрого поиска
     float groundY = findGroundHeight(stepOver, stepHeight + 2.0f);
-    if (groundY > 0) {
+    if (groundY > -99999.0f) {
         position = stepOver;
         position.y = groundY + 0.01f;
         onGround = true;
@@ -798,7 +801,9 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         // Земля найдена - поднимаемся и корректируем высоту
         position = stepUp;
         float exactY = findGroundHeight(position, stepHeight + 2.0f);
-        if (exactY > 0) position.y = exactY + 0.01f;
+        if (exactY > -99999.0f) {
+            position.y = exactY + 0.01f;
+        }
         velocity.y = 0;
         return;
     }
@@ -809,24 +814,44 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 }
 
 float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) const {
-    float minY = pos.y - maxSearchDist;
-    float maxY = pos.y;
-
-    // Бинарный поиск для быстрого и точного определения высоты земли
-    // 10 итераций дают достаточную точность (деление пополам 10 раз = ~0.1% погрешности)
-    for (int i = 0; i < 10; i++) {
-        float midY = (minY + maxY) * 0.5f;
-        glm::vec3 testPos = pos;
-        testPos.y = midY;
-
-        if (checkCollisionMesh(testPos)) {
-            minY = midY;
-        }
-        else {
-            maxY = midY;
+    if (!meshCollider) return -999999.0f;
+    
+    // Ищем высоту земли под позицией игрока
+    // Начинаем с нижней точки поиска и поднимаемся вверх
+    float startY = pos.y - maxSearchDist;
+    float endY = pos.y;
+    
+    // Проверяем есть ли вообще коллизия в диапазоне поиска
+    glm::vec3 testPos = pos;
+    testPos.y = endY;
+    if (!checkCollisionMesh(testPos)) {
+        // Если в верхней точке нет коллизии, пробуем найти землю ниже
+        testPos.y = startY;
+        if (!checkCollisionMesh(testPos)) {
+            // Нет коллизий во всем диапазоне
+            return -999999.0f;
         }
     }
-
+    
+    // Бинарный поиск для нахождения точной высоты поверхности
+    // Ищем границу между "есть коллизия" и "нет коллизии"
+    float minY = startY;  // Здесь может быть коллизия или нет
+    float maxY = endY;    // Здесь точно есть коллизия (или мы уже вышли)
+    
+    for (int i = 0; i < 12; i++) {
+        float midY = (minY + maxY) * 0.5f;
+        testPos.y = midY;
+        
+        if (checkCollisionMesh(testPos)) {
+            // Есть коллизия - значит земля ниже или на этом уровне
+            maxY = midY;
+        }
+        else {
+            // Нет коллизии - значит земля выше
+            minY = midY;
+        }
+    }
+    
     return maxY;
 }
 
