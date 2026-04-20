@@ -91,7 +91,7 @@ void Game::update(float deltaTime) {
     // Проверяем взаимодействие с дверями (оптимизировано через Engine)
     // Убрана прямая проверка - теперь это делает checkDoorCollision в Player
 
-    hud->update(deltaTime, player->getRenderPosition());
+    hud->update(deltaTime, player->getRenderPosition(), player->getSpeed());
 }
 
 void Game::processInput(GLFWwindow* window) {
