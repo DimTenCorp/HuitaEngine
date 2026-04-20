@@ -175,7 +175,7 @@ public:
 
     glm::vec3 getRenderPosition() const { return m_renderPosition; }
 
-    float getSpeed() const { return glm::length(velocity); }
+    float getSpeed() const { return glm::length(glm::vec2(velocity.x, velocity.z)); }
 
     bool IsOnLadder() const { return (m_afPhysicsFlags & PFLAG_ONLADDER) != 0; }
     void SetOnLadder(bool onLadder);
