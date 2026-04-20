@@ -1180,4 +1180,3 @@ const std::vector<int>& BSPLoader::getVisibleClusters(int clusterIndex) const {
     if (clusterIndex < 0 || clusterIndex >= numVisClusters) return empty;
     return visClusters[clusterIndex].visibleClusters;
 }
-}
