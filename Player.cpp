@@ -631,11 +631,53 @@ void Player::ApplyLadderPhysics(float deltaTime) {
     }
 }
 
+// Максимальный угол наклона для ходьбы (в градусах)
+#define MAX_WALKABLE_ANGLE 45.0f
+#define MAX_WALKABLE_NORMAL_Y 0.7071f  // cos(45°) ≈ 0.7071
+
+// Проверяем угол наклона поверхности по нормали
+// Возвращает true если поверхность достаточно пологая для ходьбы
+bool Player::IsWalkableSurface(const glm::vec3& normal) const {
+    // Для ходьбы нужна достаточно горизонтальная поверхность
+    // normal.y должен быть больше cos(MAX_WALKABLE_ANGLE)
+    return normal.y >= MAX_WALKABLE_NORMAL_Y;
+}
+
+// Проверка на землю с учетом угла наклона поверхности
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
+    
+    // Сначала быстрая проверка - есть ли что-то под ногами
     glm::vec3 testPos = position;
     testPos.y -= 2.0f;
-    return checkCollisionMesh(testPos);
+    if (!checkCollisionMesh(testPos)) {
+        return false;
+    }
+    
+    // Теперь проверяем угол наклона поверхности
+    Capsule capsule = getPlayerCapsule(position);
+    std::vector<size_t> nearby;
+    meshCollider->getTrianglesInCapsuleFast(capsule, nearby);
+    
+    AABB capBounds = capsule.getBounds();
+    
+    for (size_t idx : nearby) {
+        const auto& tri = meshCollider->staticTriangles[idx];
+        
+        // Быстрая AABB проверка
+        AABB triBounds;
+        triBounds.min = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
+        triBounds.max = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
+        
+        if (!triBounds.intersects(capBounds)) continue;
+        
+        // Проверяем нормаль треугольника
+        if (IsWalkableSurface(tri.normal)) {
+            return true;  // Нашли подходящую поверхность
+        }
+    }
+    
+    return false;  // Поверхность слишком крутая
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -655,6 +697,7 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
 
     if (!onGround) return false;
 
+    // Пробуем подняться на stepHeight
     glm::vec3 stepUp = startPos;
     stepUp.y += stepHeight;
 
@@ -667,23 +710,14 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
         return false;
     }
 
-    glm::vec3 stepDown = stepOver;
-    stepDown.y -= stepHeight;
-
-    if (checkCollisionMesh(stepDown)) {
-        position = stepDown;
-        position.y += 0.5f;
-        onGround = true;
-        velocity.y = 0.0f;
-        return true;
-    }
-
-    for (int i = 1; i <= 5; i++) {
+    // Проверяем землю под шагом с меньшим шагом для плавности
+    const float groundStep = 0.5f;
+    for (float down = groundStep; down <= stepHeight + 2.0f; down += groundStep) {
         glm::vec3 testPos = stepOver;
-        testPos.y -= stepHeight * (i / 5.0f);
+        testPos.y -= down;
         if (checkCollisionMesh(testPos)) {
             position = testPos;
-            position.y += 0.5f;
+            position.y += 0.01f;
             onGround = true;
             velocity.y = 0.0f;
             return true;
@@ -752,12 +786,14 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
+    // Если игрок на земле, пробуем шагнуть вверх и проверить уклон
     if (!onGround || std::abs(moveAmount) < 0.01f) {
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
+    // Пробуем подняться на stepHeight
     glm::vec3 stepUp = position;
     stepUp.y += stepHeight;
     stepUp += moveDir;
@@ -768,10 +804,12 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
+    // Проверяем, есть ли земля под шагом
     glm::vec3 groundTest = stepUp;
     groundTest.y -= stepHeight + 2.0f;
 
     if (checkCollisionMesh(groundTest)) {
+        // Нашли землю - поднимаемся плавно
         position = stepUp;
         float exactY = findGroundHeight(position, stepHeight + 2.0f);
         if (exactY > 0) position.y = exactY + 0.01f;
@@ -779,7 +817,10 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    for (float down = stepHeight * 0.5f; down <= stepHeight + 2.0f; down += 2.0f) {
+    // Проверяем наклонную поверхность - спускаемся постепенно
+    // Используем меньший шаг для более плавного спуска
+    const float slopeStep = 0.5f;  // Уменьшенный шаг для плавности
+    for (float down = slopeStep; down <= stepHeight + 2.0f; down += slopeStep) {
         glm::vec3 slopeTest = stepUp;
         slopeTest.y -= down;
         if (checkCollisionMesh(slopeTest)) {
@@ -790,6 +831,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         }
     }
 
+    // Если ничего не подошло - блокируем движение
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }
@@ -798,7 +840,8 @@ float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
     float minY = pos.y - maxSearchDist;
     float maxY = pos.y;
 
-    for (int i = 0; i < 4; i++) {
+    // Увеличиваем количество итераций для более точного поиска
+    for (int i = 0; i < 8; i++) {
         float midY = (minY + maxY) * 0.5f;
         glm::vec3 testPos = pos;
         testPos.y = midY;

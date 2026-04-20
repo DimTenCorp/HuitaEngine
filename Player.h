@@ -124,6 +124,7 @@ public:
     bool checkCollision(const glm::vec3& pos, const AABB& box);
     bool checkCollisionMesh(const glm::vec3& pos) const;
     bool checkOnGround() const;
+    bool IsWalkableSurface(const glm::vec3& normal) const;
 
     void EnableAutoJump(bool enable) { m_bAutoJump = enable; }
     bool IsAutoJumpEnabled() const { return m_bAutoJump; }

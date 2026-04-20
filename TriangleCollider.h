@@ -52,6 +52,9 @@ public:
         return staticTriangles.size() + dynamicTriangles.size();
     }
 
+    // Делаем staticTriangles доступным для Player
+    friend class Player;
+
 private:
     std::vector<Triangle> staticTriangles;
     std::vector<Triangle> dynamicTriangles;
