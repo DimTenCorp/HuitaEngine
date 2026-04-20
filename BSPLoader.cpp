@@ -811,6 +811,11 @@ bool BSPLoader::load(const std::string& filename, WADLoader& wadLoader) {
     loadTexInfo(file, header);
     parseEntities(file, header);
     loadLighting(file, header);
+    
+    // Загружаем данные для VIS
+    loadNodes(file, header);
+    loadLeaves(file, header);
+    loadVisibility(file, header);
 
     loadRequiredWADsFromEntities();
 
@@ -935,4 +940,244 @@ bool BSPLoader::isModelDoor(int modelIndex) const {
         }
     }
     return false;
+}
+
+// ==================== VIS LOADING ====================
+
+bool BSPLoader::loadNodes(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_NODES];
+    if (lump.length == 0) return false;
+    
+    size_t count = lump.length / sizeof(BSPNode);
+    nodes.resize(count);
+    fseek(file, lump.offset, SEEK_SET);
+    fread(nodes.data(), sizeof(BSPNode), count, file);
+    
+    std::cout << "[BSP] Loaded " << count << " nodes" << std::endl;
+    return true;
+}
+
+bool BSPLoader::loadLeaves(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_LEAVES];
+    if (lump.length == 0) return false;
+    
+    // Размер листа BSP: 28 байт
+    size_t count = lump.length / 28;
+    leaves.resize(count);
+    fseek(file, lump.offset, SEEK_SET);
+    
+    for (size_t i = 0; i < count; i++) {
+        BSPLeaf leaf;
+        fread(&leaf.contents, sizeof(int), 1, file);
+        fread(&leaf.cluster, sizeof(int), 1, file);
+        fread(&leaf.min[0], sizeof(short), 3, file);
+        fread(&leaf.max[0], sizeof(short), 3, file);
+        fread(&leaf.firstMarkSurface, sizeof(unsigned short), 1, file);
+        fread(&leaf.numMarkSurfaces, sizeof(unsigned short), 1, file);
+        fread(&leaf.area, sizeof(unsigned char), 1, file);
+        fread(&leaf.numPortals, sizeof(unsigned char), 1, file);
+        leaves[i] = leaf;
+    }
+    
+    std::cout << "[BSP] Loaded " << count << " leaves" << std::endl;
+    return true;
+}
+
+bool BSPLoader::loadVisibility(FILE* file, const BSPHeader& header) {
+    const BSPLump& lump = header.lumps[LUMP_VISIBILITY];
+    if (lump.length == 0) {
+        std::cout << "[BSP] No VIS data found" << std::endl;
+        return false;
+    }
+    
+    rawVisData.resize(lump.length);
+    fseek(file, lump.offset, SEEK_SET);
+    fread(rawVisData.data(), 1, lump.length, file);
+    
+    parseVISData();
+    
+    std::cout << "[BSP] Loaded VIS data: " << lump.length << " bytes, " 
+              << numVisClusters << " clusters" << std::endl;
+    return true;
+}
+
+void BSPLoader::parseVISData() {
+    if (rawVisData.empty()) return;
+    
+    size_t offset = 0;
+    if (offset + 4 > rawVisData.size()) return;
+    
+    memcpy(&numVisClusters, rawVisData.data() + offset, sizeof(int));
+    offset += 4;
+    
+    if (numVisClusters <= 0 || numVisClusters > 10000) {
+        std::cerr << "[BSP] Invalid number of VIS clusters: " << numVisClusters << std::endl;
+        numVisClusters = 0;
+        return;
+    }
+    
+    visClusters.resize(numVisClusters);
+    
+    for (int i = 0; i < numVisClusters; i++) {
+        if (offset >= rawVisData.size()) break;
+        
+        int rowSize = rawVisData[offset++];
+        
+        visClusters[i].visibilityBits.resize(rowSize);
+        for (int j = 0; j < rowSize; j++) {
+            if (offset + j < rawVisData.size()) {
+                visClusters[i].visibilityBits[j] = rawVisData[offset + j];
+            }
+        }
+        offset += rowSize;
+        
+        // Парсим битовую маску в список видимых кластеров
+        visClusters[i].visibleClusters.clear();
+        visClusters[i].numVisibleClusters = 0;
+        
+        for (int cluster = 0; cluster < numVisClusters; cluster++) {
+            int byteIndex = cluster / 8;
+            int bitIndex = cluster % 8;
+            
+            if (byteIndex < (int)visClusters[i].visibilityBits.size()) {
+                if (visClusters[i].visibilityBits[byteIndex] & (1 << bitIndex)) {
+                    visClusters[i].visibleClusters.push_back(cluster);
+                    visClusters[i].numVisibleClusters++;
+                }
+            }
+        }
+        
+        // Кластер всегда видит сам себя
+        bool seesSelf = false;
+        for (int c : visClusters[i].visibleClusters) {
+            if (c == i) { seesSelf = true; break; }
+        }
+        if (!seesSelf) {
+            visClusters[i].visibleClusters.push_back(i);
+            visClusters[i].numVisibleClusters++;
+        }
+    }
+    
+    // Строим маппинг face -> cluster
+    buildFaceToClusterMapping();
+}
+
+void BSPLoader::buildFaceToClusterMapping() {
+    faceToCluster.assign(faces.size(), -1);
+    
+    for (size_t leafIdx = 0; leafIdx < leaves.size(); leafIdx++) {
+        const BSPLeaf& leaf = leaves[leafIdx];
+        int cluster = leaf.cluster;
+        
+        if (cluster < 0 || cluster >= numVisClusters) continue;
+        
+        for (int i = 0; i < leaf.numMarkSurfaces; i++) {
+            int markSurfaceIndex = leaf.firstMarkSurface + i;
+            if (markSurfaceIndex < 0 || markSurfaceIndex >= (int)surfEdges.size()) continue;
+            
+            // Получаем индекс поверхности из marksurfaces
+            // Но нам нужно сопоставить с faces... marksurfaces содержит индексы faces
+            // В Quake/Half-Life marksurfaces содержит индексы в массиве faces
+        }
+    }
+    
+    // Альтернативный подход: для каждого face ищем leaf который его содержит
+    for (size_t faceIdx = 0; faceIdx < faces.size(); faceIdx++) {
+        int bestLeaf = -1;
+        float bestDist = 1e10f;
+        
+        // Находим лист, содержащий центр фейса
+        glm::vec3 center(0);
+        int vertexCount = 0;
+        
+        const BSPFace& face = faces[faceIdx];
+        for (int i = 0; i < face.numEdges; i++) {
+            int edgeIdx = face.firstEdge + i;
+            if (edgeIdx < 0 || edgeIdx >= (int)surfEdges.size()) continue;
+            
+            int surfEdge = surfEdges[edgeIdx];
+            int vIdx = (surfEdge >= 0) ? edges[surfEdge].v[0] : edges[-surfEdge].v[1];
+            
+            if (vIdx >= 0 && vIdx < (int)vertices.size()) {
+                center += vertices[vIdx];
+                vertexCount++;
+            }
+        }
+        
+        if (vertexCount > 0) {
+            center /= (float)vertexCount;
+            
+            // Ищем лист содержащий эту точку
+            for (size_t leafIdx = 0; leafIdx < leaves.size(); leafIdx++) {
+                const BSPLeaf& leaf = leaves[leafIdx];
+                
+                glm::vec3 leafMin(leaf.min[0], leaf.min[1], leaf.min[2]);
+                glm::vec3 leafMax(leaf.max[0], leaf.max[1], leaf.max[2]);
+                
+                if (center.x >= leafMin.x && center.x <= leafMax.x &&
+                    center.y >= leafMin.y && center.y <= leafMax.y &&
+                    center.z >= leafMin.z && center.z <= leafMax.z) {
+                    
+                    if (leaf.cluster >= 0 && leaf.cluster < numVisClusters) {
+                        faceToCluster[faceIdx] = leaf.cluster;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+int BSPLoader::getLeafFromPosition(const glm::vec3& pos) const {
+    if (nodes.empty()) return 0;
+    
+    int nodeIdx = 0;
+    while (nodeIdx >= 0) {
+        const BSPNode& node = nodes[nodeIdx];
+        const BSPPlane& plane = planes[node.planeNum];
+        
+        float dist = glm::dot(pos, plane.normal) - plane.dist;
+        
+        if (dist >= 0) {
+            nodeIdx = node.children[0];
+        } else {
+            nodeIdx = node.children[1];
+        }
+    }
+    
+    return ~nodeIdx;  // Возвращаем индекс листа
+}
+
+int BSPLoader::getClusterFromLeaf(int leafIndex) const {
+    if (leafIndex < 0 || leafIndex >= (int)leaves.size()) return -1;
+    return leaves[leafIndex].cluster;
+}
+
+int BSPLoader::getClusterForCamera(const glm::vec3& cameraPos) const {
+    int leaf = getLeafFromPosition(cameraPos);
+    return getClusterFromLeaf(leaf);
+}
+
+bool BSPLoader::isFaceVisible(int faceIndex, int clusterIndex) const {
+    if (faceIndex < 0 || faceIndex >= (int)faces.size()) return false;
+    if (clusterIndex < 0 || clusterIndex >= numVisClusters) return false;
+    
+    int faceCluster = faceToCluster[faceIndex];
+    if (faceCluster < 0) return true;  // Если не удалось определить кластер, считаем видимым
+    
+    // Проверяем, видит ли кластер камеры кластер фейса
+    const VISCluster& vis = visClusters[clusterIndex];
+    
+    for (int visibleCluster : vis.visibleClusters) {
+        if (visibleCluster == faceCluster) return true;
+    }
+    
+    return false;
+}
+
+const std::vector<int>& BSPLoader::getVisibleClusters(int clusterIndex) const {
+    static std::vector<int> empty;
+    if (clusterIndex < 0 || clusterIndex >= numVisClusters) return empty;
+    return visClusters[clusterIndex].visibleClusters;
+}
 }
