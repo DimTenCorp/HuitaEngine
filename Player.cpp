@@ -635,12 +635,20 @@ void Player::ApplyLadderPhysics(float deltaTime) {
 #define MAX_WALKABLE_ANGLE 45.0f
 #define MAX_WALKABLE_NORMAL_Y 0.7071f  // cos(45°) ≈ 0.7071
 
+// Минимальный нормаль.Y для предотвращения скольжения на крутых склонах
+#define MIN_SLOPE_NORMAL_Y 0.1736f  // cos(80°) ≈ 0.1736 - абсолютный предел
+
 // Проверяем угол наклона поверхности по нормали
 // Возвращает true если поверхность достаточно пологая для ходьбы
 bool Player::IsWalkableSurface(const glm::vec3& normal) const {
     // Для ходьбы нужна достаточно горизонтальная поверхность
     // normal.y должен быть больше cos(MAX_WALKABLE_ANGLE)
     return normal.y >= MAX_WALKABLE_NORMAL_Y;
+}
+
+// Проверяем можно ли вообще стоять на поверхности (даже если это не ходьба)
+bool Player::IsStandableSurface(const glm::vec3& normal) const {
+    return normal.y >= MIN_SLOPE_NORMAL_Y;
 }
 
 // Проверка на землю с учетом угла наклона поверхности
@@ -671,13 +679,13 @@ bool Player::checkOnGround() const {
         
         if (!triBounds.intersects(capBounds)) continue;
         
-        // Проверяем нормаль треугольника
+        // Проверяем нормаль треугольника - используем более строгую проверку для ходьбы
         if (IsWalkableSurface(tri.normal)) {
-            return true;  // Нашли подходящую поверхность
+            return true;  // Нашли подходящую поверхность для ходьбы
         }
     }
     
-    return false;  // Поверхность слишком крутая
+    return false;  // Поверхность слишком крутая или земли нет
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -710,8 +718,11 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
         return false;
     }
 
-    // Проверяем землю под шагом с меньшим шагом для плавности
-    const float groundStep = 0.5f;
+    // Проверяем землю под шагом с адаптивным шагом для плавности при любом FPS
+    // Используем меньший шаг чтобы избежать подбрасывания при высоком FPS
+    const float baseGroundStep = 0.5f;
+    float groundStep = std::min(baseGroundStep, deltaTime * 60.0f * 0.3f);
+    
     for (float down = groundStep; down <= stepHeight + 2.0f; down += groundStep) {
         glm::vec3 testPos = stepOver;
         testPos.y -= down;
@@ -804,22 +815,48 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // Проверяем, есть ли земля под шагом
+    // Проверяем, есть ли земля под шагом с проверкой угла наклона
     glm::vec3 groundTest = stepUp;
     groundTest.y -= stepHeight + 2.0f;
 
     if (checkCollisionMesh(groundTest)) {
-        // Нашли землю - поднимаемся плавно
-        position = stepUp;
-        float exactY = findGroundHeight(position, stepHeight + 2.0f);
-        if (exactY > 0) position.y = exactY + 0.01f;
-        velocity.y = 0;
-        return;
+        // Проверяем угол наклона поверхности перед подъемом
+        Capsule capsule = getPlayerCapsule(stepUp);
+        std::vector<size_t> nearby;
+        meshCollider->getTrianglesInCapsuleFast(capsule, nearby);
+        AABB capBounds = capsule.getBounds();
+        
+        bool foundWalkable = false;
+        for (size_t idx : nearby) {
+            const auto& tri = meshCollider->staticTriangles[idx];
+            AABB triBounds;
+            triBounds.min = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
+            triBounds.max = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
+            
+            if (!triBounds.intersects(capBounds)) continue;
+            
+            // Проверяем что поверхность достаточно пологая для ходьбы
+            if (IsWalkableSurface(tri.normal)) {
+                foundWalkable = true;
+                break;
+            }
+        }
+        
+        if (foundWalkable) {
+            // Нашли землю - поднимаемся плавно
+            position = stepUp;
+            float exactY = findGroundHeight(position, stepHeight + 2.0f);
+            if (exactY > 0) position.y = exactY + 0.01f;
+            velocity.y = 0;
+            return;
+        }
     }
 
     // Проверяем наклонную поверхность - спускаемся постепенно
-    // Используем меньший шаг для более плавного спуска
-    const float slopeStep = 0.5f;  // Уменьшенный шаг для плавности
+    // Используем адаптивный шаг для плавности при любом FPS
+    const float baseSlopeStep = 0.5f;
+    float slopeStep = std::min(baseSlopeStep, deltaTime * 60.0f * 0.3f);
+    
     for (float down = slopeStep; down <= stepHeight + 2.0f; down += slopeStep) {
         glm::vec3 slopeTest = stepUp;
         slopeTest.y -= down;
