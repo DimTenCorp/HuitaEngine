@@ -808,7 +808,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
     else velocity.z = 0;
 }
 
-float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
+float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) const {
     float minY = pos.y - maxSearchDist;
     float maxY = pos.y;
 

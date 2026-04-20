@@ -97,7 +97,7 @@ private:
     // НОВОЕ: Нормаль лестницы для физики
     glm::vec3 m_ladderNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
-    float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
+    float findGroundHeight(const glm::vec3& pos, float maxSearchDist) const;
 
 public:
     Player();
