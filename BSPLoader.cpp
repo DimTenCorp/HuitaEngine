@@ -585,6 +585,7 @@ void BSPLoader::buildSubmodelMesh(const BSPModel& subModel, int rendermode, int 
         dc.indexOffset = startIdxOffset;
         dc.indexCount = (unsigned int)((faceMeshVerts.size() - 2) * 3);
         dc.faceIndex = faceIdx;
+        dc.bounds = faceBounds;  // Сохраняем границы фейса для frustum culling
 
         dc.rendermode = static_cast<unsigned char>(rendermode);
         dc.renderamt = static_cast<unsigned char>(renderamt);

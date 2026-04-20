@@ -6,6 +6,7 @@
 #include <algorithm>
 #include "BSPLoader.h"
 #include "Shader.h"
+#include "Frustum.h"
 
 struct GBuffer {
     GLuint fbo = 0;
@@ -84,6 +85,8 @@ public:
 
     void setTransparentSorting(bool enable) { sortTransparentFaces = enable; }
     void setAlphaTestRef(float ref) { alphaTestRef = ref; }
+    void setFrustumCulling(bool enable) { useFrustumCulling = enable; }
+    bool getFrustumCulling() const { return useFrustumCulling; }
 
 private:
     BspMesh worldMesh;
@@ -110,6 +113,9 @@ private:
 
     bool sortTransparentFaces = true;
     float alphaTestRef = 0.5f;
+    bool useFrustumCulling = true;  // Frustum culling включен по умолчанию
+    
+    Frustum frustum;  // Фрустум для отсечения невидимой геометрии
     
     // Кэширование для сортировки прозрачных объектов
     std::vector<FaceDrawCall> sortedTransparentDrawCalls;

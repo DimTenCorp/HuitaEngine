@@ -529,6 +529,11 @@ void Renderer::renderWorld(const glm::mat4& view, const glm::vec3& viewPos) {
     glm::mat4 projection = glm::perspective(glm::radians(75.0f),
         (float)screenWidth / (float)screenHeight, 0.1f, 10000.0f);
 
+    // Обновляем фрустум для culling
+    if (useFrustumCulling) {
+        frustum.update(projection * view);
+    }
+
     // ============================================
     // ПРОХОД 1: Только НЕПРОЗРАЧНАЯ геометрия
     // ============================================
@@ -594,6 +599,11 @@ void Renderer::geometryPass(const glm::mat4& view, const glm::mat4& proj, bool o
     GLuint currentTex = 0;
     
     for (const auto& dc : drawCalls) {
+        // Frustum culling проверка
+        if (useFrustumCulling && !frustum.testAABB(dc.bounds)) {
+            continue;  // Пропускаем невидимые фейсы
+        }
+        
         if (dc.texID != currentTex) {
             glBindTexture(GL_TEXTURE_2D, dc.texID);
             currentTex = dc.texID;

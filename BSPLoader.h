@@ -102,6 +102,8 @@ struct FaceDrawCall {
     bool isWater = false;
     bool isSky = false;
     bool isLadder = false;  // <-- ДОБАВЛЕНО: флаг лестницы (нет коллизии)
+    
+    AABB bounds;  // Границы фейса для frustum culling
 };
 
 class BSPLoader {
