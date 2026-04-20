@@ -651,41 +651,22 @@ bool Player::IsStandableSurface(const glm::vec3& normal) const {
     return normal.y >= MIN_SLOPE_NORMAL_Y;
 }
 
-// Проверка на землю с учетом угла наклона поверхности
+// Быстрая проверка на землю без детальной проверки треугольников
+// Используется только для определения состояния onGround
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
     
-    // Сначала быстрая проверка - есть ли что-то под ногами
+    // Простая проверка - есть ли что-то под ногами на небольшом расстоянии
     glm::vec3 testPos = position;
     testPos.y -= 2.0f;
+    
+    // Если нет коллизии чуть ниже - точно не на земле
     if (!checkCollisionMesh(testPos)) {
         return false;
     }
     
-    // Теперь проверяем угол наклона поверхности
-    Capsule capsule = getPlayerCapsule(position);
-    std::vector<size_t> nearby;
-    meshCollider->getTrianglesInCapsuleFast(capsule, nearby);
-    
-    AABB capBounds = capsule.getBounds();
-    
-    for (size_t idx : nearby) {
-        const auto& tri = meshCollider->staticTriangles[idx];
-        
-        // Быстрая AABB проверка
-        AABB triBounds;
-        triBounds.min = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
-        triBounds.max = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
-        
-        if (!triBounds.intersects(capBounds)) continue;
-        
-        // Проверяем нормаль треугольника - используем более строгую проверку для ходьбы
-        if (IsWalkableSurface(tri.normal)) {
-            return true;  // Нашли подходящую поверхность для ходьбы
-        }
-    }
-    
-    return false;  // Поверхность слишком крутая или земли нет
+    // Проверяем только один раз, без циклов - просто факт наличия земли
+    return true;
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -718,21 +699,15 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
         return false;
     }
 
-    // Проверяем землю под шагом с адаптивным шагом для плавности при любом FPS
-    // Используем меньший шаг чтобы избежать подбрасывания при высоком FPS
-    const float baseGroundStep = 0.5f;
-    float groundStep = std::min(baseGroundStep, deltaTime * 60.0f * 0.3f);
-    
-    for (float down = groundStep; down <= stepHeight + 2.0f; down += groundStep) {
-        glm::vec3 testPos = stepOver;
-        testPos.y -= down;
-        if (checkCollisionMesh(testPos)) {
-            position = testPos;
-            position.y += 0.01f;
-            onGround = true;
-            velocity.y = 0.0f;
-            return true;
-        }
+    // Проверяем землю под шагом - простой спуск без циклов для производительности
+    // Используем бинарный поиск для быстрого нахождения земли
+    float groundY = findGroundHeight(stepOver, stepHeight + 2.0f);
+    if (groundY > 0) {
+        position = stepOver;
+        position.y = groundY + 0.01f;
+        onGround = true;
+        velocity.y = 0.0f;
+        return true;
     }
 
     return false;
@@ -852,23 +827,8 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         }
     }
 
-    // Проверяем наклонную поверхность - спускаемся постепенно
-    // Используем адаптивный шаг для плавности при любом FPS
-    const float baseSlopeStep = 0.5f;
-    float slopeStep = std::min(baseSlopeStep, deltaTime * 60.0f * 0.3f);
-    
-    for (float down = slopeStep; down <= stepHeight + 2.0f; down += slopeStep) {
-        glm::vec3 slopeTest = stepUp;
-        slopeTest.y -= down;
-        if (checkCollisionMesh(slopeTest)) {
-            position = stepUp;
-            position.y -= down - 0.01f;
-            velocity.y = 0;
-            return;
-        }
-    }
-
-    // Если ничего не подошло - блокируем движение
+    // Не нашли пологую поверхность под ногами - блокируем движение
+    // Это предотвращает подъем по слишком крутым склонам (>45°)
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }
@@ -877,8 +837,9 @@ float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
     float minY = pos.y - maxSearchDist;
     float maxY = pos.y;
 
-    // Увеличиваем количество итераций для более точного поиска
-    for (int i = 0; i < 8; i++) {
+    // Бинарный поиск для быстрого и точного определения высоты земли
+    // 10 итераций дают достаточную точность (деление пополам 10 раз = ~0.1% погрешности)
+    for (int i = 0; i < 10; i++) {
         float midY = (minY + maxY) * 0.5f;
         glm::vec3 testPos = pos;
         testPos.y = midY;
