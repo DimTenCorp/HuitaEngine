@@ -30,6 +30,37 @@ struct BSPHeader { int version; BSPLump lumps[15]; };
 
 struct BSPPlane { glm::vec3 normal; float dist; int type; };
 
+// Структура узла BSP дерева
+struct BSPNode {
+    int planeNum;
+    short children[2];  // Если > 0 - индекс узла, если < 0 - ~(индекс листа)
+    short min[3];
+    short max[3];
+    unsigned short firstFace;
+    unsigned short numFaces;
+    short area;
+    short pad;
+};
+
+// Структура листа BSP дерева
+struct BSPLeaf {
+    int contents;
+    int cluster;          // Кластер для VIS (потенциально видимые множества)
+    short min[3];
+    short max[3];
+    unsigned short firstMarkSurface;
+    unsigned short numMarkSurfaces;
+    unsigned char area;
+    unsigned char numPortals;
+};
+
+// Данные VIS для кластера
+struct VISCluster {
+    std::vector<uint8_t> visibilityBits;  // Битовая маска видимых кластеров
+    int numVisibleClusters;               // Количество видимых кластеров
+    std::vector<int> visibleClusters;     // Список видимых кластеров (кэшированный)
+};
+
 struct BSPFace {
     unsigned short planeNum;
     unsigned short side;
@@ -83,6 +114,16 @@ private:
     std::vector<BSPPlane> planes;
     std::vector<BSPModel> models;
     std::vector<BSPTexInfo> texInfos;
+    
+    // Данные для VIS
+    std::vector<BSPNode> nodes;
+    std::vector<BSPLeaf> leaves;
+    std::vector<VISCluster> visClusters;
+    int numVisClusters = 0;
+    std::vector<uint8_t> rawVisData;
+    
+    // Маппинг: face index -> cluster index
+    std::vector<int> faceToCluster;
 
     std::vector<BSPVertex> meshVertices;
     std::vector<unsigned int> meshIndices;
@@ -113,6 +154,15 @@ private:
     void buildMesh();
     void buildSubmodelMesh(const BSPModel& subModel, int rendermode, int renderamt, bool isWaterModel = false, bool isLadderModel = false);
     bool loadLighting(FILE* file, const BSPHeader& header);
+    
+    // Методы для загрузки и парсинга VIS
+    bool loadNodes(FILE* file, const BSPHeader& header);
+    bool loadLeaves(FILE* file, const BSPHeader& header);
+    bool loadVisibility(FILE* file, const BSPHeader& header);
+    void parseVISData();
+    void buildFaceToClusterMapping();
+    int getLeafFromPosition(const glm::vec3& pos) const;
+    int getClusterFromLeaf(int leafIndex) const;
 
 public:
     BSPLoader();
@@ -137,6 +187,13 @@ public:
 
     bool findPlayerStart(glm::vec3& outPosition, glm::vec3& outAngles) const;
     std::vector<BSPEntity> getEntitiesByClass(const std::string& classname) const;
+
+    // Методы для работы с VIS
+    bool isFaceVisible(int faceIndex, int clusterIndex) const;
+    int getClusterForCamera(const glm::vec3& cameraPos) const;
+    const std::vector<int>& getVisibleClusters(int clusterIndex) const;
+    int getNumVisClusters() const { return numVisClusters; }
+    bool hasVISData() const { return !visClusters.empty(); }
 
     std::vector<uint8_t> lightingData;
 
