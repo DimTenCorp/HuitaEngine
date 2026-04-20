@@ -656,17 +656,17 @@ bool Player::IsStandableSurface(const glm::vec3& normal) const {
 bool Player::checkOnGround() const {
     if (!meshCollider) return false;
     
-    // Простая проверка - есть ли что-то под ногами на небольшом расстоянии
-    glm::vec3 testPos = position;
-    testPos.y -= 2.0f;
+    // Проверяем наличие земли прямо под ногами игрока
+    // Используем findGroundHeight для точного определения высоты поверхности
+    float groundY = findGroundHeight(position, 4.0f);
     
-    // Если нет коллизии чуть ниже - точно не на земле
-    if (!checkCollisionMesh(testPos)) {
-        return false;
-    }
+    // Если земля найдена в пределах небольшого расстояния от ног игрока
+    // (учитываем радиус капсулы), считаем что игрок на земле
+    float playerBottom = position.y - m_fHullHeight * 0.5f + m_fHullRadius;
+    float distToGround = playerBottom - groundY;
     
-    // Проверяем только один раз, без циклов - просто факт наличия земли
-    return true;
+    // Допускаем небольшое расстояние (до 1 единицы) для стабильности
+    return (distToGround >= -1.0f && distToGround <= 1.0f);
 }
 
 bool Player::stepSlideMove(float deltaTime, int axis) {
@@ -772,14 +772,14 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // Если игрок на земле, пробуем шагнуть вверх и проверить уклон
+    // Если игрок не на земле - блокируем горизонтальное движение
     if (!onGround || std::abs(moveAmount) < 0.01f) {
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
-    // Пробуем подняться на stepHeight
+    // Пробуем подняться на stepHeight (для ступенек и небольших склонов)
     glm::vec3 stepUp = position;
     stepUp.y += stepHeight;
     stepUp += moveDir;
@@ -790,45 +790,20 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
-    // Проверяем, есть ли земля под шагом с проверкой угла наклона
+    // Проверяем, есть ли земля под шагом
     glm::vec3 groundTest = stepUp;
     groundTest.y -= stepHeight + 2.0f;
 
     if (checkCollisionMesh(groundTest)) {
-        // Проверяем угол наклона поверхности перед подъемом
-        Capsule capsule = getPlayerCapsule(stepUp);
-        std::vector<size_t> nearby;
-        meshCollider->getTrianglesInCapsuleFast(capsule, nearby);
-        AABB capBounds = capsule.getBounds();
-        
-        bool foundWalkable = false;
-        for (size_t idx : nearby) {
-            const auto& tri = meshCollider->staticTriangles[idx];
-            AABB triBounds;
-            triBounds.min = glm::min(tri.vertices[0], glm::min(tri.vertices[1], tri.vertices[2]));
-            triBounds.max = glm::max(tri.vertices[0], glm::max(tri.vertices[1], tri.vertices[2]));
-            
-            if (!triBounds.intersects(capBounds)) continue;
-            
-            // Проверяем что поверхность достаточно пологая для ходьбы
-            if (IsWalkableSurface(tri.normal)) {
-                foundWalkable = true;
-                break;
-            }
-        }
-        
-        if (foundWalkable) {
-            // Нашли землю - поднимаемся плавно
-            position = stepUp;
-            float exactY = findGroundHeight(position, stepHeight + 2.0f);
-            if (exactY > 0) position.y = exactY + 0.01f;
-            velocity.y = 0;
-            return;
-        }
+        // Земля найдена - поднимаемся и корректируем высоту
+        position = stepUp;
+        float exactY = findGroundHeight(position, stepHeight + 2.0f);
+        if (exactY > 0) position.y = exactY + 0.01f;
+        velocity.y = 0;
+        return;
     }
 
-    // Не нашли пологую поверхность под ногами - блокируем движение
-    // Это предотвращает подъем по слишком крутым склонам (>45°)
+    // Не нашли землю под шагом - блокируем движение
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }
