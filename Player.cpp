@@ -30,7 +30,7 @@ Player::Player() {
     speed = 200.0f;
     jumpForce = 270.0f;
     gravity = 600.0f;
-    friction = 4.0f;
+    friction = 7.0f;
 
     yaw = -90.0f;
     pitch = 0.0f;
