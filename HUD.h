@@ -30,6 +30,8 @@ private:
     ImFont* smallFont = nullptr;
     int screenWidth = 1280;
     int screenHeight = 720;
+    float waterLevel = 0.0f;
+    void renderWaterOverlay(int width, int height);
 
 public:
     HUD();
@@ -49,4 +51,5 @@ public:
     }
 
     void render();
+    void setWaterLevel(float level) { waterLevel = level; }
 };

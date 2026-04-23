@@ -188,4 +188,6 @@ public:
 
     float m_flLadderReenterTime = 0.0f;
     static constexpr float LADDER_REENTER_DELAY = 0.3f;
+
+    float GetWaterLevel() const { return m_flWaterLevel; }
 };

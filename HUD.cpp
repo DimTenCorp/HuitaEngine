@@ -41,6 +41,35 @@ void HUD::update(float deltaTime, const glm::vec3& position, float speed) {
     }
 }
 
+void HUD::renderWaterOverlay(int width, int height) {
+    if (waterLevel < 3.0f) return; // только полное погружение
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoInputs |
+        ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoBackground;
+
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2((float)width, (float)height));
+    ImGui::SetNextWindowBgAlpha(0.0f);
+
+    ImGui::Begin("WaterOverlay", nullptr, flags);
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    // —покойный подводный синий, ~35% непрозрачности
+    ImU32 col = IM_COL32(0, 60, 120, 90);
+    draw->AddRectFilled(
+        ImVec2(0.0f, 0.0f),
+        ImVec2((float)width, (float)height),
+        col
+    );
+
+    ImGui::End();
+}
+
 void HUD::render() {  // Ѕольше без параметров
     if (!ImGui::GetCurrentContext()) return;
 
@@ -141,5 +170,9 @@ void HUD::render() {  // Ѕольше без параметров
 
     if (smallFont) {
         ImGui::PopFont();
+    }
+
+    if (waterLevel >= 3.0f) {
+        renderWaterOverlay(screenWidth, screenHeight);
     }
 }

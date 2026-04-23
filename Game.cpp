@@ -92,6 +92,7 @@ void Game::update(float deltaTime) {
     // Убрана прямая проверка - теперь это делает checkDoorCollision в Player
 
     hud->update(deltaTime, player->getRenderPosition(), player->getSpeed());
+    hud->setWaterLevel(player->GetWaterLevel());
 }
 
 void Game::processInput(GLFWwindow* window) {
