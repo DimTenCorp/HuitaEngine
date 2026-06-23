@@ -62,6 +62,11 @@ Player::Player() {
 
     m_previousPosition = position;
     m_renderPosition = position;
+
+    // === НОВОЕ: Для фиксированного таймстепа и плавной интерполяции ===
+    m_physicsAccumulator = 0.0f;
+    m_visualStepOffset = 0.0f;
+    m_lastGroundY = position.y;
 }
 
 Capsule Player::getPlayerCapsule(const glm::vec3& pos) const {
@@ -490,10 +495,9 @@ void Player::SetOnLadder(bool onLadder) {
 }
 
 void Player::CheckLadder(const std::vector<CFuncLadder*>& ladderZones) {
-    // === НОВОЕ: Проверяем таймер задержки ===
     float currentTime = (float)glfwGetTime();
     if (currentTime < m_flLadderReenterTime) {
-        return; // Ещё нельзя входить на лестницу
+        return;
     }
 
     Capsule capsule = getPlayerCapsule(position);
@@ -522,36 +526,25 @@ void Player::ApplyLadderPhysics(float deltaTime) {
 
     GLFWwindow* window = glfwGetCurrentContext();
 
-    // Сбрасываем гравитацию и вертикальную скорость
     velocity.y = 0;
 
-    // Получаем направление взгляда
     float yawRad = glm::radians(yaw);
     float pitchRad = glm::radians(pitch);
 
-    // Forward вектор по направлению взгляда (как в noclip)
     glm::vec3 lookDir(
         cos(yawRad) * cos(pitchRad),
         sin(pitchRad),
         sin(yawRad) * cos(pitchRad)
     );
 
-    // Проецируем lookDir на плоскость лестницы (убираем компоненту вдоль нормали)
-    // Но для простоты — используем pitch для определения направления движения
-    float pitchFactor = -sin(pitchRad); // -1 когда смотрим вниз, +1 когда вверх, 0 когда ровно
-
-    // Нормализуем горизонтальное направление (без учета pitch)
     glm::vec3 flatForward(cos(yawRad), 0.0f, sin(yawRad));
     glm::vec3 right(cos(yawRad + glm::half_pi<float>()), 0.0f, sin(yawRad + glm::half_pi<float>()));
 
-    // Скорость движения
     float climbSpeed = speed * 0.8f;
 
-    // Определяем желаемое движение относительно направления взгляда
     glm::vec3 wishvel(0.0f);
     bool moving = false;
 
-    // W/S — движение вперед/назад по направлению взгляда
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         wishvel += lookDir * climbSpeed;
         moving = true;
@@ -560,8 +553,6 @@ void Player::ApplyLadderPhysics(float deltaTime) {
         wishvel -= lookDir * climbSpeed;
         moving = true;
     }
-
-    // A/D — стрейф влево/вправо (горизонтально, без вертикальной компоненты)
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         wishvel -= right * climbSpeed * 0.8f;
         moving = true;
@@ -571,9 +562,7 @@ void Player::ApplyLadderPhysics(float deltaTime) {
         moving = true;
     }
 
-    // Применяем движение с коллизией
     if (moving && glm::length(wishvel) > 0.001f) {
-        // Нормализуем, чтобы не ускоряться по диагонали
         float currentSpeed = glm::length(wishvel);
         if (currentSpeed > climbSpeed) {
             wishvel = glm::normalize(wishvel) * climbSpeed;
@@ -581,12 +570,10 @@ void Player::ApplyLadderPhysics(float deltaTime) {
 
         glm::vec3 newPos = position + wishvel * deltaTime;
 
-        // Проверяем столкновение
         if (!checkCollisionMesh(newPos)) {
             position = newPos;
         }
         else {
-            // Пробуем по осям отдельно
             glm::vec3 testX = position + glm::vec3(wishvel.x * deltaTime, 0, 0);
             if (!checkCollisionMesh(testX)) position.x = testX.x;
 
@@ -598,14 +585,10 @@ void Player::ApplyLadderPhysics(float deltaTime) {
         }
     }
 
-    // === ПРЫЖОК С ЛЕСТНИЦЫ ===
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
         SetOnLadder(false);
-
-        // === НОВОЕ: Устанавливаем таймер задержки ===
         m_flLadderReenterTime = (float)glfwGetTime() + LADDER_REENTER_DELAY;
 
-        // Толкаем вперед и вверх (как в HL1)
         glm::vec3 pushDir = flatForward;
         pushDir.y = 0.5f;
         pushDir = glm::normalize(pushDir);
@@ -619,7 +602,6 @@ void Player::ApplyLadderPhysics(float deltaTime) {
         return;
     }
 
-    // Проверяем выход снизу (стоим на земле)
     if (velocity.y <= 0 || !moving) {
         glm::vec3 groundTest = position;
         groundTest.y -= 2.0f;
@@ -638,6 +620,9 @@ bool Player::checkOnGround() const {
     return checkCollisionMesh(testPos);
 }
 
+// ============================================================================
+// === ОПТИМИЗИРОВАННЫЙ stepSlideMove — с плавным ground snap ===
+// ============================================================================
 bool Player::stepSlideMove(float deltaTime, int axis) {
     float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
     if (std::abs(moveAmount) < 0.0001f) return true;
@@ -647,53 +632,65 @@ bool Player::stepSlideMove(float deltaTime, int axis) {
     if (axis == 0) moveDir.x = moveAmount;
     else moveDir.z = moveAmount;
 
+    // 1. Пробуем двигаться напрямую
     glm::vec3 newPos = startPos + moveDir;
     if (!checkCollisionMesh(newPos)) {
         position = newPos;
         return true;
     }
 
+    // Не на земле — не делаем step
     if (!onGround) return false;
 
+    // 2. Пробуем step up → over → down
     glm::vec3 stepUp = startPos;
     stepUp.y += stepHeight;
-
     if (checkCollisionMesh(stepUp)) {
-        return false;
+        return false; // Потолок
     }
 
     glm::vec3 stepOver = stepUp + moveDir;
     if (checkCollisionMesh(stepOver)) {
-        return false;
+        return false; // Препятствие на уровне ступеньки
     }
 
-    glm::vec3 stepDown = stepOver;
-    stepDown.y -= stepHeight;
+    // 3. Спускаемся вниз — бинарный поиск земли
+    float topY = stepOver.y;
+    float bottomY = stepOver.y - stepHeight - 2.0f;
+    float groundY = topY;
+    bool foundGround = false;
 
-    if (checkCollisionMesh(stepDown)) {
-        position = stepDown;
-        position.y += 0.5f;
+    for (int i = 0; i < 4; i++) {
+        float midY = (topY + bottomY) * 0.5f;
+        glm::vec3 testPos = stepOver;
+        testPos.y = midY;
+
+        if (checkCollisionMesh(testPos)) {
+            bottomY = midY;
+        }
+        else {
+            groundY = midY;
+            foundGround = true;
+            topY = midY;
+        }
+    }
+
+    if (foundGround) {
+        position = stepOver;
+        position.y = groundY + 0.01f;
         onGround = true;
         velocity.y = 0.0f;
         return true;
     }
 
-    for (int i = 1; i <= 5; i++) {
-        glm::vec3 testPos = stepOver;
-        testPos.y -= stepHeight * (i / 5.0f);
-        if (checkCollisionMesh(testPos)) {
-            position = testPos;
-            position.y += 0.5f;
-            onGround = true;
-            velocity.y = 0.0f;
-            return true;
-        }
-    }
-
     return false;
 }
 
+// ============================================================================
+// === ОПТИМИЗИРОВАННЫЙ resolveCollisionAxis — с плавным ground snap ===
+// ============================================================================
 void Player::resolveCollisionAxis(float deltaTime, int axis) {
+    // === ОСЬ Y (вертикаль) ===
     if (axis == 1) {
         glm::vec3 newPos = position;
         newPos.y += velocity.y * deltaTime;
@@ -705,24 +702,26 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
         if (velocity.y > 0) {
             velocity.y = 0;
-            for (int i = 1; i <= 5; i++) {
-                glm::vec3 testPos = position;
-                testPos.y = newPos.y - i * 0.5f;
-                if (!checkCollisionMesh(testPos)) {
-                    position.y = testPos.y;
-                    break;
+            float minY = position.y;
+            float maxY = newPos.y;
+            for (int i = 0; i < 3; i++) {
+                float midY = (minY + maxY) * 0.5f;
+                glm::vec3 testPos = position; testPos.y = midY;
+                if (checkCollisionMesh(testPos)) {
+                    maxY = midY;
+                }
+                else {
+                    minY = midY;
                 }
             }
+            position.y = minY;
         }
         else if (velocity.y < 0) {
             float minY = newPos.y;
             float maxY = position.y;
-
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < 4; i++) {
                 float midY = (minY + maxY) * 0.5f;
-                glm::vec3 testPos = position;
-                testPos.y = midY;
-
+                glm::vec3 testPos = position; testPos.y = midY;
                 if (checkCollisionMesh(testPos)) {
                     minY = midY;
                 }
@@ -730,7 +729,6 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
                     maxY = midY;
                 }
             }
-
             position.y = maxY + 0.01f;
             onGround = true;
             velocity.y = 0;
@@ -738,6 +736,7 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
         return;
     }
 
+    // === ОСИ X и Z (горизонталь) ===
     float moveAmount = (axis == 0) ? velocity.x * deltaTime : velocity.z * deltaTime;
     if (std::abs(moveAmount) < 0.001f) return;
 
@@ -747,83 +746,77 @@ void Player::resolveCollisionAxis(float deltaTime, int axis) {
 
     glm::vec3 targetPos = position + moveDir;
 
+    // 1. Прямое движение
     if (!checkCollisionMesh(targetPos)) {
         position = targetPos;
         return;
     }
 
+    // Не на земле — блокируем
     if (!onGround || std::abs(moveAmount) < 0.01f) {
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
+    // 2. Пробуем step up
     glm::vec3 stepUp = position;
     stepUp.y += stepHeight;
-    stepUp += moveDir;
-
     if (checkCollisionMesh(stepUp)) {
         if (axis == 0) velocity.x = 0;
         else velocity.z = 0;
         return;
     }
 
-    glm::vec3 groundTest = stepUp;
-    groundTest.y -= stepHeight + 2.0f;
-
-    if (checkCollisionMesh(groundTest)) {
-        position = stepUp;
-        float exactY = findGroundHeight(position, stepHeight + 2.0f);
-        if (exactY > 0) position.y = exactY + 0.01f;
-        velocity.y = 0;
+    glm::vec3 stepOver = stepUp + moveDir;
+    if (checkCollisionMesh(stepOver)) {
+        if (axis == 0) velocity.x = 0;
+        else velocity.z = 0;
         return;
     }
 
-    for (float down = stepHeight * 0.5f; down <= stepHeight + 2.0f; down += 2.0f) {
-        glm::vec3 slopeTest = stepUp;
-        slopeTest.y -= down;
-        if (checkCollisionMesh(slopeTest)) {
-            position = stepUp;
-            position.y -= down - 0.01f;
-            velocity.y = 0;
-            return;
+    // 3. Спускаемся вниз — бинарный поиск земли
+    float topY = stepOver.y;
+    float bottomY = stepOver.y - stepHeight - 2.0f;
+    float groundY = topY;
+    bool foundGround = false;
+
+    for (int i = 0; i < 4; i++) {
+        float midY = (topY + bottomY) * 0.5f;
+        glm::vec3 testPos = stepOver;
+        testPos.y = midY;
+
+        if (checkCollisionMesh(testPos)) {
+            bottomY = midY;
         }
+        else {
+            groundY = midY;
+            foundGround = true;
+            topY = midY;
+        }
+    }
+
+    if (foundGround) {
+        position = stepOver;
+        position.y = groundY + 0.01f;
+        velocity.y = 0;
+        return;
     }
 
     if (axis == 0) velocity.x = 0;
     else velocity.z = 0;
 }
 
-float Player::findGroundHeight(const glm::vec3& pos, float maxSearchDist) {
-    float minY = pos.y - maxSearchDist;
-    float maxY = pos.y;
-
-    for (int i = 0; i < 4; i++) {
-        float midY = (minY + maxY) * 0.5f;
-        glm::vec3 testPos = pos;
-        testPos.y = midY;
-
-        if (checkCollisionMesh(testPos)) {
-            minY = midY;
-        }
-        else {
-            maxY = midY;
-        }
-    }
-
-    return maxY;
-}
-
 void Player::CategorizePosition() {
     onGround = checkOnGround();
 }
 
+// ============================================================================
+// === ОПТИМИЗИРОВАННЫЙ moveWithCollision — фиксированный таймстеп ===
+// ============================================================================
 void Player::moveWithCollision(float deltaTime) {
     PreThink(deltaTime);
     Duck(deltaTime);
-
-    glm::vec3 oldPos = position;
-    bool wasOnGround = onGround;
 
     CategorizePosition();
 
@@ -891,6 +884,9 @@ void Player::moveNoclip(float deltaTime) {
     velocity = glm::vec3(0.0f);
 }
 
+// ============================================================================
+// === ОБНОВЛЁННЫЙ update — фиксированный таймстеп + интерполяция ===
+// ============================================================================
 void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const MeshCollider* collider) {
     yaw = cameraYaw;
     pitch = cameraPitch;
@@ -905,7 +901,6 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
         return;
     }
 
-    // Проверяем лестницу
     if (Engine* engine = Engine::getInstance()) {
         CheckLadder(engine->getLadderZones());
     }
@@ -913,28 +908,61 @@ void Player::update(float deltaTime, float cameraYaw, float cameraPitch, const M
     if (IsOnLadder()) {
         ApplyLadderPhysics(deltaTime);
         m_renderPosition = position;
-        return; // На лестнице своя физика
+        return;
     }
 
-    // Ограничиваем максимальный шаг физики для стабильности
-    const float MAX_DELTA = 0.05f;  // 20 FPS минимум
-    if (deltaTime > MAX_DELTA) {
-        deltaTime = MAX_DELTA;
+    // === ФИКСИРОВАННЫЙ ТАЙМСТЕП ===
+    // Накапливаем время и запускаем физику фиксированными шагами
+    // Это гарантирует одинаковое поведение при любом FPS
+    m_physicsAccumulator += deltaTime;
+
+    // Ограничиваем, чтобы не было спирали смерти при лагах
+    if (m_physicsAccumulator > MAX_PHYSICS_ACCUMULATOR) {
+        m_physicsAccumulator = MAX_PHYSICS_ACCUMULATOR;
     }
 
-    // Сохраняем позицию для интерполяции
-    m_previousPosition = m_renderPosition;
+    // Сохраняем позицию ДО физики для интерполяции
+    m_previousPosition = position;
 
-    // Один шаг физики за кадр — плавно при любом FPS
-    moveWithCollision(deltaTime);
+    // Запускаем физику фиксированными шагами
+    while (m_physicsAccumulator >= FIXED_TIMESTEP) {
+        moveWithCollision(FIXED_TIMESTEP);
+        m_physicsAccumulator -= FIXED_TIMESTEP;
+    }
+
+    // === ПЛАВНАЯ ИНТЕРПОЛЯЦИЯ ВИЗУАЛЬНОЙ ПОЗИЦИИ ===
+    // m_renderPosition плавно догоняет position
+    // Это убирает "дёргание" при переходе между ступеньками
+    // и делает движение одинаково плавным при любом FPS
+
+    // Интерполируем между предыдущей и текущей физической позицией
+    // на основе оставшегося времени в аккумуляторе
+    float alpha = m_physicsAccumulator / FIXED_TIMESTEP;
+    alpha = glm::clamp(alpha, 0.0f, 1.0f);
+
+    // Интерполяция: чем ближе к следующему тику, тем ближе к новой позиции
+    m_renderPosition = glm::mix(m_previousPosition, position, 1.0f - alpha);
+
+    // === ПЛАВНЫЙ STEP OFFSET ===
+    // Если игрок поднялся на ступеньку, m_visualStepOffset плавно догоняет
+    // реальную разницу высот, чтобы камера не прыгала резко
+    float actualStepOffset = position.y - m_lastGroundY;
+    if (onGround && actualStepOffset > 0.01f && actualStepOffset < stepHeight * 1.5f) {
+        // Плавное приближение к реальному offset
+        float delta = actualStepOffset - m_visualStepOffset;
+        m_visualStepOffset += delta * STEP_SMOOTH_SPEED * deltaTime;
+    }
+    else {
+        // Быстрое сбрасывание когда не на ступеньках
+        m_visualStepOffset *= (1.0f - STEP_SMOOTH_SPEED * deltaTime * 2.0f);
+        if (std::abs(m_visualStepOffset) < 0.01f) m_visualStepOffset = 0.0f;
+    }
+
+    m_lastGroundY = position.y;
 
     if (IsInWater()) {
         ApplyWaterPhysics(deltaTime);
     }
-
-    // Позиция для рендеринга = физическая позиция
-    // Интерполяция не нужна при правильном подходе
-    m_renderPosition = position;
 }
 
 glm::vec3 Player::getEyePosition() const {

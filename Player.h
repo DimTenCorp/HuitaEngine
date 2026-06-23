@@ -7,9 +7,9 @@
 
 class MeshCollider;
 class CFuncWater;
-class CFuncLadder;  // Forward declaration
+class CFuncLadder;
 
-// HL Physics flags - только ОДНО определение каждого флага
+// HL Physics flags
 #define PFLAG_ONLADDER      (1<<0)
 #define PFLAG_ONTRAIN       (1<<1)
 #define PFLAG_ONBARNACLE    (1<<2)
@@ -42,6 +42,12 @@ class CFuncLadder;  // Forward declaration
 #define VEC_HULL_RADIUS     16.0f
 #define VEC_HULL_HEIGHT     72.0f
 #define VEC_DUCK_HULL_HEIGHT 36.0f
+
+// === ФИКСИРОВАННЫЙ ТАЙМСТЕП ===
+// 120 Гц = плавно при любом FPS, но не слишком накладно
+constexpr float FIXED_TIMESTEP = 1.0f / 160.0f;
+constexpr float MAX_PHYSICS_ACCUMULATOR = FIXED_TIMESTEP * 4.0f; // Макс 4 тика за кадр
+constexpr float STEP_SMOOTH_SPEED = 8.0f; // Скорость сглаживания ступенек
 
 class Player {
 private:
@@ -94,10 +100,12 @@ private:
     glm::vec3 m_previousPosition;
     glm::vec3 m_renderPosition;
 
-    // НОВОЕ: Нормаль лестницы для физики
     glm::vec3 m_ladderNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
-    float findGroundHeight(const glm::vec3& pos, float maxSearchDist);
+    // === НОВОЕ: Фиксированный таймстеп + плавная интерполяция ===
+    float m_physicsAccumulator = 0.0f;      // Накопленное время для физики
+    float m_visualStepOffset = 0.0f;        // Плавный offset для ступенек
+    float m_lastGroundY = 0.0f;             // Последняя высота земли
 
 public:
     Player();
@@ -182,7 +190,6 @@ public:
     void CheckLadder(const std::vector<CFuncLadder*>& ladderZones);
     void ApplyLadderPhysics(float deltaTime);
 
-    // НОВОЕ: Методы для работы с нормалью лестницы
     void SetLadderNormal(const glm::vec3& normal) { m_ladderNormal = normal; }
     glm::vec3 GetLadderNormal() const { return m_ladderNormal; }
 
