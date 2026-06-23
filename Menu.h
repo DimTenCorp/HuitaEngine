@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 #include <string>
 #include <vector>
 #include <functional>
@@ -10,11 +10,11 @@ public:
     enum class State {
         MAIN_MENU,
         MAP_SELECT,
-        CONFIRM_EXIT,   // Диалог подтверждения выхода в главное меню из игры
-        CONFIRM_QUIT,   // Диалог подтверждения полного выхода из игры
+        CONFIRM_EXIT,   // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅ
+        CONFIRM_QUIT,   // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅ
         LOADING,
         SETTINGS,
-        PAUSE           // <-- НОВОЕ: меню паузы во время игры
+        PAUSE           // <-- пїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
     };
 
     Menu();
@@ -60,7 +60,7 @@ public:
 
     const SettingsData& getSettings() const { return settings; }
 
-    // <-- НОВОЕ: проверяем, находимся ли мы в режиме паузы (игра загружена, меню активно)
+    // <-- пїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ)
     bool isPauseMenu() const { return currentState == State::PAUSE; }
 
 private:
@@ -79,6 +79,10 @@ private:
     bool pendingApplySettings = false;
 
     int settingsTab = 0;
+
+    // === FPS LIMIT UI STATE ===
+    bool settingsFpsLimitEnabled = false;
+    int settingsFpsLimit = 60;
 
     std::vector<std::string> maps;
     int selectedMapIndex = -1;
@@ -105,7 +109,7 @@ private:
     void renderConfirmQuit();
     void renderLoading();
     void renderSettings();
-    void renderPause();     // <-- НОВОЕ: отрисовка меню паузы
+    void renderPause();     // <-- пїЅпїЅпїЅпїЅпїЅ: пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
 
     State previousState = State::MAIN_MENU;
 
@@ -113,7 +117,7 @@ private:
     void refreshDisplayModes();
     void saveSettings();
     void loadSettings();
-    
-    // Локализация
+
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     std::string tr(const std::string& key, const std::string& fallback = "") const;
 };

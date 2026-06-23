@@ -34,6 +34,10 @@ void Menu::init(GLFWwindow* win, int w, int h) {
     settingsTab = 0;
     pendingApplySettings = false;
 
+    // === FPS LIMIT ===
+    settingsFpsLimitEnabled = settings.fpsLimitEnabled;
+    settingsFpsLimit = settings.fpsLimit;
+
     // Инициализация локализации - загружаем русский язык
     Localization::getInstance().loadLanguage("res/dtc_russian.txt");
 
@@ -523,10 +527,33 @@ void Menu::renderSettings() {
         }
 
         ImGui::Spacing();
-        //ImGui::Text(u8"Текущее разрешение: %dx%d", settings.screenWidth, settings.screenHeight);
         ImGui::Text(tr("#dtc_current_res").c_str(), settings.screenWidth, settings.screenHeight);
 
-        if (fsChanged) {
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // === FPS LIMIT UI ===
+        ImGui::Text(u8"FPS Limit");
+        ImGui::Spacing();
+
+        bool fpsLimitChanged = false;
+        if (ImGui::Checkbox(u8"Enable FPS Limit", &settingsFpsLimitEnabled)) {
+            fpsLimitChanged = true;
+        }
+
+        if (settingsFpsLimitEnabled) {
+            ImGui::Spacing();
+            ImGui::Text(u8"Max FPS: %d", settingsFpsLimit);
+            int fpsTemp = settingsFpsLimit;
+            if (ImGui::SliderInt(u8"##fpslimit", &fpsTemp, 30, 240, "%d FPS")) {
+                settingsFpsLimit = fpsTemp;
+                fpsLimitChanged = true;
+            }
+        }
+
+        if (fsChanged || fpsLimitChanged) {
             pendingApplySettings = true;
         }
     }
@@ -551,7 +578,7 @@ void Menu::renderSettings() {
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::Text(tr("#dtc_sound_description").c_str());
-        
+
     }
 
     ImGui::PopStyleColor();
@@ -567,9 +594,12 @@ void Menu::renderSettings() {
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(110, 110, 110, 255));
     if (ImGui::Button(tr("#dtc_save").c_str(), ImVec2(buttonWidth, 40))) {
         settings.mouseSensitivity = settingsSensitivity;
+        // === FPS LIMIT ===
+        settings.fpsLimitEnabled = settingsFpsLimitEnabled;
+        settings.fpsLimit = settingsFpsLimit;
         saveSettings();
 
-        // <-- ИСПРАВЛЕНИЕ: ВСЕГДА вызываем applySettings для применения сенсы и других настроек
+        // ВСЕГДА вызываем applySettings для применения всех настроек
         if (onSettingsChanged) {
             onSettingsChanged(settings);
         }
@@ -592,6 +622,9 @@ void Menu::renderSettings() {
     if (ImGui::Button(tr("#dtc_cancel").c_str(), ImVec2(buttonWidth, 40))) {
         loadSettings();
         settingsSensitivity = settings.mouseSensitivity;
+        // === FPS LIMIT ===
+        settingsFpsLimitEnabled = settings.fpsLimitEnabled;
+        settingsFpsLimit = settings.fpsLimit;
         currentState = previousState;
     }
     ImGui::PopStyleColor(3);

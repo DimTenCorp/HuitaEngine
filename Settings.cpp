@@ -82,12 +82,16 @@ void SettingsData::save(const std::string& filename) {
     file << "masterVolume=" << masterVolume << "\n";
     file << "mute=" << (mute ? "1" : "0") << "\n";
 
+    // === FPS LIMIT ===
+    file << "[Performance]\n";
+    file << "fpsLimitEnabled=" << (fpsLimitEnabled ? "1" : "0") << "\n";
+    file << "fpsLimit=" << fpsLimit << "\n";
+
     file.close();
     std::cout << "[SETTINGS] Saved to " << filename << std::endl;
 }
 
 void SettingsData::load(const std::string& filename) {
-    // ������� ������������� ��������� ��������
     detectNativeResolution();
 
     fullscreen = true;
@@ -97,6 +101,10 @@ void SettingsData::load(const std::string& filename) {
     mouseSensitivity = 0.5f;
     masterVolume = 1.0f;
     mute = false;
+
+    // === FPS LIMIT defaults ===
+    fpsLimitEnabled = false;
+    fpsLimit = 60;
 
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -111,23 +119,18 @@ void SettingsData::load(const std::string& filename) {
     bool audioSectionFound = false;
 
     while (std::getline(file, line)) {
-        // ���������� ������ ������ � �����������
         if (line.empty()) continue;
 
-        // ������� ������� � ������ ������
         size_t start = line.find_first_not_of(" \t\r\n");
         if (start == std::string::npos) continue;
         if (start > 0) line = line.substr(start);
 
-        // �����������
         if (line[0] == ';' || line[0] == '#') continue;
 
-        // ������ [Section]
         if (line[0] == '[') {
             size_t end = line.find(']');
             if (end != std::string::npos) {
                 section = line.substr(1, end - 1);
-                // ������� ������� �� ����� ������
                 size_t secStart = section.find_first_not_of(" \t");
                 size_t secEnd = section.find_last_not_of(" \t");
                 if (secStart != std::string::npos && secEnd != std::string::npos) {
@@ -141,14 +144,12 @@ void SettingsData::load(const std::string& filename) {
             continue;
         }
 
-        // ������ key=value
         size_t eqPos = line.find('=');
         if (eqPos == std::string::npos) continue;
 
         std::string key = line.substr(0, eqPos);
         std::string value = line.substr(eqPos + 1);
 
-        // ������� �������
         size_t keyStart = key.find_first_not_of(" \t");
         size_t keyEnd = key.find_last_not_of(" \t");
         if (keyStart != std::string::npos && keyEnd != std::string::npos) {
@@ -159,7 +160,6 @@ void SettingsData::load(const std::string& filename) {
         if (valStart != std::string::npos) {
             value = value.substr(valStart);
         }
-        // ������� \r � ����� (Windows)
         size_t valEnd = value.find_last_not_of(" \t\r\n");
         if (valEnd != std::string::npos) {
             value = value.substr(0, valEnd + 1);
@@ -169,7 +169,6 @@ void SettingsData::load(const std::string& filename) {
             if (section == "Display") {
                 if (key == "fullscreen") {
                     fullscreen = (value == "1" || value == "true" || value == "yes");
-                    std::cout << "[SETTINGS] Loaded fullscreen=" << fullscreen << " (value='" << value << "', section='" << section << "')" << std::endl;
                 }
                 else if (key == "width") {
                     screenWidth = std::stoi(value);
@@ -194,6 +193,17 @@ void SettingsData::load(const std::string& filename) {
                     mute = (value == "1" || value == "true" || value == "yes");
                 }
             }
+            // === FPS LIMIT loading ===
+            else if (section == "Performance") {
+                if (key == "fpsLimitEnabled") {
+                    fpsLimitEnabled = (value == "1" || value == "true" || value == "yes");
+                }
+                else if (key == "fpsLimit") {
+                    fpsLimit = std::stoi(value);
+                    if (fpsLimit < 30) fpsLimit = 30;
+                    if (fpsLimit > 240) fpsLimit = 240;
+                }
+            }
         }
         catch (const std::exception& e) {
             std::cerr << "[SETTINGS] Failed to parse '" << key << "=" << value << "': " << e.what() << std::endl;
@@ -202,7 +212,6 @@ void SettingsData::load(const std::string& filename) {
 
     file.close();
 
-    // ���������: ���� fullscreen=0 �� ���������� �� ������ ��� ������� - ���������� �������
     if (!fullscreen && (screenWidth <= 0 || screenHeight <= 0)) {
         std::cerr << "[SETTINGS] Invalid windowed resolution, using native" << std::endl;
         screenWidth = nativeResolution.width;
@@ -211,5 +220,7 @@ void SettingsData::load(const std::string& filename) {
 
     std::cout << "[SETTINGS] Loaded from " << filename
         << " (fullscreen=" << fullscreen
-        << ", " << screenWidth << "x" << screenHeight << ")" << std::endl;
+        << ", " << screenWidth << "x" << screenHeight
+        << ", fpsLimit=" << fpsLimit
+        << ", fpsLimitEnabled=" << fpsLimitEnabled << ")" << std::endl;
 }

@@ -69,6 +69,12 @@ public:
 
     void applySettings(const SettingsData& settings);
 
+    // === FPS LIMIT ===
+    void setFpsLimitEnabled(bool enabled);
+    void setFpsLimit(int fps);
+    bool isFpsLimitEnabled() const { return fpsLimitEnabled; }
+    int getFpsLimit() const { return fpsLimit; }
+
     // === ОПТИМИЗИРОВАННЫЕ МЕТОДЫ ДЛЯ ДВЕРЕЙ ===
     void updateDoors(float deltaTime);
     bool checkDoorCollision(const Capsule& capsule, glm::vec3& outPush) const;
@@ -82,7 +88,7 @@ public:
 private:
     static Engine* instance;
 
-    void checkPlayerTouchDoors();  // Проверка касания дверей
+    void checkPlayerTouchDoors();
 
     std::vector<CFuncLadder*> ladderZones;
     std::vector<std::unique_ptr<DoorEntity>> doors;
@@ -115,9 +121,13 @@ private:
 
     SettingsData currentSettings;
 
-    // === ОПТИМИЗАЦИЯ: Таймер обновления коллайдера дверей ===
+    // === FPS LIMIT ===
+    bool fpsLimitEnabled = false;
+    int fpsLimit = 60;
+    double lastFrameTime = 0.0;
+
     float doorColliderUpdateTimer = 0.0f;
-    static constexpr float DOOR_COLLIDER_UPDATE_INTERVAL = 1.0f / 20.0f; // 20 FPS достаточно
+    static constexpr float DOOR_COLLIDER_UPDATE_INTERVAL = 1.0f / 20.0f;
     bool doorColliderDirty = true;
 
     bool initGLFW();
@@ -130,6 +140,5 @@ private:
     void processPendingLoad();
     void doLoadMap(const std::string& mapPath);
 
-    // === Внутренние методы для дверей ===
-    void updateDoorCollider(); // Обновляет MeshCollider только при необходимости
+    void updateDoorCollider();
 };

@@ -120,6 +120,7 @@ bool Engine::initGLFW() {
     }
 
     glfwMakeContextCurrent(window);
+    // FPS limit: if enabled, disable vsync (we'll limit manually), otherwise vsync off
     glfwSwapInterval(0);
 
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
@@ -633,7 +634,24 @@ void Engine::applySettings(const SettingsData& settings) {
     width = settings.screenWidth;
     height = settings.screenHeight;
 
-    std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity << std::endl;
+    // === FPS LIMIT ===
+    fpsLimitEnabled = settings.fpsLimitEnabled;
+    fpsLimit = settings.fpsLimit;
+
+    std::cout << "[ENGINE] Applied settings: sensitivity=" << settings.mouseSensitivity
+        << ", fpsLimit=" << fpsLimit
+        << ", fpsLimitEnabled=" << fpsLimitEnabled << std::endl;
+}
+
+// === FPS LIMIT METHODS ===
+void Engine::setFpsLimitEnabled(bool enabled) {
+    fpsLimitEnabled = enabled;
+    std::cout << "[ENGINE] FPS limit " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+void Engine::setFpsLimit(int fps) {
+    fpsLimit = std::max(30, std::min(240, fps));
+    std::cout << "[ENGINE] FPS limit set to " << fpsLimit << std::endl;
 }
 
 void Engine::hideMenu() {
@@ -652,6 +670,22 @@ void Engine::hideMenu() {
 
 void Engine::run() {
     while (!glfwWindowShouldClose(window)) {
+        // === FPS LIMIT ===
+        if (fpsLimitEnabled && fpsLimit > 0) {
+            double targetFrameTime = 1.0 / fpsLimit;
+            double currentTime = glfwGetTime();
+            double elapsed = currentTime - lastFrameTime;
+            if (elapsed < targetFrameTime) {
+                double sleepTime = targetFrameTime - elapsed;
+                // Busy-wait for precision (sub-millisecond accuracy)
+                double sleepUntil = glfwGetTime() + sleepTime;
+                while (glfwGetTime() < sleepUntil) {
+                    // Spin wait for precision
+                }
+            }
+            lastFrameTime = glfwGetTime();
+        }
+
         updateTime();
 
         processPendingLoad();

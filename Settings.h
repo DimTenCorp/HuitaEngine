@@ -25,10 +25,14 @@ struct SettingsData {
     int screenHeight = 1080;
     int displayModeIndex = -1;
 
-    float mouseSensitivity = 0.5f; // Изменено с 0.1f на 0.5f (более комфортное значение)
+    float mouseSensitivity = 0.5f;
 
     float masterVolume = 1.0f;
     bool mute = false;
+
+    // === FPS LIMIT ===
+    bool fpsLimitEnabled = false;
+    int fpsLimit = 60;
 
     void save(const std::string& filename = "settings.ini");
     void load(const std::string& filename = "settings.ini");
